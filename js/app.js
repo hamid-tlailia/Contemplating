@@ -1,10 +1,10 @@
-// حافظ - Smart Quran memorization app
+// تدبر - Smart Quran memorization app
 // Core idea: spaced repetition (SM-2) + active recall (progressive word masking)
 // instead of passive re-reading. All progress is stored locally (localStorage).
 
 const API_BASE = "https://api.alquran.cloud/v1";
 const AUDIO_BASE = "https://cdn.islamic.network/quran/audio/128/ar.alafasy"; // {globalAyahNumber}.mp3
-const STATE_KEY = "hafiz_state_v1";
+const STATE_KEY = "tadabbur_state_v1";
 
 // ---------- State ----------
 
