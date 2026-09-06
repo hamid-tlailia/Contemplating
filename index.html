@@ -2,14 +2,24 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>تدبر - تطبيق حفظ القرآن الكريم بذكاء</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%231f6f5c'/%3E%3Ctext x='50' y='62' font-size='55' text-anchor='middle'%3E%F0%9F%93%96%3C/text%3E%3C/svg%3E">
+<meta name="description" content="احفظ القرآن الكريم بالتكرار المتباعد، الاختيار من متعدد، الكتابة، والاختبار الصوتي.">
+<meta name="theme-color" content="#1f6f5c">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="تدبر">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+
+<canvas id="confetti-canvas"></canvas>
+<div id="toast-container" class="toast-container" aria-live="polite"></div>
 
 <header class="app-header">
   <div class="brand">
@@ -18,6 +28,7 @@
   </div>
   <nav class="tabs" role="tablist">
     <button class="tab-btn active" data-tab="dashboard">لوحتي</button>
+    <button class="tab-btn" data-tab="learn">🌱 ابدأ الحفظ</button>
     <button class="tab-btn" data-tab="browse">تصفح وإضافة</button>
     <button class="tab-btn" data-tab="review">جلسة المراجعة</button>
   </nav>
@@ -27,6 +38,17 @@
 
   <!-- DASHBOARD -->
   <section id="tab-dashboard" class="tab-panel active">
+
+    <div class="challenge-card" id="challenge-card">
+      <div class="challenge-text">
+        <h2>⚡ تحدي تعاهد اليوم</h2>
+        <p class="muted" id="challenge-desc">اختبر نفسك بآيات عشوائية مما حفظت — «تعاهدوا هذا القرآن فوالذي نفسي بيده لهو أشد تفلتًا من الإبل في عقلها»</p>
+      </div>
+      <button id="btn-start-challenge" class="btn accent">ابدأ التحدي المفاجئ</button>
+    </div>
+
+    <div class="ornament" aria-hidden="true">۞</div>
+
     <div class="stats-grid">
       <div class="stat-card">
         <div class="stat-value" id="stat-due">0</div>
@@ -34,20 +56,26 @@
       </div>
       <div class="stat-card">
         <div class="stat-value" id="stat-new">0</div>
-        <div class="stat-label">جديدة لم تُبدأ</div>
+        <div class="stat-label">قيد الحفظ</div>
       </div>
       <div class="stat-card">
         <div class="stat-value" id="stat-mastered">0</div>
-        <div class="stat-label">آيات متقنة</div>
+        <div class="stat-label">آيات محفوظة</div>
       </div>
       <div class="stat-card">
         <div class="stat-value" id="stat-streak">0</div>
-        <div class="stat-label">أيام متتالية</div>
+        <div class="stat-label">🔥 أيام متتالية</div>
       </div>
     </div>
 
+    <div class="panel" id="onboarding-panel">
+      <h2>🌱 لم تبدأ رحلة الحفظ بعد</h2>
+      <p class="muted">اضغط لتبدأ حفظ سورة الفاتحة آيةً آية، بأسلوب تفاعلي ممتع.</p>
+      <button class="btn primary" data-tab="learn">ابدأ الآن بسورة الفاتحة</button>
+    </div>
+
     <div class="panel">
-      <h2>خطة الحفظ الحالية</h2>
+      <h2>خطة المراجعة الحالية</h2>
       <p class="muted">مرتبة حسب أقرب موعد مراجعة (التكرار المتباعد الذكي)</p>
       <div id="plan-list" class="plan-list"></div>
     </div>
@@ -58,10 +86,54 @@
     </div>
   </section>
 
+  <!-- LEARN (guided sequential memorization) -->
+  <section id="tab-learn" class="tab-panel">
+    <div class="panel learn-panel">
+      <div class="learn-header">
+        <div>
+          <h2 id="learn-ref">سورة الفاتحة - الآية 1</h2>
+          <p class="muted" id="learn-round-info">الجولة 1 من 3</p>
+        </div>
+        <div class="round-dots" id="round-dots">
+          <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        </div>
+      </div>
+
+      <div class="mode-switch" role="tablist">
+        <button class="mode-btn active" data-mode="mcq">🔘 اختيار من متعدد</button>
+        <button class="mode-btn" data-mode="type">⌨️ اكتب الكلمة</button>
+      </div>
+
+      <div class="ayah-display learn-ayah-display">
+        <p id="learn-text" class="ayah-text"></p>
+      </div>
+
+      <div id="learn-meanings" class="meanings-row hidden"></div>
+
+      <div class="learn-controls">
+        <button id="btn-learn-audio" class="btn">🔊 استماع للآية</button>
+        <button id="btn-learn-meanings" class="btn">💡 معاني الكلمات</button>
+        <button id="btn-learn-voice" class="btn hidden">🎤 اختبر بالنطق</button>
+      </div>
+
+      <div id="mcq-options" class="mcq-options"></div>
+
+      <div id="type-answer" class="type-answer hidden">
+        <input type="text" id="type-input" placeholder="اكتب الكلمة الناقصة هنا..." autocomplete="off" autocorrect="off" spellcheck="false">
+        <button id="btn-type-submit" class="btn primary">تحقق ✓</button>
+      </div>
+
+      <div id="voice-result" class="voice-result hidden"></div>
+
+      <audio id="learn-audio"></audio>
+    </div>
+  </section>
+
   <!-- BROWSE / ADD -->
   <section id="tab-browse" class="tab-panel">
     <div class="panel">
-      <h2>إضافة آيات إلى خطة الحفظ</h2>
+      <h2>إضافة آيات إلى خطة المراجعة مباشرة</h2>
+      <p class="muted">للمتقدمين: أضف آيات مباشرة إلى جدول المراجعة بدون المرور بجلسة "ابدأ الحفظ" التدريجية.</p>
       <div class="add-form">
         <label>
           السورة
@@ -89,9 +161,11 @@
   <!-- REVIEW SESSION -->
   <section id="tab-review" class="tab-panel">
     <div class="panel" id="review-panel">
+      <div id="challenge-banner" class="challenge-banner hidden">⚡ أنت الآن في تحدي تعاهد اليوم المفاجئ!</div>
+
       <div id="review-empty" class="empty-state">
         <p>🎉 لا توجد آيات تحتاج مراجعة الآن.</p>
-        <p class="muted">أضف آيات جديدة من تبويب "تصفح وإضافة" أو عد لاحقًا حين يحين موعد المراجعة.</p>
+        <p class="muted">أضف آيات جديدة من تبويب "ابدأ الحفظ" أو عد لاحقًا حين يحين موعد المراجعة.</p>
       </div>
 
       <div id="review-session" class="review-session hidden">
@@ -112,7 +186,10 @@
           <button id="btn-play-audio" class="btn">🔊 استماع</button>
           <button id="btn-mask-more" class="btn">🙈 إخفاء المزيد</button>
           <button id="btn-mask-reset" class="btn">👁️ إظهار الكل</button>
+          <button id="btn-review-voice" class="btn hidden">🎤 اختبر بالنطق</button>
         </div>
+
+        <div id="review-voice-result" class="voice-result hidden"></div>
 
         <div id="grade-controls" class="grade-controls hidden">
           <p class="muted">قيّم مدى تذكرك لهذه الآية:</p>
@@ -134,7 +211,7 @@
 </main>
 
 <footer class="app-footer">
-  <p class="muted">يعمل باستخدام بيانات القرآن الكريم من alquran.cloud — يُحفظ تقدمك محليًا في متصفحك.</p>
+  <p class="muted">يعمل باستخدام بيانات القرآن الكريم من alquran.cloud و quran.com — يُحفظ تقدمك محليًا في متصفحك.</p>
 </footer>
 
 <script src="js/app.js" defer></script>
