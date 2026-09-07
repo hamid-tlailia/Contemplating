@@ -1,4 +1,4 @@
-const CACHE = "tadabbur-v1";
+const CACHE = "tadabbur-v2";
 const SHELL = [
   "./",
   "index.html",
@@ -26,18 +26,22 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return; // let external API/audio/font requests pass through normally
 
+  // Network-first for the app shell: cache-first-with-background-refresh
+  // (the previous strategy) always serves whatever was cached on a PRIOR
+  // visit instantly and only updates the cache for the visit AFTER that -
+  // so a deployed change (new styles, new features) stayed invisible for
+  // at least one extra reload, sometimes reading as "this isn't working"
+  // when it had actually already shipped. Offline is still covered by the
+  // cache fallback; when online, whatever's actually live wins.
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      const network = fetch(event.request)
-        .then((res) => {
-          if (res && res.status === 200) {
-            const clone = res.clone();
-            caches.open(CACHE).then((c) => c.put(event.request, clone));
-          }
-          return res;
-        })
-        .catch(() => cached);
-      return cached || network;
-    })
+    fetch(event.request)
+      .then((res) => {
+        if (res && res.status === 200) {
+          const clone = res.clone();
+          caches.open(CACHE).then((c) => c.put(event.request, clone));
+        }
+        return res;
+      })
+      .catch(() => caches.match(event.request))
   );
 });

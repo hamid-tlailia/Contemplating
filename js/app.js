@@ -1655,31 +1655,61 @@ function mergeVoiceSegments(segments) {
   return acc;
 }
 
-// Some Android continuous-recognition engines occasionally re-transcribe
-// audio they already finalized - usually right after an onend/restart
-// cycle - producing a near-duplicate block of words appended right after
-// the original instead of a genuinely new continuation. mergeVoiceSegments
-// only catches an EXACT repeat of the whole accumulated string; this
-// catches a repeated block anywhere at the end of it, word-boundary aware,
-// by collapsing the longest immediately-repeated trailing block.
-function collapseRepeatedWordBlocks(text) {
-  const words = text.split(/\s+/).filter(Boolean);
-  let changed = true;
-  while (changed) {
-    changed = false;
-    const n = words.length;
-    for (let blockLen = Math.floor(n / 2); blockLen >= 2; blockLen--) {
-      const tailStart = n - blockLen;
-      const prevStart = tailStart - blockLen;
-      if (prevStart < 0) continue;
-      if (words.slice(tailStart, n).join(" ") === words.slice(prevStart, tailStart).join(" ")) {
-        words.splice(tailStart, blockLen);
-        changed = true;
-        break;
-      }
+// Word-level LCS length (order-respecting overlap) between two small word
+// arrays - used to judge how much a freshly re-transcribed session merely
+// re-hears audio already folded into the base text, even when the wording
+// isn't byte-identical (a few substituted words from re-recognition
+// variance). Inputs here are at most a couple dozen words, so plain DP is
+// fine.
+function wordLCSLength(a, b) {
+  const m = a.length, n = b.length;
+  let prev = new Array(n + 1).fill(0);
+  for (let i = 1; i <= m; i++) {
+    const cur = new Array(n + 1).fill(0);
+    for (let j = 1; j <= n; j++) {
+      cur[j] = a[i - 1] === b[j - 1] ? prev[j - 1] + 1 : Math.max(prev[j], cur[j - 1]);
+    }
+    prev = cur;
+  }
+  return prev[n];
+}
+
+// Folds a just-finished (or still-live) recognition session's text into the
+// accumulated base text. Some Android continuous-recognition engines
+// occasionally re-transcribe audio they already finalized - usually right
+// after an onend/restart cycle, and often NOT word-for-word identical (a
+// few recognition slips) - so this can't just check for an exact repeat:
+//   1) if the session's start exactly overlaps the base text's end
+//      (normalized word-for-word), that overlap is a clean re-hear -
+//      drop it and keep only whatever comes after it.
+//   2) otherwise, if the whole session still strongly resembles the tail
+//      of the base text (LCS ratio) even without a clean boundary match,
+//      it's the same re-hear with enough substituted words to break exact
+//      matching - drop the whole session rather than append a near-dupe.
+//   3) anything left over is genuinely new content and gets appended.
+function mergeSessionText(baseText, sessionText) {
+  const baseWords = baseText.trim().split(/\s+/).filter(Boolean);
+  const sessionWords = sessionText.trim().split(/\s+/).filter(Boolean);
+  if (sessionWords.length === 0) return baseWords.join(" ");
+  const normBase = baseWords.map(normalizeArabic);
+  const normSession = sessionWords.map(normalizeArabic);
+
+  let overlap = 0;
+  for (let len = Math.min(baseWords.length, sessionWords.length); len > 0; len--) {
+    if (normBase.slice(normBase.length - len).join(" ") === normSession.slice(0, len).join(" ")) {
+      overlap = len;
+      break;
     }
   }
-  return words.join(" ");
+  let newWords = sessionWords.slice(overlap);
+
+  if (overlap === 0 && baseWords.length > 0) {
+    const tailWindow = normBase.slice(-Math.max(normSession.length, 4));
+    const lcs = wordLCSLength(normSession, tailWindow);
+    if (lcs / normSession.length >= 0.6) newWords = [];
+  }
+
+  return [...baseWords, ...newWords].join(" ");
 }
 
 function createVoiceRecognitionInstance() {
@@ -1733,8 +1763,7 @@ function startVoiceModalRecording() {
       else if (i >= e.resultIndex) interim += transcript;
     }
     const merged = mergeVoiceSegments([...voiceModalFinalSegments.filter(Boolean), interim]);
-    const combined = mergeVoiceSegments([voiceModalBaseText, merged]).replace(/\s+/g, " ").trim();
-    voiceModalLiveTranscript = collapseRepeatedWordBlocks(combined);
+    voiceModalLiveTranscript = mergeSessionText(voiceModalBaseText, merged);
     statusText.textContent = voiceModalLiveTranscript || "🔴 يستمع الآن...";
   };
   recognition.onerror = (e) => {
@@ -1755,14 +1784,12 @@ function startVoiceModalRecording() {
     // This was previously a raw concatenation of the old base text with
     // this session's segments - which meant a restart that re-transcribed
     // audio already folded into the base text (a real, if inconsistent,
-    // Android quirk) just kept appending the same phrase again forever.
-    // Routing it back through mergeVoiceSegments (catches an exact repeat
-    // of everything so far) and collapseRepeatedWordBlocks (catches a
-    // repeated block anywhere at the tail) fixes that at the fold point,
-    // not just for display.
+    // Android quirk, and not always word-for-word identical) just kept
+    // appending a near-duplicate phrase again on every pause. mergeSessionText
+    // trims a clean re-heard overlap or drops the whole session when it's a
+    // fuzzy re-hear with no clean boundary, fixing this at the fold point.
     const sessionMerged = mergeVoiceSegments(voiceModalFinalSegments.filter(Boolean));
-    const folded = mergeVoiceSegments([voiceModalBaseText, sessionMerged]).replace(/\s+/g, " ").trim();
-    voiceModalBaseText = collapseRepeatedWordBlocks(folded) + " ";
+    voiceModalBaseText = mergeSessionText(voiceModalBaseText, sessionMerged) + " ";
     voiceModalFinalSegments = [];
     attemptRecognitionStart(recognition);
   };

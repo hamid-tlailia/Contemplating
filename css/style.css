@@ -114,25 +114,29 @@ html, body {
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60' viewBox='0 0 60 60'%3E%3Cg fill='none' stroke='%231f6f5c' stroke-opacity='0.06' stroke-width='1'%3E%3Cpath d='M30 2 L37 15 L52 15 L41 25 L46 40 L30 31 L14 40 L19 25 L8 15 L23 15 Z'/%3E%3Ccircle cx='30' cy='30' r='27'/%3E%3C/g%3E%3C/svg%3E");
   background-size: auto, 60px 60px;
 }
+/* These three are meant to actually read as a pattern in the narrow gaps
+   between opaque panel cards (not the whole page), so - unlike the default
+   above - they use noticeably higher contrast and smaller, denser tiles;
+   the first attempt at this was too subtle to see there. */
 :root[data-bg="geometric-gold"] body {
   background-image:
     radial-gradient(circle at 0 0, transparent 9px, var(--bg) 10px),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='84' height='84' viewBox='0 0 84 84'%3E%3Cg fill='none' stroke='%23b98b2a' stroke-opacity='0.16' stroke-width='1.2'%3E%3Cpath d='M42 4 L50 20 L68 20 L56 34 L62 54 L42 42 L22 54 L28 34 L16 20 L34 20 Z'/%3E%3Ccircle cx='42' cy='42' r='38'/%3E%3C/g%3E%3C/svg%3E");
-  background-size: auto, 84px 84px;
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'%3E%3Cg fill='none' stroke='%23b98b2a' stroke-opacity='0.45' stroke-width='1.4'%3E%3Cpath d='M28 3 L34 14 L46 14 L37 23 L41 37 L28 29 L15 37 L19 23 L10 14 L22 14 Z'/%3E%3Ccircle cx='28' cy='28' r='25'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: auto, 56px 56px;
 }
 :root[data-bg="waves"] body {
   background-image:
-    repeating-linear-gradient(135deg, rgba(31,111,92,0.05) 0px, rgba(31,111,92,0.05) 2px, transparent 2px, transparent 26px),
-    repeating-linear-gradient(45deg, rgba(31,111,92,0.04) 0px, rgba(31,111,92,0.04) 2px, transparent 2px, transparent 34px);
+    repeating-linear-gradient(135deg, rgba(31,111,92,0.16) 0px, rgba(31,111,92,0.16) 3px, transparent 3px, transparent 16px),
+    repeating-linear-gradient(45deg, rgba(31,111,92,0.13) 0px, rgba(31,111,92,0.13) 3px, transparent 3px, transparent 22px);
 }
 :root[data-bg="stars-scatter"] body {
   background-image:
-    radial-gradient(circle at 10% 20%, rgba(185,139,42,0.22) 1.5px, transparent 1.5px),
-    radial-gradient(circle at 70% 60%, rgba(185,139,42,0.18) 1px, transparent 1px),
-    radial-gradient(circle at 40% 80%, rgba(185,139,42,0.2) 1.2px, transparent 1.2px),
-    radial-gradient(circle at 90% 15%, rgba(185,139,42,0.16) 1px, transparent 1px),
-    radial-gradient(circle at 25% 45%, rgba(185,139,42,0.14) 1px, transparent 1px);
-  background-size: 140px 140px, 90px 90px, 120px 120px, 100px 100px, 70px 70px;
+    radial-gradient(circle at 10% 20%, rgba(185,139,42,0.55) 1.8px, transparent 1.8px),
+    radial-gradient(circle at 70% 60%, rgba(185,139,42,0.45) 1.4px, transparent 1.4px),
+    radial-gradient(circle at 40% 80%, rgba(185,139,42,0.5) 1.6px, transparent 1.6px),
+    radial-gradient(circle at 90% 15%, rgba(185,139,42,0.4) 1.4px, transparent 1.4px),
+    radial-gradient(circle at 25% 45%, rgba(185,139,42,0.35) 1.4px, transparent 1.4px);
+  background-size: 70px 70px, 46px 46px, 60px 60px, 50px 50px, 36px 36px;
 }
 
 h1, h2 { font-family: 'Tajawal', sans-serif; margin: 0; }
@@ -1529,7 +1533,7 @@ main#app {
 }
 .mushaf-mode-btn.active { background: var(--primary); color: #fff; }
 
-.mushaf-controls { margin-top: 10px; }
+.mushaf-controls { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }
 .mushaf-controls .combo { min-width: 0; }
 .mushaf-controls .combo-list { z-index: 25; }
 .mushaf-page-field {
