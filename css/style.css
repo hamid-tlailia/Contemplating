@@ -97,6 +97,11 @@
 
 * { box-sizing: border-box; }
 
+/* No grey/blue flash box over a button when it's tapped - the browser's
+   default tap highlight, which has nothing to do with this app's colours.
+   The property inherits, so setting it once covers everything. */
+html { -webkit-tap-highlight-color: transparent; }
+
 html, body {
   margin: 0;
   color: var(--text);
@@ -221,7 +226,7 @@ h1, h2 { font-family: 'Tajawal', sans-serif; margin: 0; }
   transition: all .15s ease;
 }
 .icon-only-btn svg { width: 19px; height: 19px; }
-.icon-only-btn:hover { color: var(--primary); background: var(--border); }
+@media (hover: hover) { .icon-only-btn:hover { color: var(--primary); background: var(--border); } }
 
 /* The header scrolls away on phones (it isn't sticky there - see the
    media query below), which used to take settings with it. This is the
@@ -409,7 +414,7 @@ main#app {
   font-weight: 700;
   white-space: nowrap;
 }
-.btn.accent:hover { background: var(--accent-light); }
+@media (hover: hover) { .btn.accent:hover { background: var(--accent-light); } }
 /* Second action on the challenge card's dark green: readable there without
    competing with the gold primary next to it. */
 .challenge-actions { display: flex; flex-wrap: wrap; gap: 10px; }
@@ -419,7 +424,7 @@ main#app {
   color: #fff;
   white-space: nowrap;
 }
-.btn.challenge-secondary:hover { background: rgba(255,255,255,0.24); }
+@media (hover: hover) { .btn.challenge-secondary:hover { background: rgba(255,255,255,0.24); } }
 .challenge-card.done { background: linear-gradient(135deg, var(--good), #245e3c); }
 
 #onboarding-panel { display: none; }
@@ -444,7 +449,7 @@ main#app {
   box-shadow: var(--shadow);
   transition: transform .15s ease;
 }
-.stat-card:hover { transform: translateY(-2px); }
+@media (hover: hover) { .stat-card:hover { transform: translateY(-2px); } }
 .stat-value { font-size: 1.8rem; font-weight: 700; color: var(--primary); }
 .stat-label { font-size: 0.8rem; color: var(--muted); margin-top: 4px; }
 
@@ -498,7 +503,7 @@ main#app {
   background: var(--bg);
   transition: transform .15s ease, border-color .15s ease;
 }
-.plan-item.due-now:hover { transform: translateY(-1px); }
+@media (hover: hover) { .plan-item.due-now:hover { transform: translateY(-1px); } }
 .plan-item .ref { font-weight: 700; }
 .plan-item.due-now { cursor: pointer; border-color: var(--primary); }
 .plan-item .btn-review-now {
@@ -537,7 +542,7 @@ main#app {
   font-size: 1rem;
   color: var(--muted);
 }
-.icon-btn:hover { color: var(--danger); }
+@media (hover: hover) { .icon-btn:hover { color: var(--danger); } }
 
 .surah-progress-list { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
 .surah-progress-row { display: flex; align-items: center; gap: 10px; }
@@ -624,7 +629,7 @@ main#app {
   border-bottom: 1px solid var(--border);
 }
 .combo-item:last-child { border-bottom: none; }
-.combo-item:hover { background: var(--bg); }
+@media (hover: hover) { .combo-item:hover { background: var(--bg); } }
 .combo-empty { padding: 12px; text-align: center; }
 
 /* ---------- Browse/add tab: grouped sections instead of two loose rows ---------- */
@@ -782,10 +787,10 @@ main#app {
   font-size: 0.9rem;
   transition: transform .1s ease, box-shadow .15s ease;
 }
-.btn:hover { transform: translateY(-1px); }
+@media (hover: hover) { .btn:hover { transform: translateY(-1px); } }
 .btn:active { transform: translateY(0); }
 .btn.primary { background: var(--primary); color: white; border-color: var(--primary); }
-.btn.primary:hover { background: var(--primary-dark); }
+@media (hover: hover) { .btn.primary:hover { background: var(--primary-dark); } }
 
 .ayah-browse-list { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; }
 .ayah-browse-item {
@@ -919,7 +924,7 @@ main#app {
   padding: 0 10px;
   user-select: none;
 }
-.word.masked:hover { opacity: 0.7; }
+@media (hover: hover) { .word.masked:hover { opacity: 0.7; } }
 
 .word.blank {
   display: inline-flex;
@@ -1050,7 +1055,7 @@ main#app {
   transition: transform .1s ease, background-color .15s ease, color .15s ease;
 }
 .audio-btn svg { width: 20px; height: 20px; }
-.audio-btn:hover { transform: translateY(-1px); }
+@media (hover: hover) { .audio-btn:hover { transform: translateY(-1px); } }
 #learn-audio-controls-playpause, #review-audio-controls-playpause {
   width: 54px;
   height: 54px;
@@ -1082,7 +1087,7 @@ main#app {
   cursor: pointer;
   transition: all .15s ease;
 }
-.mcq-btn:hover { border-color: var(--primary); transform: translateY(-2px); }
+@media (hover: hover) { .mcq-btn:hover { border-color: var(--primary); transform: translateY(-2px); } }
 .mcq-btn.correct { border-color: var(--good); background: #e7f1ea; }
 .mcq-btn.wrong { border-color: var(--danger); background: #f6dede; animation: shake .4s ease; }
 .mcq-btn:disabled { cursor: default; opacity: 0.7; }
@@ -1298,7 +1303,7 @@ main#app {
 .voice-mic-btn .stop-glyph { display: none; }
 .voice-mic-btn.listening .mic-glyph { display: none; }
 .voice-mic-btn.listening .stop-glyph { display: block; }
-.voice-mic-btn:hover { transform: scale(1.04); }
+@media (hover: hover) { .voice-mic-btn:hover { transform: scale(1.04); } }
 .voice-mic-btn.listening { background: var(--danger); animation: micBeat 1s ease-in-out infinite; }
 
 .mic-pulse-ring {
@@ -1422,7 +1427,7 @@ main#app {
   text-decoration: underline;
   cursor: pointer;
 }
-.link-btn:hover { color: var(--primary-dark); }
+@media (hover: hover) { .link-btn:hover { color: var(--primary-dark); } }
 .settings-legal { flex-direction: row; gap: 16px; justify-content: center; }
 .footer-links { display: block; margin-top: 8px; }
 .footer-links > * { margin: 0 4px; }
@@ -1499,7 +1504,7 @@ main#app {
   text-align: right;
   transition: transform .1s ease, border-color .15s ease;
 }
-.swatch:hover { transform: translateY(-2px); }
+@media (hover: hover) { .swatch:hover { transform: translateY(-2px); } }
 .swatch.active { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary) inset; }
 .swatch.locked { border-style: dashed; color: var(--muted); }
 .swatch-name { font-weight: 600; font-size: 0.9rem; }
