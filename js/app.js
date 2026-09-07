@@ -604,6 +604,7 @@ document.querySelectorAll("[data-tab]").forEach((btn) => {
 // (instead of just always resetting to 0) approximates the independent-
 // pages behavior a router would give without needing one.
 const tabScrollPositions = {};
+let pendingScrollRestoreTab = null; // set to a tab name to have switchTab return to where that tab was left
 let currentTabName = "dashboard";
 
 function switchTab(tab) {
@@ -615,11 +616,18 @@ function switchTab(tab) {
   if (tab === "dashboard") renderDashboard();
   if (tab === "review" && !isChallengeMode && !isEphemeralReview) startReviewSession();
   if (tab === "learn") loadLearnAyah();
+  // Opening a tab starts at its top. The remembered per-tab offset is only
+  // restored when something explicitly asks for it (finishing a review
+  // opened from a dashboard row - see finishReviewOrChallenge); applying it
+  // to every switch meant walking into a tab already scrolled down, with
+  // the header half cut off at the top.
+  const restoreTo = pendingScrollRestoreTab === tab ? tabScrollPositions[tab] || 0 : 0;
+  pendingScrollRestoreTab = null;
   // A tab's content can still be loading (async fetches in loadLearnAyah/
-  // the browse tab) when switchTab returns, so the saved scroll position
-  // is applied once rendering has had a moment to settle instead of
-  // immediately, or it can land wrong against not-yet-final content height.
-  setTimeout(() => window.scrollTo(0, tabScrollPositions[tab] || 0), 60);
+  // the browse tab) when switchTab returns, so the scroll is applied once
+  // rendering has had a moment to settle instead of immediately, or it can
+  // land wrong against not-yet-final content height.
+  setTimeout(() => window.scrollTo(0, restoreTo), 60);
 }
 
 // ---------- Dashboard ----------
@@ -2662,11 +2670,12 @@ function finishReviewOrChallenge() {
     empty.innerHTML = `<p>✅ انتهت المراجعة المؤقتة.</p><p class="muted">لم تُضَف هذه الآية إلى خطتك ولا إلى تقدّمك — يمكنك البحث عنها ومراجعتها في أي وقت من "تصفح وإضافة".</p>`;
   } else if (isSingleItemReview) {
     // Opened straight from one dashboard row, so return to that same spot
-    // instead of stranding the person on the (now-empty) review tab -
-    // switchTab's own per-tab scroll memory (see its definition) already
-    // restores exactly where the dashboard was left.
+    // instead of stranding the person on the (now-empty) review tab. This
+    // is the one flow that wants the remembered offset back, so it asks
+    // for it explicitly (switchTab otherwise opens a tab at its top).
     isSingleItemReview = false;
     showToast(randomEncouragement(), "success");
+    pendingScrollRestoreTab = "dashboard";
     switchTab("dashboard");
     return;
   } else {

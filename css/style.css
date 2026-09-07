@@ -104,6 +104,12 @@ html, body {
   min-height: 100%;
 }
 
+/* Nothing in this app is meant to scroll sideways - the strips that do
+   (the wird week, the learn mode switch) scroll inside themselves. `clip`
+   rather than `hidden` on purpose: `hidden` would turn the root into a
+   scroll container and break the sticky header on wide screens. */
+html { overflow-x: clip; }
+
 /* The pattern belongs on the ROOT element, not on body. body's box is only
    as tall as its content, so a background painted there stopped partway
    down the page and left the rest bare (visible on short tabs like the
@@ -326,6 +332,37 @@ main#app {
   padding: 18px 20px;
   margin-bottom: 18px;
   box-shadow: var(--shadow);
+}
+
+/* ---------- Ornament that follows the chosen background/theme ----------
+   Extends the vocabulary the ayah box already uses (an inset gold hairline
+   and gold corner brackets) out to the cards, so picking a decorative
+   background or the embroidered theme changes the app's whole frame rather
+   than only what shows between the cards. Deliberately escalating: the
+   plain choices stay bare, a decorative background adds one hairline, and
+   the embroidered theme - the ornate one by definition - also gets the
+   corners, like a Mushaf cover. Nothing here is louder than a hairline. */
+:root[data-bg="geometric-gold"] .panel,
+:root[data-bg="stars-scatter"] .panel,
+:root[data-theme="embroidered"] .panel {
+  outline: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  outline-offset: -6px;
+}
+:root[data-theme="embroidered"] .panel { position: relative; }
+:root[data-theme="embroidered"] .panel::before,
+:root[data-theme="embroidered"] .panel::after {
+  content: "";
+  position: absolute;
+  width: 15px;
+  height: 15px;
+  border: 2px solid var(--accent);
+  opacity: 0.5;
+  pointer-events: none;
+}
+:root[data-theme="embroidered"] .panel::before { top: 9px; right: 9px; border-left: none; border-bottom: none; }
+:root[data-theme="embroidered"] .panel::after { bottom: 9px; left: 9px; border-right: none; border-top: none; }
+:root[data-theme="embroidered"] .app-header {
+  border-bottom-color: color-mix(in srgb, var(--accent) 45%, var(--border));
 }
 
 .panel h2 { font-size: 1.05rem; margin-bottom: 4px; }
@@ -1402,7 +1439,10 @@ main#app {
    over the last ~80px of the page, so the footer needs the same clearance
    main#app gets - otherwise its text ends up hidden behind the nav. */
 @media (max-width: 820px) {
-  .app-footer { padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
+  /* Clear of the fixed bottom nav with room to spare - at the old 88px the
+     footer card's last line could still end up tucked under it on taller
+     nav bars (a gesture bar adds to the inset). */
+  .app-footer { padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px)); }
 }
 
 /* On phones the header isn't sticky (see the tabs/header rules above), so
