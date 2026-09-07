@@ -1731,10 +1731,63 @@ function mergeSessionText(baseText, sessionText) {
     }
     if (lastMatchK >= 3 && lcs[lastMatchK] / lastMatchK >= 0.6) {
       newWords = sessionWords.slice(lastMatchK);
+      // A pass cut short by the engine tends to end on a clipped word that
+      // the next pass then says in full ("...قالوا ام" -> "...قالوا امنا").
+      // Only here, right at a trim boundary, drop that stub in favour of
+      // the complete word - a short word that the next one starts with.
+      const stub = normBase[normBase.length - 1];
+      const full = newWords.length ? normalizeArabic(newWords[0]) : "";
+      if (stub && stub.length <= 3 && full.length > stub.length && full.startsWith(stub)) {
+        return [...baseWords.slice(0, -1), ...newWords].join(" ");
+      }
     }
   }
 
   return [...baseWords, ...newWords].join(" ");
+}
+
+// Collapses whole repeated PASSES inside one already-assembled transcript.
+//
+// Reciting with tajweed means long madd and long pauses, and on that input
+// some Android engines re-endpoint repeatedly and re-transcribe audio they
+// already returned - often handing back a single string that ALREADY
+// contains the phrase two or three times ("...قالوا ام / ...قالوا /
+// ...قالوا امنا واذا خلوا"), each pass restarting from the same opening
+// words and each cut off at a different point. Segment-level merging can't
+// help there: it's all one segment. (This is an engine behaviour, not an
+// app one - the same duplication shows up in other apps using the Web
+// Speech API on the same device.)
+//
+// So: split the text wherever its own opening words start again, and drop
+// any pass that a LATER pass repeats more completely. The last pass is
+// usually the complete one, and dropping only what reappears later means
+// nothing that was actually said gets lost.
+function dedupeRepeatedPasses(text) {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  const ANCHOR = 3;
+  if (words.length < ANCHOR * 2) return words.join(" ");
+  const norm = words.map(normalizeArabic);
+  const anchor = norm.slice(0, ANCHOR).join(" ");
+
+  const starts = [0];
+  for (let i = ANCHOR; i + ANCHOR <= norm.length; i++) {
+    if (norm.slice(i, i + ANCHOR).join(" ") === anchor) starts.push(i);
+  }
+  if (starts.length < 2) return words.join(" ");
+
+  const passes = starts.map((start, i) => words.slice(start, i + 1 < starts.length ? starts[i + 1] : words.length));
+  const repeatedLater = (pass, i) =>
+    passes.some((later, j) => {
+      if (j <= i) return false;
+      const a = pass.map(normalizeArabic);
+      const b = later.slice(0, pass.length + 2).map(normalizeArabic);
+      const lcs = prefixLCSLengths(a, b);
+      return lcs[a.length] / a.length >= 0.75;
+    });
+
+  return passes
+    .filter((pass, i) => !repeatedLater(pass, i))
+    .reduce((acc, pass) => mergeSessionText(acc, pass.join(" ")), "");
 }
 
 function createVoiceRecognitionInstance() {
@@ -1788,7 +1841,9 @@ function startVoiceModalRecording() {
       else if (i >= e.resultIndex) interim += transcript;
     }
     const merged = mergeVoiceSegments([...voiceModalFinalSegments.filter(Boolean), interim]);
-    voiceModalLiveTranscript = mergeSessionText(voiceModalBaseText, merged);
+    // dedupeRepeatedPasses last: the engine can hand back a single segment
+    // that already repeats itself, which segment-level merging can't see.
+    voiceModalLiveTranscript = dedupeRepeatedPasses(mergeSessionText(voiceModalBaseText, merged));
     statusText.textContent = voiceModalLiveTranscript || "🔴 يستمع الآن...";
   };
   recognition.onerror = (e) => {
