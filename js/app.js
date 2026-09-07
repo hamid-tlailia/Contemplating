@@ -86,10 +86,21 @@ const ICONS = {
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.35-4.35"/></svg>',
   chevronRight: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>',
   chevronLeft: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
+  xCircle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/></svg>',
+  pencil: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
+  optionsList: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="2"/><path d="M11 6h9"/><circle cx="5" cy="12" r="2"/><path d="M11 12h9"/><circle cx="5" cy="18" r="2"/><path d="M11 18h9"/></svg>',
+  coin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9 8.5A2 2 0 0 1 11 7h1.5a2 2 0 0 1 0 4H11.5a2 2 0 0 0 0 4H13a2 2 0 0 0 2-1.5"/><path d="M12 6v1.2M12 16.8V18"/></svg>',
 };
 function iconLabel(iconKey, text) {
   return `<span class="icon-label">${ICONS[iconKey]}<span>${text}</span></span>`;
 }
+
+// An SVG icon instead of the 🪙 emoji: emoji glyphs carry their own baked-in
+// internal artwork (some renderers even draw a "1" on the coin face) whose
+// vertical position within its own box is outside CSS's control, so no
+// amount of align-items/line-height ever lines it up with the point count
+// reliably across devices - a plain stroke icon we draw ourselves does.
+document.getElementById("header-coin-icon").innerHTML = ICONS.coin;
 
 function audioSrcFor(globalAyahNumber) {
   const reciter = RECITERS.find((r) => r.id === state.reciter) || RECITERS[0];
@@ -1789,7 +1800,11 @@ let learnWords = [];
 let learnWordIndex = 0;
 let learnMistakeThisRound = false;
 let learnMode = "mcq"; // 'mcq' | 'type' | 'partial'
-let learnMaskLevel = 0; // only used in 'partial' mode - 0 = none masked ... up to full mask
+let learnMaskLevel = 1; // only used in 'partial' mode - 0 = none masked ... up to full mask
+
+document.getElementById("mode-btn-partial").innerHTML = iconLabel("eyeOff", "اخفاء");
+document.getElementById("mode-btn-mcq").innerHTML = iconLabel("optionsList", "اختيار");
+document.getElementById("mode-btn-type").innerHTML = iconLabel("pencil", "كتابة");
 
 document.querySelectorAll(".mode-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
@@ -1856,7 +1871,10 @@ async function loadLearnAyah() {
   learnWords = stripWaqfTokens(ayahObj.text.split(/\s+/));
   learnWordIndex = 0;
   learnMistakeThisRound = false;
-  learnMaskLevel = 0;
+  // Starts partially masked, not fully shown - showing the whole ayah by
+  // default defeats the point of a "hide" mode; "إظهار الكل" is the
+  // explicit opt-out for someone who really does want to see it all.
+  learnMaskLevel = 1;
 
   document.getElementById("learn-ref").textContent = `${meta.name} - الآية ${pointer.ayah}`;
   document.getElementById("learn-round-info").textContent = `الجولة ${(item.roundStreak || 0) + 1} من ${ROUNDS_TO_MASTER}`;
@@ -2338,6 +2356,8 @@ document.getElementById("btn-learn-meanings").innerHTML = iconLabel("bulb", "م�
 document.getElementById("btn-learn-voice").innerHTML = iconLabel("mic", "اختبر بالنطق");
 document.getElementById("btn-learn-mask-more").innerHTML = iconLabel("eyeOff", "إخفاء المزيد");
 document.getElementById("btn-learn-mask-reset").innerHTML = iconLabel("eye", "إظهار الكل");
+document.getElementById("btn-learn-partial-wrong").innerHTML = iconLabel("xCircle", "أخطأت في كلمة");
+document.getElementById("btn-learn-partial-correct").innerHTML = iconLabel("check", "تذكرتها جيدًا");
 
 // ---------- Tafsir (persistent per-ayah button, reuses the whole-ayah fallback API) ----------
 // Shown in the shared info modal instead of an inline panel, so opening it
