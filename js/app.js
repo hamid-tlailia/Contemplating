@@ -522,6 +522,51 @@ function renderDashboard() {
 
 
   renderSurahProgress();
+  renderWirdCard();
+}
+
+const WIRD_DAY_LETTERS = ["ح", "ن", "ث", "ر", "خ", "ج", "س"]; // Sun..Sat initials, matches Date#getDay()
+
+function renderWirdCard() {
+  const target = state.wirdTarget || 5;
+  const today = todayISO();
+  const todayCount = state.dailyCounts[today] || 0;
+  const pct = Math.min(100, Math.round((todayCount / target) * 100));
+
+  const ring = document.getElementById("wird-ring");
+  if (ring) ring.style.background = `conic-gradient(var(--primary) ${pct}%, var(--border) ${pct}%)`;
+
+  const countText = document.getElementById("wird-count-text");
+  if (countText) countText.textContent = `${todayCount}/${target}`;
+
+  const weekEl = document.getElementById("wird-week");
+  if (weekEl) {
+    weekEl.innerHTML = "";
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const iso = d.toISOString().slice(0, 10);
+      const count = state.dailyCounts[iso] || 0;
+      const met = count >= target;
+      const isToday = iso === today;
+      const dayEl = document.createElement("div");
+      dayEl.className = `wird-day${met ? " met" : ""}${isToday ? " today" : ""}`;
+      dayEl.title = `${iso}: ${count}/${target}`;
+      dayEl.textContent = WIRD_DAY_LETTERS[d.getDay()];
+      weekEl.appendChild(dayEl);
+    }
+  }
+}
+
+function initWirdCard() {
+  const input = document.getElementById("wird-target-input");
+  if (!input) return;
+  input.value = state.wirdTarget || 5;
+  input.addEventListener("change", () => {
+    state.wirdTarget = Math.max(1, Math.min(100, Number(input.value) || 5));
+    saveState();
+    renderWirdCard();
+  });
 }
 
 function buildPlanItemRow(item, today) {
@@ -685,6 +730,7 @@ async function loadBrowseSurah(surahNumber) {
     selectedBrowseSurahName = meta.name;
     titleEl.textContent = `معاينة آيات سورة ${meta.name}`;
     metaInfo.textContent = `عدد آيات السورة: ${ayahs.length}`;
+    renderSurahInfoCaption("browse-surah-info", meta);
 
     const fromInput = document.getElementById("ayah-from");
     const toInput = document.getElementById("ayah-to");
@@ -1114,6 +1160,8 @@ async function loadLearnAyah() {
   document.getElementById("learn-ref").textContent = `سورة ${meta.name} - الآية ${pointer.ayah}`;
   document.getElementById("learn-round-info").textContent = `الجولة ${(item.roundStreak || 0) + 1} من ${ROUNDS_TO_MASTER}`;
   updateRoundDots(item.roundStreak || 0);
+  renderSurahInfoCaption("learn-surah-info", meta);
+  document.getElementById("learn-tafsir").classList.add("hidden");
 
   const audio = document.getElementById("learn-audio");
   audio.src = audioSrcFor(ayahObj.number);
@@ -1425,6 +1473,7 @@ function loadReviewItem() {
 
   document.getElementById("grade-controls").classList.add("hidden");
   document.getElementById("reveal-controls").classList.remove("hidden");
+  document.getElementById("review-tafsir").classList.add("hidden");
 }
 
 function renderMaskedText() {
@@ -1457,6 +1506,47 @@ function renderMaskedText() {
 }
 
 setupAudioToggle("btn-play-audio", "review-audio", "🔊 استماع");
+
+// ---------- Tafsir (persistent per-ayah button, reuses the whole-ayah fallback API) ----------
+
+const tafsirTextCache = {};
+async function fetchTafsirText(surah, ayah) {
+  const key = `${surah}:${ayah}`;
+  if (tafsirTextCache[key]) return tafsirTextCache[key];
+  const text = await fetchAyahTafsirFallback(surah, ayah)
+    .then((rows) => (rows[0] && rows[0].meaning) || "لا يتوفر تفسير لهذه الآية حاليًا.")
+    .catch(() => "تعذّر جلب التفسير. تحقق من اتصالك بالإنترنت.");
+  tafsirTextCache[key] = text;
+  return text;
+}
+
+function setupTafsirToggle(buttonId, panelId, getRef) {
+  const btn = document.getElementById(buttonId);
+  const panel = document.getElementById(panelId);
+  if (!btn || !panel) return;
+  btn.addEventListener("click", async () => {
+    if (!panel.classList.contains("hidden")) {
+      panel.classList.add("hidden");
+      return;
+    }
+    const ref = getRef();
+    if (!ref) return;
+    panel.classList.remove("hidden");
+    panel.textContent = "جاري تحميل التفسير...";
+    panel.textContent = await fetchTafsirText(ref.surah, ref.ayah);
+  });
+}
+
+setupTafsirToggle("btn-learn-tafsir", "learn-tafsir", () => {
+  if (!learnCurrentKey) return null;
+  const [surah, ayah] = learnCurrentKey.split(":").map(Number);
+  return { surah, ayah };
+});
+
+setupTafsirToggle("btn-review-tafsir", "review-tafsir", () => {
+  const item = reviewQueue[reviewIndex];
+  return item ? { surah: item.surah, ayah: item.ayah } : null;
+});
 
 document.getElementById("btn-mask-more").addEventListener("click", () => {
   maskLevel = Math.min(maskLevel + 1, 3);
@@ -1629,5 +1719,6 @@ if ("serviceWorker" in navigator) {
 applyTheme();
 applyFontSize();
 initSettingsPanel();
+initWirdCard();
 initBrowseTab();
 renderDashboard();
