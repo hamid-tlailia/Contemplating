@@ -1077,6 +1077,8 @@ main#app {
 .mode-btn.active { background: var(--primary); color: #fff; }
 
 .learn-ayah-display { min-height: 160px; }
+.ayah-display { flex-direction: column; }
+.ayah-scroll { width: 100%; }
 
 .info-modal-body .meaning-chip {
   display: flex;
@@ -1207,6 +1209,33 @@ main#app {
   /* The row itself leaves the flow when it pins above the keyboard, so its
      label has to go with it - left behind it would caption nothing. */
   .answer-area.pinned .answer-hint { display: none; }
+
+  /* Four grades wrap to 3 + 1 on a phone, which reads as one of them being
+     an afterthought; a 2x2 grid is the same height and deliberate. */
+  .grade-buttons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  /* The answer docks to the bottom of the screen when - and only when - the
+     ayah above it is tall enough to push it off. Sticky leaves a short ayah
+     exactly where it is in the flow and pulls a long one up to sit above
+     the bottom nav, so what you have to tap to answer is reachable whether
+     the ayah is three words or thirty. */
+  .answer-area {
+    position: sticky;
+    bottom: calc(66px + env(safe-area-inset-bottom, 0px));
+    z-index: 6;
+    background: var(--surface);
+    border-radius: 14px;
+    padding: 10px 8px 6px;
+    margin-inline: -4px;
+  }
+  /* Reads as a dock only while it actually is one. */
+  .answer-area.docked {
+    box-shadow: 0 -6px 18px rgba(0,0,0,0.10);
+    border: 1px solid var(--border);
+  }
+  /* Pinned above the keyboard, the row positions itself (see below) and
+     must not also try to stick. */
+  .answer-area.pinned { position: static; background: none; box-shadow: none; border: none; }
   .type-answer.keyboard-active {
     position: fixed;
     bottom: 0;
@@ -1555,6 +1584,37 @@ main#app {
    carries the ayah text off the top of the screen. */
 @media (max-width: 820px) {
   .learn-ayah-display { position: sticky; top: 0; z-index: 5; }
+
+  /* A long ayah (البقرة 25 runs to thirty words) is taller than the phone
+     screen on its own, so the answer below it - the options, or the "did I
+     recall it?" buttons - ended up off the bottom of the page with no sign
+     that it was there. The text keeps to its own height instead of the
+     page's: it scrolls inside the panel, and what has to be reachable to
+     answer always stays on screen. The frame, its corner ornaments and the
+     progress bar stay put - only the text moves. The reserve below is the
+     answer area plus the bottom nav; dvh (not vh) so it tracks the phone's
+     collapsing URL bar. */
+  /* The height itself is measured and set by fitLearnAyahHeight(): what's
+     left of the screen once the rows above, the answer below and the bottom
+     nav have taken theirs. The calc() here only covers the moment before
+     the first measurement. */
+  .learn-ayah-display .ayah-scroll {
+    max-height: calc(100dvh - 480px);
+    min-height: 130px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  #review-text-container .ayah-scroll {
+    max-height: calc(100dvh - 340px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  /* Only while there's more below: a fade at the bottom edge, so a capped
+     ayah reads as "continues" rather than as one that just ends. */
+  .ayah-scroll.has-more {
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 34px), transparent);
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 34px), transparent);
+  }
 }
 
 /* ---------- Points display & theme grid (settings panel) ---------- */

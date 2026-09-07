@@ -2164,6 +2164,108 @@ function scrollIntoViewIfNeeded(selector) {
 // for, so the ayah keeps its own rhythm and reads as a page with blanks -
 // the old equal-sized filled tiles turned a long ayah into a wall of grey
 // blocks with no shape at all. Capped so a long word can't outline itself.
+// A capped ayah panel scrolls inside its own frame, so two things have to
+// stay true by hand: the fade at its bottom edge must mean "there is more
+// below" and nothing else, and the word being asked for must never be the
+// part that's scrolled out of sight.
+function updateAyahScrollState(el) {
+  if (!el) return;
+  el.classList.toggle("has-more", el.scrollHeight - el.scrollTop - el.clientHeight > 4);
+}
+
+// The room the ayah can have is whatever the screen has left once the rows
+// above it, the answer below it and the bottom nav have taken theirs. That
+// total changes with the mode (a two-row grid of options vs one row of
+// buttons), the chosen ayah font size, and the phone - so it is measured
+// rather than guessed at as a constant: guess too low and half the panel is
+// wasted, guess too high and the answer is pushed off the bottom of the
+// screen, which is the problem this exists to fix.
+function fitAyahPanel(scrollId, tabId) {
+  const scroll = document.getElementById(scrollId);
+  const tab = document.getElementById(tabId);
+  if (!scroll || !tab || !tab.classList.contains("active")) return;
+  if (window.innerWidth > 820) {
+    scroll.style.maxHeight = "";
+    updateAyahScrollState(scroll);
+    return;
+  }
+  const dock = tab.querySelector(".answer-area:not(.hidden)");
+  const nav = document.querySelector(".tabs");
+  if (!dock || !nav || dock.offsetParent === null) return;
+
+  scroll.style.maxHeight = "none";
+  const rect = scroll.getBoundingClientRect();
+  // Page coordinates: the answer has to be reachable without scrolling at
+  // all, so the measurement is against the top of the page, not the top of
+  // whatever is currently in view.
+  const topInPage = rect.top + window.scrollY;
+  // What sits between the text and the answer, taken from the panel's own
+  // box (the progress bar, the panel's padding and border) plus the answer's
+  // margin. Reading it off the answer's position instead would measure zero
+  // whenever the answer is currently docked - which is exactly the state
+  // this is called in - and hand back a height too tall to fix anything.
+  const panel = scroll.closest(".ayah-display");
+  const gapBelow = (panel ? panel.getBoundingClientRect().bottom - rect.bottom : 0)
+    + (parseFloat(getComputedStyle(dock).marginTop) || 0);
+  const avail = window.innerHeight - nav.offsetHeight - dock.offsetHeight - gapBelow - topInPage - 24;
+  scroll.style.maxHeight = `${Math.max(130, Math.round(avail))}px`;
+  updateAyahScrollState(scroll);
+}
+
+// Declarations, not const arrows: applyFontSize() runs during start-up,
+// well before this point in the file.
+function fitLearnAyahHeight() { fitAyahPanel("learn-ayah-scroll", "tab-learn"); }
+function fitReviewAyahHeight() { fitAyahPanel("review-ayah-scroll", "tab-review"); }
+
+function keepLearnBlankInView() {
+  const box = document.getElementById("learn-ayah-scroll");
+  const blank = document.getElementById("learn-blank");
+  if (box && blank) {
+    const cr = box.getBoundingClientRect();
+    const br = blank.getBoundingClientRect();
+    // 34px at the bottom is the fade zone - stopping short of it keeps the
+    // active word fully legible rather than half-faded.
+    if (br.top < cr.top + 8) box.scrollTop += br.top - cr.top - 8;
+    else if (br.bottom > cr.bottom - 34) box.scrollTop += br.bottom - cr.bottom + 34;
+  }
+  updateAyahScrollState(box);
+}
+
+// A sticky element gives no signal that it is currently stuck, so the dock
+// treatment is worked out from where it lands: sitting on the sticky line
+// means it has been pulled up out of its place in the flow, and only then
+// does it need the shadow and border that say it's floating over content.
+function updateAnswerDockState() {
+  document.querySelectorAll(".answer-area").forEach((el) => {
+    const cs = getComputedStyle(el);
+    if (el.classList.contains("hidden") || cs.position !== "sticky") {
+      el.classList.remove("docked");
+      return;
+    }
+    const line = window.innerHeight - parseFloat(cs.bottom || "0");
+    el.classList.toggle("docked", Math.round(el.getBoundingClientRect().bottom) >= Math.round(line) - 1);
+  });
+}
+let dockRaf = 0;
+function scheduleAnswerDockUpdate() {
+  if (dockRaf) return;
+  dockRaf = requestAnimationFrame(() => {
+    dockRaf = 0;
+    updateAnswerDockState();
+  });
+}
+window.addEventListener("scroll", scheduleAnswerDockUpdate, { passive: true });
+window.addEventListener("resize", scheduleAnswerDockUpdate);
+
+["learn-ayah-scroll", "review-ayah-scroll"].forEach((id) => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener("scroll", () => updateAyahScrollState(el), { passive: true });
+});
+window.addEventListener("resize", () => {
+  fitLearnAyahHeight();
+  fitReviewAyahHeight();
+});
+
 function slotWidth(word) {
   const letters = word.replace(/[\u064B-\u0652\u0670\u0640]/g, "").length;
   const n = Math.min(8, Math.max(2, letters));
@@ -2175,13 +2277,11 @@ function renderLearnRound() {
 
   const mcqArea = document.getElementById("mcq-area");
   const typeArea = document.getElementById("type-area");
-  const partialControls = document.getElementById("learn-partial-controls");
-  const partialActions = document.getElementById("learn-partial-actions");
+  const partialArea = document.getElementById("partial-area");
   const wordProgress = document.getElementById("learn-word-progress");
   mcqArea.classList.toggle("hidden", learnMode !== "mcq");
   typeArea.classList.toggle("hidden", learnMode !== "type");
-  partialControls.classList.toggle("hidden", learnMode !== "partial");
-  partialActions.classList.toggle("hidden", learnMode !== "partial");
+  partialArea.classList.toggle("hidden", learnMode !== "partial");
   // Only the sequential modes walk word by word, so only they have a
   // position within the ayah worth showing.
   wordProgress.classList.toggle("hidden", learnMode === "partial");
@@ -2220,6 +2320,12 @@ function renderLearnRound() {
     input.className = "";
     input.focus();
   }
+
+  // Only now is the answer below the panel at its final size, so this is
+  // where the ayah can be given the rest of the screen.
+  fitLearnAyahHeight();
+  keepLearnBlankInView();
+  scheduleAnswerDockUpdate();
 }
 
 // 'partial' mode: shows the whole ayah at once with only some words masked
@@ -2234,6 +2340,8 @@ function renderLearnPartialMask() {
   const item = state.ayahs[learnCurrentKey];
   const round = item ? (item.roundStreak || 0) : 0;
   renderMaskedWordsInto(document.getElementById("learn-text"), learnWords, learnMaskLevel, round + 1);
+  fitLearnAyahHeight();
+  scheduleAnswerDockUpdate();
 }
 
 function finishPartialRound(recalledCorrectly) {
@@ -2654,6 +2762,8 @@ function loadReviewItem() {
 
   document.getElementById("grade-controls").classList.add("hidden");
   document.getElementById("reveal-controls").classList.remove("hidden");
+  fitReviewAyahHeight();
+  scheduleAnswerDockUpdate();
   closeInfoModal();
 }
 
@@ -2692,6 +2802,8 @@ function renderMaskedWordsInto(container, words, maskLevel, seedOffset = 0) {
 
 function renderMaskedText() {
   renderMaskedWordsInto(document.getElementById("review-text"), currentWords, maskLevel);
+  fitReviewAyahHeight();
+  scheduleAnswerDockUpdate();
 }
 
 setupAudioControls("review-audio-controls", "review-audio");
@@ -2779,6 +2891,11 @@ function revealForGrading() {
   renderMaskedText();
   document.getElementById("grade-controls").classList.remove("hidden");
   document.getElementById("reveal-controls").classList.add("hidden");
+  // The grading row is taller than the single reveal button it replaces, so
+  // the ayah has to give that height back - measured after the swap, not
+  // before it.
+  fitReviewAyahHeight();
+  scheduleAnswerDockUpdate();
 }
 document.getElementById("btn-reveal").addEventListener("click", revealForGrading);
 
@@ -2860,11 +2977,17 @@ function applyTheme() {
 
 function applyFontSize() {
   document.documentElement.style.setProperty("--ayah-font-size", FONT_SIZES[state.fontSize] || FONT_SIZES.medium);
+  // Bigger text needs a differently sized panel, and no resize event fires
+  // for a change made in the settings sheet.
+  fitLearnAyahHeight();
+  fitReviewAyahHeight();
 }
 
 function applyFont() {
   const font = FONTS.find((f) => f.id === state.font) || FONTS[0];
   document.documentElement.style.setProperty("--ayah-font-family", font.family);
+  fitLearnAyahHeight();
+  fitReviewAyahHeight();
 }
 
 function applyBackground() {

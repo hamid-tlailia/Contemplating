@@ -267,7 +267,9 @@
       </div>
 
       <div class="ayah-display learn-ayah-display">
-        <p id="learn-text" class="ayah-text"></p>
+        <div class="ayah-scroll" id="learn-ayah-scroll">
+          <p id="learn-text" class="ayah-text"></p>
+        </div>
         <div class="ayah-word-progress" id="learn-word-progress" aria-hidden="true"><span></span></div>
       </div>
 
@@ -284,6 +286,20 @@
         </div>
       </div>
 
+      <div class="answer-area hidden" id="partial-area">
+        <div id="learn-partial-controls" class="mode-controls">
+          <button id="btn-learn-mask-more" class="btn"></button>
+          <button id="btn-learn-mask-reset" class="btn"></button>
+        </div>
+        <div id="learn-partial-actions" class="reveal-controls">
+          <p class="muted">اختبر نفسك، ثم سجّل كيف تذكّرتها:</p>
+          <div class="partial-round-buttons">
+            <button id="btn-learn-partial-wrong" class="btn grade-again"></button>
+            <button id="btn-learn-partial-correct" class="btn grade-good"></button>
+          </div>
+        </div>
+      </div>
+
       <div class="audio-controls" id="learn-audio-controls">
         <button id="learn-audio-controls-playpause" class="audio-btn" aria-label="تشغيل الآية"></button>
         <button id="learn-audio-controls-stop" class="audio-btn" aria-label="إيقاف"></button>
@@ -296,17 +312,6 @@
         <button id="btn-learn-voice" class="btn hidden"></button>
       </div>
 
-      <div id="learn-partial-controls" class="mode-controls hidden">
-        <button id="btn-learn-mask-more" class="btn"></button>
-        <button id="btn-learn-mask-reset" class="btn"></button>
-      </div>
-      <div id="learn-partial-actions" class="reveal-controls hidden">
-        <p class="muted">اختبر نفسك، ثم سجّل كيف تذكّرتها:</p>
-        <div class="partial-round-buttons">
-          <button id="btn-learn-partial-wrong" class="btn grade-again"></button>
-          <button id="btn-learn-partial-correct" class="btn grade-good"></button>
-        </div>
-      </div>
 
       <audio id="learn-audio"></audio>
     </div>
@@ -390,7 +395,25 @@
         <div class="ayah-ref" id="review-ref"></div>
 
         <div class="ayah-display" id="review-text-container">
-          <p id="review-text" class="ayah-text"></p>
+          <div class="ayah-scroll" id="review-ayah-scroll">
+            <p id="review-text" class="ayah-text"></p>
+          </div>
+        </div>
+
+        <div class="answer-area" id="review-answer-area">
+          <div id="grade-controls" class="grade-controls hidden">
+            <p class="muted">قيّم مدى تذكرك لهذه الآية:</p>
+            <div class="grade-buttons">
+              <button class="btn grade-again" data-quality="0">لم أتذكر</button>
+              <button class="btn grade-hard" data-quality="3">صعبة</button>
+              <button class="btn grade-good" data-quality="4">جيدة</button>
+              <button class="btn grade-easy" data-quality="5">سهلة</button>
+            </div>
+          </div>
+
+          <div class="reveal-controls" id="reveal-controls">
+            <button id="btn-reveal" class="btn primary">✅ اختبرت نفسي، أظهر التقييم</button>
+          </div>
         </div>
 
         <audio id="review-audio"></audio>
@@ -408,19 +431,6 @@
           <button id="btn-review-voice" class="btn hidden"></button>
         </div>
 
-        <div id="grade-controls" class="grade-controls hidden">
-          <p class="muted">قيّم مدى تذكرك لهذه الآية:</p>
-          <div class="grade-buttons">
-            <button class="btn grade-again" data-quality="0">لم أتذكر</button>
-            <button class="btn grade-hard" data-quality="3">صعبة</button>
-            <button class="btn grade-good" data-quality="4">جيدة</button>
-            <button class="btn grade-easy" data-quality="5">سهلة</button>
-          </div>
-        </div>
-
-        <div class="reveal-controls" id="reveal-controls">
-          <button id="btn-reveal" class="btn primary">✅ اختبرت نفسي، أظهر التقييم</button>
-        </div>
       </div>
     </div>
   </section>
