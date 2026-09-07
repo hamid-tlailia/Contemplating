@@ -59,6 +59,8 @@ const ICONS = {
   flash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>',
   check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 4.5-5"/></svg>',
   checkDone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-11"/></svg>',
+  chevronRight: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>',
+  chevronLeft: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
 };
 function iconLabel(iconKey, text) {
   return `<span class="icon-label">${ICONS[iconKey]}<span>${text}</span></span>`;
@@ -589,17 +591,13 @@ function renderWirdCard() {
 
 // A way to log the daily wird from reading the Mushaf directly, instead of
 // only being able to bump dailyCounts by memorizing/reviewing - some days
-// the wird is just reading, not new memorization.
-let mushafLoadedCount = 0;
-
+// the wird is just reading, not new memorization. Reading happens in a
+// fullscreen, distraction-free reader (see openMushafReader below) rather
+// than inline on the dashboard.
 async function initMushafCard() {
   const select = document.getElementById("mushaf-surah-select");
   const loadBtn = document.getElementById("btn-mushaf-load");
-  const markBtn = document.getElementById("btn-mushaf-mark-read");
-  const area = document.getElementById("mushaf-reading-area");
-  const textEl = document.getElementById("mushaf-text");
   loadBtn.innerHTML = iconLabel("book", "عرض للقراءة");
-  markBtn.innerHTML = iconLabel("checkDone", "سجّلت قراءتها");
 
   try {
     const surahs = await fetchSurahList();
@@ -613,32 +611,113 @@ async function initMushafCard() {
     const from = Number(document.getElementById("mushaf-from").value) || 1;
     const to = Number(document.getElementById("mushaf-to").value) || from;
     if (!surahNumber || from > to) return;
-    area.classList.remove("hidden");
-    textEl.textContent = "جاري التحميل...";
-    markBtn.disabled = false;
-    markBtn.innerHTML = iconLabel("checkDone", "سجّلت قراءتها");
     try {
       const ayahs = await fetchSurahAyahs(surahNumber);
       const matches = ayahs.filter((a) => a.numberInSurah >= from && a.numberInSurah <= to);
-      mushafLoadedCount = matches.length;
-      textEl.textContent = matches.map((a) => a.text).join(" ");
+      if (matches.length === 0) return;
+      openMushafReader(matches);
     } catch (e) {
-      mushafLoadedCount = 0;
-      textEl.textContent = "تعذّر تحميل النص. تحقق من الاتصال بالإنترنت.";
+      showToast("تعذّر تحميل النص. تحقق من الاتصال بالإنترنت.", "error");
     }
   });
-
-  markBtn.addEventListener("click", () => {
-    if (mushafLoadedCount <= 0) return;
-    const today = todayISO();
-    state.dailyCounts[today] = (state.dailyCounts[today] || 0) + mushafLoadedCount;
-    saveState();
-    renderWirdCard();
-    markBtn.innerHTML = iconLabel("checkDone", "تم التسجيل");
-    markBtn.disabled = true;
-    showToast(`🌙 أُضيفت ${mushafLoadedCount} آية إلى ورد اليوم`, "success");
-  });
 }
+
+// ---------- Fullscreen Mushaf reader ----------
+// Paginated by the real Madani Mushaf page number the API already tags
+// each ayah with (so a page holds exactly as many ayahs as an actual
+// printed page, not an arbitrary chunk), with each page's ayah count
+// credited to today's wird the moment the person turns past it - no
+// separate "mark as read" step needed.
+
+let mushafPages = [];
+let mushafPageIndex = 0;
+let mushafSessionCountedPages = new Set();
+
+function groupAyahsIntoMushafPages(ayahs) {
+  const pages = [];
+  let current = null;
+  ayahs.forEach((a) => {
+    const pageNumber = a.page || 1;
+    if (!current || current.pageNumber !== pageNumber) {
+      current = { pageNumber, ayahs: [] };
+      pages.push(current);
+    }
+    current.ayahs.push(a);
+  });
+  return pages;
+}
+
+function openMushafReader(ayahs) {
+  mushafPages = groupAyahsIntoMushafPages(ayahs);
+  mushafPageIndex = 0;
+  mushafSessionCountedPages = new Set();
+  document.getElementById("mushaf-reader-overlay").classList.remove("hidden");
+  renderMushafReaderPage();
+}
+
+function closeMushafReader() {
+  document.getElementById("mushaf-reader-overlay").classList.add("hidden");
+}
+
+function renderMushafReaderPage() {
+  const page = mushafPages[mushafPageIndex];
+  document.getElementById("mushaf-reader-text").textContent = page.ayahs.map((a) => a.text).join(" ");
+  document.getElementById("mushaf-reader-page-label").textContent = `الصفحة ${mushafPageIndex + 1} من ${mushafPages.length}`;
+  document.getElementById("mushaf-reader-body").scrollTop = 0;
+  document.getElementById("btn-mushaf-reader-prev").disabled = mushafPageIndex === 0;
+  document.getElementById("btn-mushaf-reader-prev").innerHTML = iconLabel("chevronLeft", "الصفحة السابقة");
+  const isLast = mushafPageIndex === mushafPages.length - 1;
+  document.getElementById("btn-mushaf-reader-next").innerHTML = isLast
+    ? iconLabel("checkDone", "أنهيت القراءة")
+    : iconLabel("chevronRight", "الصفحة التالية");
+}
+
+function creditMushafPageToWird(page) {
+  if (mushafSessionCountedPages.has(page.pageNumber)) return;
+  mushafSessionCountedPages.add(page.pageNumber);
+  const today = todayISO();
+  state.dailyCounts[today] = (state.dailyCounts[today] || 0) + page.ayahs.length;
+  saveState();
+  renderWirdCard();
+}
+
+function goToNextMushafPage() {
+  const page = mushafPages[mushafPageIndex];
+  creditMushafPageToWird(page);
+  if (mushafPageIndex < mushafPages.length - 1) {
+    mushafPageIndex++;
+    renderMushafReaderPage();
+  } else {
+    showToast("🌙 أتممت القراءة! أُضيفت ضمن ورد اليوم.", "success");
+    closeMushafReader();
+  }
+}
+
+function goToPrevMushafPage() {
+  if (mushafPageIndex === 0) return;
+  mushafPageIndex--;
+  renderMushafReaderPage();
+}
+
+document.getElementById("btn-mushaf-reader-next").addEventListener("click", goToNextMushafPage);
+document.getElementById("btn-mushaf-reader-prev").addEventListener("click", goToPrevMushafPage);
+document.getElementById("btn-mushaf-reader-close").addEventListener("click", closeMushafReader);
+
+// Swipe right (finger moves toward the right) turns to the next page, to
+// match how a physical Mushaf/RTL reading app turns pages forward.
+(() => {
+  const body = document.getElementById("mushaf-reader-body");
+  let touchStartX = null;
+  body.addEventListener("touchstart", (e) => { touchStartX = e.touches[0].clientX; });
+  body.addEventListener("touchend", (e) => {
+    if (touchStartX === null) return;
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    touchStartX = null;
+    if (Math.abs(dx) < 50) return;
+    if (dx > 0) goToNextMushafPage();
+    else goToPrevMushafPage();
+  });
+})();
 
 function initWirdCard() {
   const input = document.getElementById("wird-target-input");
@@ -853,8 +932,10 @@ function buildAyahRow(surahNumber, surahName, ayahObj, showSurahBadge) {
     btnTitle = "تُضاف بشكل دائم إلى خطة حفظك";
   } else {
     btnClass += " jump";
-    btnHTML = iconLabel("flash", "جرّب الآن");
-    btnTitle = "مراجعة مؤقتة لآية واحدة فقط - لن تُضاف إلى خطتك";
+    btnHTML = iconLabel("flash", `جرّب الآن (${JUMP_REVIEW_COST}🪙)`);
+    btnTitle = state.points >= JUMP_REVIEW_COST
+      ? `مراجعة مؤقتة لآية واحدة فقط مقابل ${JUMP_REVIEW_COST} نقطة - لن تُضاف إلى خطتك`
+      : `يتطلب ${JUMP_REVIEW_COST} نقطة ولا تملك ما يكفي (تملك ${state.points})`;
   }
   const row = document.createElement("div");
   row.className = "ayah-browse-item";
@@ -875,18 +956,33 @@ function buildAyahRow(surahNumber, surahName, ayahObj, showSurahBadge) {
 }
 
 // A single ayah reaches the review queue in one of two ways: it's the next
-// one in this surah's memorization sequence (added for real), or it's a
-// jump the person found through search/browsing - in which case it opens as
-// a one-off practice round and is never written to state.ayahs at all,
-// so it can never clutter the dashboard no matter how many times it's used.
+// one in this surah's memorization sequence (added for real, free), or it's
+// a jump the person found through search/browsing - a detour outside their
+// memorization plan, so it costs points and opens as a one-off practice
+// round that's never written to state.ayahs, so it can never clutter the
+// dashboard no matter how many times it's used.
+const JUMP_REVIEW_COST = 5;
+
 function handleAddAyahClick(surahNumber, surahName, ayahObj, buttonEl) {
   if (isContiguousAddition(surahNumber, ayahObj.numberInSurah)) {
     addAyahDirectlyToSrs(surahNumber, surahName, ayahObj);
     buttonEl.innerHTML = iconLabel("checkDone", "أُضيفت");
     buttonEl.disabled = true;
     renderDashboard();
+  } else if (state.points >= JUMP_REVIEW_COST) {
+    showConfirmModal(
+      "قفزة عن تسلسل حفظك",
+      `هذه الآية ليست ضمن تسلسل حفظك الحالي. تجربتها الآن كمراجعة مؤقتة تكلّف ${JUMP_REVIEW_COST} 🪙 (رصيدك: ${state.points}).`,
+      `أنفق ${JUMP_REVIEW_COST} 🪙 وجرّبها`,
+      () => {
+        state.points -= JUMP_REVIEW_COST;
+        saveState();
+        renderPointsDisplay();
+        startEphemeralReview(surahNumber, surahName, ayahObj);
+      }
+    );
   } else {
-    startEphemeralReview(surahNumber, surahName, ayahObj);
+    showToast(`🪙 تجربة هذه الآية تتطلب ${JUMP_REVIEW_COST} نقطة ولا تملك ما يكفي (رصيدك: ${state.points}). أكمل حفظك بالتسلسل لتجمع المزيد.`, "error");
   }
 }
 
@@ -1472,22 +1568,40 @@ function setupAudioControls(prefix, audioId) {
 
 setupAudioControls("learn-audio-controls", "learn-audio");
 
-// ---------- Info modal (tafsir / word meanings) ----------
-// Shared bottom-sheet used for both, so opening either never pushes the
-// ayah text or the control buttons further down the page.
+// ---------- Info modal (tafsir / word meanings / generic confirm) ----------
+// Shared bottom-sheet used for all three, so opening tafsir/meanings never
+// pushes the ayah text or the control buttons further down the page.
 
 function openInfoModal(title, bodyHTML) {
   document.getElementById("info-modal-title").textContent = title;
   document.getElementById("info-modal-body").innerHTML = bodyHTML;
+  document.getElementById("info-modal-actions").classList.add("hidden");
   document.getElementById("info-modal-overlay").classList.remove("hidden");
 }
 function closeInfoModal() {
   document.getElementById("info-modal-overlay").classList.add("hidden");
+  document.getElementById("info-modal-actions").classList.add("hidden");
 }
 document.getElementById("btn-info-close").addEventListener("click", closeInfoModal);
+document.getElementById("info-modal-cancel").addEventListener("click", closeInfoModal);
 document.getElementById("info-modal-overlay").addEventListener("click", (e) => {
   if (e.target.id === "info-modal-overlay") closeInfoModal();
 });
+
+// A lightweight confirm dialog reusing the same modal shell instead of the
+// browser's native confirm(), so it matches the app's own visual style.
+function showConfirmModal(title, message, confirmLabel, onConfirm) {
+  document.getElementById("info-modal-title").textContent = title;
+  document.getElementById("info-modal-body").innerHTML = `<p>${message}</p>`;
+  document.getElementById("info-modal-actions").classList.remove("hidden");
+  const confirmBtn = document.getElementById("info-modal-confirm");
+  confirmBtn.textContent = confirmLabel;
+  confirmBtn.onclick = () => {
+    closeInfoModal();
+    onConfirm();
+  };
+  document.getElementById("info-modal-overlay").classList.remove("hidden");
+}
 
 document.getElementById("btn-learn-meanings").addEventListener("click", async () => {
   openInfoModal("معاني الكلمات", `<p class="muted">جاري تحميل المعاني...</p>`);
@@ -1514,6 +1628,8 @@ document.getElementById("btn-learn-voice").addEventListener("click", () => {
 
 let isChallengeMode = false;
 let isEphemeralReview = false;
+let isSingleItemReview = false;
+let dashboardScrollY = 0;
 
 // A jump-ahead ayah found via search/browsing opens as a single one-off
 // practice round instead of being written to state.ayahs - so it never
@@ -1530,6 +1646,7 @@ function startEphemeralReview(surahNumber, surahName, ayahObj) {
   reviewIndex = 0;
   isChallengeMode = false;
   isEphemeralReview = true;
+  isSingleItemReview = false;
   switchTab("review");
   document.getElementById("challenge-banner").classList.add("hidden");
   document.getElementById("review-empty").classList.add("hidden");
@@ -1539,10 +1656,14 @@ function startEphemeralReview(surahNumber, surahName, ayahObj) {
 }
 
 // Opening a single due ayah straight from its dashboard row, instead of
-// only being reachable through the full due-queue review session.
+// only being reachable through the full due-queue review session - and
+// once graded, returning to the exact dashboard scroll position instead of
+// stranding the person on the review tab (see finishReviewOrChallenge).
 function startSingleItemReview(item) {
-  switchTab("review"); // runs the normal due-queue session first...
-  reviewQueue = [item]; // ...then we narrow it to just this ayah
+  dashboardScrollY = window.scrollY;
+  switchTab("review"); // runs the normal due-queue session first (also resets isSingleItemReview)...
+  isSingleItemReview = true; // ...then this narrows it to just this ayah
+  reviewQueue = [item];
   reviewIndex = 0;
   document.getElementById("challenge-banner").classList.add("hidden");
   document.getElementById("review-empty").classList.add("hidden");
@@ -1556,6 +1677,7 @@ function startDailyChallenge() {
   reviewQueue = shuffleArray(mastered).slice(0, Math.min(5, mastered.length));
   reviewIndex = 0;
   isChallengeMode = true;
+  isSingleItemReview = false;
   challengeCorrectCount = 0;
   switchTab("review");
   document.getElementById("challenge-banner").classList.remove("hidden");
@@ -1582,6 +1704,7 @@ function getDueQueue() {
 function startReviewSession() {
   isChallengeMode = false;
   isEphemeralReview = false;
+  isSingleItemReview = false;
   document.getElementById("challenge-banner").classList.add("hidden");
   reviewQueue = getDueQueue();
   reviewIndex = 0;
@@ -1755,6 +1878,14 @@ function finishReviewOrChallenge() {
   } else if (isEphemeralReview) {
     isEphemeralReview = false;
     empty.innerHTML = `<p>✅ انتهت المراجعة المؤقتة.</p><p class="muted">لم تُضَف هذه الآية إلى خطتك ولا إلى تقدّمك — يمكنك البحث عنها ومراجعتها في أي وقت من "تصفح وإضافة".</p>`;
+  } else if (isSingleItemReview) {
+    // Opened straight from one dashboard row, so return to that same spot
+    // instead of stranding the person on the (now-empty) review tab.
+    isSingleItemReview = false;
+    showToast(randomEncouragement(), "success");
+    switchTab("dashboard");
+    requestAnimationFrame(() => window.scrollTo(0, dashboardScrollY));
+    return;
   } else {
     fireConfetti(false);
     showToast(randomEncouragement(), "success");

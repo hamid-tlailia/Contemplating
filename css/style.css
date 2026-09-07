@@ -878,6 +878,45 @@ main#app {
   color: var(--text);
   text-align: right;
 }
+.info-modal-actions { display: flex; gap: 10px; justify-content: center; margin-top: 18px; }
+
+/* ---------- Fullscreen Mushaf reader ---------- */
+
+.mushaf-reader-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+}
+.mushaf-reader-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.mushaf-reader-body {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  touch-action: pan-y;
+}
+.mushaf-reader-body .mushaf-text { font-size: 1.7rem; text-align: center; }
+.mushaf-reader-footer {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  padding: 14px 18px calc(14px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
 
 .voice-mic-area {
   display: flex;
@@ -1021,6 +1060,15 @@ main#app {
    main#app gets - otherwise its text ends up hidden behind the nav. */
 @media (max-width: 820px) {
   .app-footer { padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
+}
+
+/* On phones the header isn't sticky (see the tabs/header rules above), so
+   pinning the ayah panel itself keeps it visible when the on-screen
+   keyboard opens for "type the missing word" and the browser auto-scrolls
+   that input into view above the keyboard - without this the scroll also
+   carries the ayah text off the top of the screen. */
+@media (max-width: 820px) {
+  .learn-ayah-display { position: sticky; top: 0; z-index: 5; }
 }
 
 /* ---------- Points display & theme grid (settings panel) ---------- */
@@ -1171,7 +1219,6 @@ main#app {
   color: var(--text);
   font-size: 0.9rem;
 }
-.mushaf-reading-area { margin-top: 16px; text-align: center; }
 .mushaf-text {
   font-family: 'Amiri', serif;
   font-size: 1.5rem;

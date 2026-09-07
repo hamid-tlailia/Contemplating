@@ -126,6 +126,12 @@
       <div class="progress-bar"><div id="overall-progress-fill" class="progress-fill"></div></div>
     </div>
 
+    <div class="panel">
+      <h2>خطة المراجعة الحالية</h2>
+      <p class="muted">مرتبة حسب أقرب موعد مراجعة (التكرار المتباعد الذكي) — اضغط على اسم السورة لعرض آياتها</p>
+      <div id="plan-list" class="plan-list"></div>
+    </div>
+
     <div class="panel wird-card">
       <div class="wird-header">
         <h2>🌙 ورد اليوم</h2>
@@ -145,16 +151,12 @@
 
     <div class="panel mushaf-card">
       <h2>📖 قراءة اليوم من المصحف</h2>
-      <p class="muted">اقرأ من المصحف وسجّل قراءتك ضمن ورد اليوم، بمعزل عن الحفظ والمراجعة.</p>
+      <p class="muted">اقرأ بملء الشاشة بمعزل عن الحفظ والمراجعة - يُسجَّل ما تقرؤه ضمن ورد اليوم تلقائيًا كل ما قلّبت صفحة.</p>
       <div class="mushaf-controls">
         <select id="mushaf-surah-select"></select>
         <input type="number" id="mushaf-from" min="1" value="1" placeholder="من آية">
         <input type="number" id="mushaf-to" min="1" value="5" placeholder="إلى آية">
         <button id="btn-mushaf-load" class="btn primary"></button>
-      </div>
-      <div id="mushaf-reading-area" class="mushaf-reading-area hidden">
-        <p id="mushaf-text" class="ayah-text mushaf-text"></p>
-        <button id="btn-mushaf-mark-read" class="btn primary"></button>
       </div>
     </div>
 
@@ -162,12 +164,6 @@
       <h2>🌱 لم تبدأ رحلة الحفظ بعد</h2>
       <p class="muted">اضغط لتبدأ حفظ سورة الفاتحة آيةً آية، بأسلوب تفاعلي ممتع.</p>
       <button class="btn primary" data-tab="learn">ابدأ الآن بسورة الفاتحة</button>
-    </div>
-
-    <div class="panel">
-      <h2>خطة المراجعة الحالية</h2>
-      <p class="muted">مرتبة حسب أقرب موعد مراجعة (التكرار المتباعد الذكي) — اضغط على اسم السورة لعرض آياتها</p>
-      <div id="plan-list" class="plan-list"></div>
     </div>
 
     <div class="panel">
@@ -321,7 +317,7 @@
   <p class="muted">يعمل باستخدام بيانات القرآن الكريم من alquran.cloud و quran.com — يُحفظ تقدمك محليًا في متصفحك.</p>
 </footer>
 
-<!-- TAFSIR / WORD-MEANINGS MODAL -->
+<!-- TAFSIR / WORD-MEANINGS MODAL (also reused as a generic confirm dialog) -->
 <div id="info-modal-overlay" class="info-modal-overlay hidden">
   <div class="info-modal">
     <div class="info-modal-header">
@@ -329,6 +325,25 @@
       <button id="btn-info-close" class="icon-only-btn" aria-label="إغلاق">✕</button>
     </div>
     <div id="info-modal-body" class="info-modal-body"></div>
+    <div id="info-modal-actions" class="info-modal-actions hidden">
+      <button id="info-modal-cancel" class="btn">إلغاء</button>
+      <button id="info-modal-confirm" class="btn primary"></button>
+    </div>
+  </div>
+</div>
+
+<!-- FULLSCREEN MUSHAF READER (paginated by real Mushaf page, swipe to turn) -->
+<div id="mushaf-reader-overlay" class="mushaf-reader-overlay hidden">
+  <div class="mushaf-reader-header">
+    <button id="btn-mushaf-reader-close" class="icon-only-btn" aria-label="إغلاق">✕</button>
+    <span id="mushaf-reader-page-label" class="muted"></span>
+  </div>
+  <div class="mushaf-reader-body" id="mushaf-reader-body">
+    <p id="mushaf-reader-text" class="mushaf-text"></p>
+  </div>
+  <div class="mushaf-reader-footer">
+    <button id="btn-mushaf-reader-next" class="btn primary"></button>
+    <button id="btn-mushaf-reader-prev" class="btn"></button>
   </div>
 </div>
 
