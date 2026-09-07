@@ -3,17 +3,22 @@
 // instead of passive re-reading. All progress is stored locally (localStorage).
 
 const API_BASE = "https://api.alquran.cloud/v1";
-const AUDIO_CDN = "https://cdn.islamic.network/quran/audio/128"; // /{reciterId}/{globalAyahNumber}.mp3
+const AUDIO_CDN = "https://cdn.islamic.network/quran/audio"; // /{bitrate}/{reciterId}/{globalAyahNumber}.mp3
 const WORD_MEANING_API = "https://api.quran.com/api/v4/verses/by_key"; // /{surah}:{ayah}?words=true
 const STATE_KEY = "tadabbur_state_v1";
 const ROUNDS_TO_MASTER = 3;
 
+// This CDN doesn't serve every reciter at every bitrate - a handful of very
+// popular ones 403 at 128kbps but work at 64kbps, and vice versa. Each entry
+// records the bitrate actually verified working for that reciter's per-ayah
+// files, not just a name people recognize.
 const RECITERS = [
-  { id: "ar.alafasy", name: "مشاري راشد العفاسي" },
-  { id: "ar.abdulbasitmurattal", name: "عبد الباسط عبد الصمد" },
-  { id: "ar.husary", name: "محمود خليل الحصري" },
-  { id: "ar.minshawi", name: "محمد صديق المنشاوي" },
-  { id: "ar.abdurrahmaansudais", name: "عبد الرحمن السديس" },
+  { id: "ar.alafasy", name: "مشاري راشد العفاسي", bitrate: 128 },
+  { id: "ar.husary", name: "محمود خليل الحصري", bitrate: 128 },
+  { id: "ar.minshawi", name: "محمد صديق المنشاوي", bitrate: 128 },
+  { id: "ar.mahermuaiqly", name: "ماهر المعيقلي", bitrate: 128 },
+  { id: "ar.abdulbasitmurattal", name: "عبد الباسط عبد الصمد", bitrate: 64 },
+  { id: "ar.abdurrahmaansudais", name: "عبد الرحمن السديس", bitrate: 64 },
 ];
 
 const THEMES = [
@@ -24,7 +29,8 @@ const THEMES = [
 ];
 
 function audioSrcFor(globalAyahNumber) {
-  return `${AUDIO_CDN}/${state.reciter}/${globalAyahNumber}.mp3`;
+  const reciter = RECITERS.find((r) => r.id === state.reciter) || RECITERS[0];
+  return `${AUDIO_CDN}/${reciter.bitrate}/${reciter.id}/${globalAyahNumber}.mp3`;
 }
 
 const ENCOURAGEMENTS = [
@@ -167,18 +173,25 @@ function arabicWordsMatch(a, b) {
   return variantsA.some((va) => variantsB.includes(va));
 }
 
-// Some Quran text editions attach waqf (pause) annotations - most visibly
-// "صلى" (continuing is preferable) and "قلى" (pausing is preferable) - as
-// their own whitespace-separated token rather than a small superscript mark.
-// Those are typographic guidance, not words to memorize or offer as an MCQ
-// option, so they're dropped from the interactive word arrays. This list is
-// deliberately narrow and exact-match only: several other waqf signs are
-// single letters (ط ج ز م ص ق ...) that are also real standalone ayahs
-// (Quranic "muqatta'at") elsewhere, so guessing at those would risk silently
-// deleting real content instead of just an annotation.
+// Some Quran text editions attach waqf (pause) annotations - "صلى"
+// (continuing is preferable), "قلى" (pausing is preferable) and similar -
+// as their own whitespace-separated token instead of a small superscript
+// mark. Several of these are actually encoded as a *single* Unicode
+// "small ligature" codepoint (Quranic annotation signs, U+06D6-U+06DC) that
+// only *renders* as if it spelled out a word - as a combining mark (Mn) it
+// carries no base letter of its own. A real word always has at least one
+// base Arabic letter left after stripping combining marks; muqatta'at
+// (the single disjointed letters that open some surahs, e.g. ص ق ن) are
+// real letters (category Lo), never combining marks, so this never touches
+// them. The exact-match set below is a belt-and-suspenders backup for the
+// rarer case where an edition spells the annotation out with real letters.
 const WAQF_ANNOTATION_TOKENS = new Set(["صلى", "قلى"]);
 function stripWaqfTokens(words) {
-  return words.filter((w) => !WAQF_ANNOTATION_TOKENS.has(w.replace(/\p{Mn}/gu, "")));
+  return words.filter((w) => {
+    const stripped = w.replace(/\p{Mn}/gu, "");
+    if (!stripped) return false; // pure combining-mark ligature - annotation, not a word
+    return !WAQF_ANNOTATION_TOKENS.has(stripped);
+  });
 }
 
 // ---------- SM-2 spaced repetition ----------
@@ -636,7 +649,11 @@ function renderBrowsePreview() {
   let matches;
   if (searchVal) {
     const asNumber = Number(searchVal);
-    matches = ayahs.filter((a) => a.numberInSurah === asNumber || a.text.includes(searchVal));
+    // The Uthmani text is fully diacritized, so a plain typed word almost
+    // never appears as a literal substring of it - normalize both sides
+    // (strips tashkeel, folds letter variants) before comparing.
+    const searchNorm = normalizeArabic(searchVal);
+    matches = ayahs.filter((a) => a.numberInSurah === asNumber || normalizeArabic(a.text).includes(searchNorm));
     hint.textContent = `نتائج البحث عن "${searchVal}": ${matches.length} آية`;
   } else {
     const from = Number(document.getElementById("ayah-from").value) || 1;
@@ -1140,9 +1157,35 @@ function masterCurrentLearningAyah(item) {
   setTimeout(() => loadLearnAyah(), 1400);
 }
 
-document.getElementById("btn-learn-audio").addEventListener("click", () => {
-  document.getElementById("learn-audio").play().catch(() => {});
-});
+// A single play/pause toggle button per audio player, instead of a play-only
+// button with no way to stop it. Also surfaces a clear message (rather than
+// silently doing nothing) when a specific reciter's file 404s/403s on the
+// CDN, and lets the user recover the current ayah's src after a reciter
+// change without needing to reload the page.
+function setupAudioToggle(buttonId, audioId, playLabel) {
+  const btn = document.getElementById(buttonId);
+  const audio = document.getElementById(audioId);
+  const setLabel = (label) => { btn.textContent = label; };
+
+  btn.addEventListener("click", () => {
+    if (audio.paused) {
+      audio.play().catch(() => {});
+    } else {
+      audio.pause();
+      audio.currentTime = 0;
+      setLabel(playLabel);
+    }
+  });
+  audio.addEventListener("playing", () => setLabel("⏹ إيقاف"));
+  audio.addEventListener("pause", () => setLabel(playLabel));
+  audio.addEventListener("ended", () => setLabel(playLabel));
+  audio.addEventListener("error", () => {
+    setLabel(playLabel);
+    showToast("تعذّر تشغيل هذا القارئ لهذه الآية. جرّب قارئًا آخر من الإعدادات ⚙️", "error");
+  });
+}
+
+setupAudioToggle("btn-learn-audio", "learn-audio", "🔊 استماع للآية");
 
 document.getElementById("btn-learn-meanings").addEventListener("click", async () => {
   const container = document.getElementById("learn-meanings");
@@ -1271,9 +1314,7 @@ function renderMaskedText() {
   });
 }
 
-document.getElementById("btn-play-audio").addEventListener("click", () => {
-  document.getElementById("review-audio").play().catch(() => {});
-});
+setupAudioToggle("btn-play-audio", "review-audio", "🔊 استماع");
 
 document.getElementById("btn-mask-more").addEventListener("click", () => {
   maskLevel = Math.min(maskLevel + 1, 3);
@@ -1350,6 +1391,27 @@ function applyFontSize() {
   document.documentElement.style.setProperty("--ayah-font-size", FONT_SIZES[state.fontSize] || FONT_SIZES.medium);
 }
 
+// Update whichever ayah's audio element is currently loaded to the newly
+// chosen reciter's file, instead of leaving the old reciter's src in place
+// until the next ayah loads (which used to make it look like changing the
+// reciter needed a page reload to take effect).
+function refreshCurrentAudioSrc() {
+  const learnItem = state.ayahs[learnCurrentKey];
+  if (learnItem) {
+    const learnAudio = document.getElementById("learn-audio");
+    const wasPlaying = !learnAudio.paused;
+    learnAudio.src = audioSrcFor(learnItem.globalNumber);
+    if (wasPlaying) learnAudio.play().catch(() => {});
+  }
+  const reviewItem = reviewQueue[reviewIndex];
+  if (reviewItem) {
+    const reviewAudio = document.getElementById("review-audio");
+    const wasPlaying = !reviewAudio.paused;
+    reviewAudio.src = audioSrcFor(reviewItem.globalNumber);
+    if (wasPlaying) reviewAudio.play().catch(() => {});
+  }
+}
+
 function initSettingsPanel() {
   const overlay = document.getElementById("settings-overlay");
   const reciterSelect = document.getElementById("reciter-select");
@@ -1371,6 +1433,7 @@ function initSettingsPanel() {
   reciterSelect.addEventListener("change", () => {
     state.reciter = reciterSelect.value;
     saveState();
+    refreshCurrentAudioSrc();
     showToast("تم تغيير القارئ ✓", "success");
   });
   themeSelect.addEventListener("change", () => {
