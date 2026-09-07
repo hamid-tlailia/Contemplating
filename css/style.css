@@ -1680,6 +1680,62 @@ main#app {
 /* ---------- Daily wird card ---------- */
 
 .wird-card { text-align: center; }
+
+/* The when/where commitment. Deliberately quiet and text-first: it's a
+   sentence the person wrote about themselves, not another counter. */
+.wird-plan-card { text-align: center; }
+.wird-plan-sentence {
+  font-family: var(--ayah-font-family, 'Amiri', serif);
+  font-size: 1.35rem;
+  line-height: 1.9;
+  margin: 6px 0 4px;
+  color: var(--primary);
+}
+.wird-plan-card .muted { margin: 0 0 12px; }
+.wird-plan-field {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 12px 0;
+}
+.wird-plan-label { font-size: 0.85rem; color: var(--muted); }
+.wird-plan-anchors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+.wird-anchor-btn {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.85rem;
+  padding: 8px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease;
+}
+.wird-anchor-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+.wird-plan-field input {
+  font-family: inherit;
+  font-size: 0.95rem;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+.wird-plan-field input[type="text"] { min-width: 220px; text-align: center; }
+.wird-plan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 12px;
+}
 .wird-header {
   display: flex;
   align-items: center;

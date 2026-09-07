@@ -160,6 +160,7 @@ function loadState() {
       parsed.mushafPointer = parsed.mushafPointer || null; // {surah, ayah} - where the Mushaf reader should resume next
       parsed.reviewDailyCap = parsed.reviewDailyCap == null ? REVIEW_DAILY_CAP_DEFAULT : parsed.reviewDailyCap;
       parsed.reviewCounts = parsed.reviewCounts || {};
+      parsed.wirdPlan = parsed.wirdPlan || null;
       return parsed;
     }
   } catch (e) {
@@ -187,6 +188,7 @@ function loadState() {
     mushafPointer: null, // {surah, ayah} - where the Mushaf reader should resume next
     reviewDailyCap: REVIEW_DAILY_CAP_DEFAULT, // 0 = no cap
     reviewCounts: {}, // "YYYY-MM-DD" -> ayahs graded in a review session that day
+    wirdPlan: null, // {anchor, time:"HH:MM", place} - the when/where commitment
   };
 }
 
@@ -409,12 +411,51 @@ function arabicWordsMatch(a, b) {
 // them. The exact-match set below is a belt-and-suspenders backup for the
 // rarer case where an edition spells the annotation out with real letters.
 const WAQF_ANNOTATION_TOKENS = new Set(["صلى", "قلى"]);
+
+// Annotation codepoints that print as their own visible symbol rather than
+// as a mark on a letter, and so end up looking like text:
+//
+//   U+0600-U+0605  Arabic number signs (bracket verse/sajdah numbers)
+//   U+0610-U+0617  honorific ligatures (عليه السلام, رضي الله عنه, ...)
+//   U+06D6-U+06DC  the waqf/wasl ligatures  ۖ ۗ ۘ ۙ ۚ ۛ ۜ
+//   U+06DD         end of ayah  ۝
+//   U+06DE         start of rub el hizb  ۞   <- the lone "*" that turned up
+//                                              as a multiple-choice option
+//   U+06E9         place of sajdah  ۩
+//   U+FD3E/U+FD3F  ornate parentheses
+//
+// Deliberately NOT here: the harakat, the dagger alef (U+0670) and the
+// small recitation marks (U+06DF-U+06E8) - those belong to the word and
+// removing them would change how it is read.
+const QURAN_ANNOTATION_RE = /[\u0600-\u0605\u0610-\u0617\u06D6-\u06DE\u06E9\uFD3E\uFD3F]/g;
+
+// The words of an ayah as something to memorize: annotation stripped from
+// inside each word, and any token that was nothing but annotation dropped.
+// A real word always has at least one base Arabic letter left after
+// combining marks are removed; muqatta'at (the disjointed letters opening
+// some surahs, e.g. ص ق ن) are real letters (category Lo), never combining
+// marks, so this never touches them.
 function stripWaqfTokens(words) {
-  return words.filter((w) => {
-    const stripped = w.replace(/\p{Mn}/gu, "");
-    if (!stripped) return false; // pure combining-mark ligature - annotation, not a word
-    return !WAQF_ANNOTATION_TOKENS.has(stripped);
-  });
+  return words
+    .map((w) => w.replace(QURAN_ANNOTATION_RE, "").trim())
+    .filter((w) => {
+      const stripped = w.replace(/\p{Mn}/gu, "");
+      if (!stripped) return false; // pure combining-mark ligature - annotation, not a word
+      return !WAQF_ANNOTATION_TOKENS.has(stripped);
+    });
+}
+
+// Same, straight from an ayah's raw text.
+function quranWords(text) {
+  return stripWaqfTokens(String(text || "").split(/\s+/));
+}
+
+// The ayah as one clean string, for the places that print it as prose
+// rather than word by word. The Mushaf reader deliberately does NOT use
+// this: there the annotation is the point - it's a reading view, and ۞
+// marks where a hizb begins.
+function cleanAyahText(text) {
+  return quranWords(text).join(" ");
 }
 
 // ---------- SM-2 spaced repetition ----------
@@ -767,12 +808,174 @@ function renderDashboard() {
 
   renderSurahProgress();
   renderWirdCard();
+  renderWirdPlanCard();
 }
 
 // Two-letter abbreviations (matches Intl's own ar-locale "narrow" weekday
 // format) rather than a single letter - single letters like ح/خ/ج look too
 // similar to tell apart at a glance in a small circle.
 const WIRD_DAY_FULL = ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"]; // Sun..Sat, matches Date#getDay()
+
+// ---------- The when/where commitment ("عهد الورد") ----------
+//
+// An intention with no time and no place attached decays into "some day":
+// naming both, once, is what turns the wird into something that happens.
+// The app can't schedule a notification for a closed page without a server
+// (and this one deliberately has none), so the reminder is handed to the
+// phone's own calendar as a repeating event - which survives the app being
+// shut, reinstalled, or offline.
+const WIRD_ANCHORS = [
+  { id: "fajr", label: "بعد الفجر", time: "05:30" },
+  { id: "dhuhr", label: "بعد الظهر", time: "13:00" },
+  { id: "asr", label: "بعد العصر", time: "16:30" },
+  { id: "maghrib", label: "بعد المغرب", time: "18:45" },
+  { id: "isha", label: "بعد العشاء", time: "20:30" },
+  { id: "custom", label: "وقت أختاره", time: "07:00" },
+];
+
+let wirdPlanDraftAnchor = "fajr";
+
+function wirdPlanSentence(plan) {
+  const anchor = WIRD_ANCHORS.find((a) => a.id === plan.anchor) || WIRD_ANCHORS[0];
+  const when = plan.anchor === "custom" ? `الساعة ${plan.time}` : `${anchor.label} (${plan.time})`;
+  const where = plan.place ? ` ${plan.place}` : "";
+  return `سأحفظ وردي ${when}${where}.`;
+}
+
+function renderWirdPlanCard() {
+  const view = document.getElementById("wird-plan-view");
+  const form = document.getElementById("wird-plan-form");
+  if (!view || !form) return;
+  const plan = state.wirdPlan;
+
+  const anchors = document.getElementById("wird-plan-anchors");
+  if (!anchors.childElementCount) {
+    WIRD_ANCHORS.forEach((a) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "wird-anchor-btn";
+      btn.dataset.anchor = a.id;
+      btn.textContent = a.label;
+      btn.addEventListener("click", () => {
+        wirdPlanDraftAnchor = a.id;
+        // The clock time follows the chosen anchor unless it's the free
+        // one - a rough default the person can correct, since the app has
+        // no location and so no real prayer times.
+        if (a.id !== "custom") document.getElementById("wird-plan-time").value = a.time;
+        renderWirdPlanAnchors();
+      });
+      anchors.appendChild(btn);
+    });
+  }
+
+  if (!plan) {
+    view.classList.add("hidden");
+    form.classList.remove("hidden");
+    document.getElementById("btn-wird-plan-cancel").classList.add("hidden");
+    renderWirdPlanAnchors();
+    return;
+  }
+
+  form.classList.add("hidden");
+  view.classList.remove("hidden");
+  document.getElementById("wird-plan-sentence").textContent = wirdPlanSentence(plan);
+
+  // Held to today only, and phrased as a nudge rather than a scolding: a
+  // missed commitment that greets you as a failure is one you stop making.
+  const type = state.wirdTargetType || "ayahs";
+  const counts = type === "pages" ? state.dailyPageCounts : state.dailyCounts;
+  const done = (counts[todayISO()] || 0) >= (state.wirdTarget || 5);
+  const now = new Date();
+  const nowHM = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  const statusEl = document.getElementById("wird-plan-status");
+  if (done) statusEl.textContent = "✅ وفّيت بعهد اليوم. بارك الله فيك.";
+  else if (nowHM >= plan.time) statusEl.textContent = "حان موعدك — ورد اليوم ما زال ينتظرك 🌿";
+  else statusEl.textContent = "موعدك لم يحن بعد.";
+  document.getElementById("btn-wird-plan-start").classList.toggle("hidden", done);
+  renderWirdPlanAnchors();
+}
+
+function renderWirdPlanAnchors() {
+  document.querySelectorAll("#wird-plan-anchors .wird-anchor-btn").forEach((b) => {
+    b.classList.toggle("active", b.dataset.anchor === wirdPlanDraftAnchor);
+  });
+}
+
+function openWirdPlanForm() {
+  const plan = state.wirdPlan;
+  wirdPlanDraftAnchor = (plan && plan.anchor) || "fajr";
+  document.getElementById("wird-plan-time").value = (plan && plan.time) || "05:30";
+  document.getElementById("wird-plan-place").value = (plan && plan.place) || "";
+  document.getElementById("wird-plan-view").classList.add("hidden");
+  document.getElementById("wird-plan-form").classList.remove("hidden");
+  document.getElementById("btn-wird-plan-cancel").classList.toggle("hidden", !plan);
+  renderWirdPlanAnchors();
+}
+
+function saveWirdPlan() {
+  const time = document.getElementById("wird-plan-time").value || "05:30";
+  const place = document.getElementById("wird-plan-place").value.trim();
+  state.wirdPlan = { anchor: wirdPlanDraftAnchor, time, place, created: todayISO() };
+  saveState();
+  renderWirdPlanCard();
+  showToast(`🤝 ${wirdPlanSentence(state.wirdPlan)}`, "success");
+}
+
+// A daily repeating calendar event, written as a local ("floating") time so
+// it fires at the same hour wherever the phone is.
+function wirdPlanICS(plan) {
+  const [h, m] = plan.time.split(":");
+  const start = new Date();
+  start.setHours(Number(h), Number(m), 0, 0);
+  if (start < new Date()) start.setDate(start.getDate() + 1);
+  const local = (d) =>
+    `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}T` +
+    `${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}00`;
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").slice(0, 15) + "Z";
+  // Folding long lines is part of the format; the description is the
+  // commitment itself, so it's what the reminder actually says.
+  return [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Tadabbur//Wird//AR",
+    "CALSCALE:GREGORIAN",
+    "BEGIN:VEVENT",
+    `UID:wird-${Date.now()}@tadabbur`,
+    `DTSTAMP:${stamp}`,
+    `DTSTART:${local(start)}`,
+    `DURATION:PT20M`,
+    "RRULE:FREQ=DAILY",
+    "SUMMARY:ورد الحفظ - تدبر",
+    `DESCRIPTION:${wirdPlanSentence(plan)}`,
+    "BEGIN:VALARM",
+    "TRIGGER:-PT5M",
+    "ACTION:DISPLAY",
+    "DESCRIPTION:اقترب موعد وردك",
+    "END:VALARM",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n");
+}
+
+function downloadWirdPlanICS() {
+  if (!state.wirdPlan) return;
+  const blob = new Blob([wirdPlanICS(state.wirdPlan)], { type: "text/calendar;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "wird-tadabbur.ics";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  showToast("افتح الملف الذي نُزّل لإضافة التذكير اليومي إلى تقويم جوالك 📅", "success");
+}
+
+document.getElementById("btn-wird-plan-save").addEventListener("click", saveWirdPlan);
+document.getElementById("btn-wird-plan-edit").addEventListener("click", openWirdPlanForm);
+document.getElementById("btn-wird-plan-cancel").addEventListener("click", renderWirdPlanCard);
+document.getElementById("btn-wird-plan-ics").addEventListener("click", downloadWirdPlanICS);
+document.getElementById("btn-wird-plan-start").addEventListener("click", () => openTodaysWirdReading());
 
 function renderWirdCard() {
   const type = state.wirdTargetType || "ayahs";
@@ -1205,7 +1408,7 @@ function buildPlanItemRow(item, today) {
   const reviewBtn = isDue ? `<button class="btn btn-review-now">${iconLabel("check", "\u0631\u0627\u062c\u0639\u0647\u0627 \u0627\u0644\u0622\u0646")}</button>` : "";
   div.innerHTML = `
     <span class="ref">\u0622\u064a\u0629 ${item.ayah}</span>
-    <span class="snippet">${item.text || ""}</span>
+    <span class="snippet">${cleanAyahText(item.text)}</span>
     <span class="badge ${badge}">${badgeText}</span>
     ${tempBadge}
     ${reviewBtn}
@@ -1441,7 +1644,7 @@ function buildAyahRow(surahNumber, surahName, ayahObj, showSurahBadge) {
       </span>
       <button class="${btnClass}" ${already ? "disabled" : ""} title="${btnTitle}">${btnHTML}</button>
     </div>
-    <p class="ayah-browse-text">${ayahObj.text}</p>
+    <p class="ayah-browse-text">${cleanAyahText(ayahObj.text)}</p>
   `;
   row.querySelector("button").addEventListener("click", (e) => {
     handleAddAyahClick(surahNumber, surahName, ayahObj, e.currentTarget);
@@ -1632,7 +1835,7 @@ function voiceSupported() {
 // instead, so a single missed word doesn't cascade into a false failure for
 // the rest of the ayah.
 function diffRecitation(correctText, transcript) {
-  const correctWords = stripWaqfTokens(correctText.split(/\s+/));
+  const correctWords = quranWords(correctText);
   const saidWords = mergeDetachedConjunctions(transcript).split(/\s+/).filter(Boolean);
 
   const n = correctWords.length;
@@ -2123,7 +2326,7 @@ async function loadLearnAyah() {
 
   const item = getOrCreateLearningItem(pointer.surah, meta.name, ayahObj);
   learnCurrentKey = `${pointer.surah}:${pointer.ayah}`;
-  learnWords = stripWaqfTokens(ayahObj.text.split(/\s+/));
+  learnWords = quranWords(ayahObj.text);
   learnWordIndex = 0;
   learnMistakeThisRound = false;
   // Starts partially masked, not fully shown - showing the whole ayah by
@@ -2370,7 +2573,7 @@ function buildMcqOptions(correctWord, ayahWords) {
   ayahWords.forEach(addCandidate);
   const surahWords = surahAyahsCache[state.learningPointer.surah];
   if (surahWords) {
-    shuffleArray(surahWords).forEach((a) => a.text.split(/\s+/).forEach(addCandidate));
+    shuffleArray(surahWords).forEach((a) => quranWords(a.text).forEach(addCandidate));
   }
   const distractors = shuffleArray(pool).slice(0, 3);
   let fallbackIdx = 0;
@@ -2753,7 +2956,7 @@ function loadReviewItem() {
   document.getElementById("review-progress-fill").style.width = `${((reviewIndex) / reviewQueue.length) * 100}%`;
   document.getElementById("review-ref").textContent = `${item.surahName || `سورة ${item.surah}`} - الآية ${item.ayah}`;
 
-  currentWords = stripWaqfTokens(item.text.split(/\s+/));
+  currentWords = quranWords(item.text);
   maskLevel = 0;
   renderMaskedText();
 

@@ -202,6 +202,40 @@
       </div>
     </div>
 
+    <div class="panel wird-plan-card" id="wird-plan-card">
+      <h2>🤝 عهد الورد</h2>
+
+      <div id="wird-plan-view" class="hidden">
+        <p class="wird-plan-sentence" id="wird-plan-sentence"></p>
+        <p class="muted" id="wird-plan-status"></p>
+        <div class="wird-plan-actions">
+          <button id="btn-wird-plan-start" class="btn primary">ابدأ الآن</button>
+          <button id="btn-wird-plan-ics" class="btn">تذكير يومي في التقويم</button>
+          <button id="btn-wird-plan-edit" class="btn">تعديل العهد</button>
+        </div>
+      </div>
+
+      <div id="wird-plan-form">
+        <p class="muted">حدِّد <strong>متى</strong> و<strong>أين</strong> مرة واحدة. النية المعلّقة ("سأحفظ يومًا ما") تتبخّر، أما ربط الورد بموعد ومكان معلومين فهو أقوى ما يحوّله إلى عادة.</p>
+        <div class="wird-plan-field">
+          <span class="wird-plan-label">متى؟</span>
+          <div class="wird-plan-anchors" id="wird-plan-anchors"></div>
+        </div>
+        <label class="wird-plan-field">
+          <span class="wird-plan-label">في أي ساعة تقريبًا؟</span>
+          <input type="time" id="wird-plan-time" value="05:30">
+        </label>
+        <label class="wird-plan-field">
+          <span class="wird-plan-label">أين؟</span>
+          <input type="text" id="wird-plan-place" maxlength="40" placeholder="مثلاً: في غرفتي">
+        </label>
+        <div class="wird-plan-actions">
+          <button id="btn-wird-plan-save" class="btn primary">أثبِت عهدي</button>
+          <button id="btn-wird-plan-cancel" class="btn hidden">إلغاء</button>
+        </div>
+      </div>
+    </div>
+
     <div class="panel mushaf-card">
       <h2>📖 قراءة اليوم من المصحف</h2>
       <p class="muted">اقرأ بملء الشاشة بمعزل عن الحفظ والمراجعة - يُضاف ما تقرؤه إلى ورد اليوم عند تأكيد إنهاء القراءة. يتذكّر التطبيق آخر موضع توقفت عنده ليبدأ منه المرة القادمة.</p>
