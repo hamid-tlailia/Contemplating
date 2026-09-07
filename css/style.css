@@ -99,11 +99,18 @@
 
 html, body {
   margin: 0;
-  background: var(--bg);
   color: var(--text);
   font-family: 'Tajawal', system-ui, sans-serif;
   min-height: 100%;
 }
+
+/* The pattern belongs on the ROOT element, not on body. body's box is only
+   as tall as its content, so a background painted there stopped partway
+   down the page and left the rest bare (visible on short tabs like the
+   review one). A background on the root paints the whole canvas however
+   tall the viewport is; body stays transparent so it doesn't cover it. */
+html { background-color: var(--bg); }
+body { background-color: transparent; }
 
 /* Subtle Islamic geometric pattern (8-point star tiling) behind everything -
    the default background choice (see BACKGROUNDS in app.js); the other
@@ -111,7 +118,7 @@ html, body {
 /* No full-size gradient layer in front of the tile: a first layer sized
    `auto` covers the whole page opaquely and hid the pattern entirely (the
    reason "زخرفة ذهبية" looked like it did nothing at all). */
-:root:not([data-bg]) body, :root[data-bg="default"] body {
+:root:not([data-bg]), :root[data-bg="default"] {
   background-image:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60' viewBox='0 0 60 60'%3E%3Cg fill='none' stroke='%231f6f5c' stroke-opacity='0.12' stroke-width='1'%3E%3Cpath d='M30 2 L37 15 L52 15 L41 25 L46 40 L30 31 L14 40 L19 25 L8 15 L23 15 Z'/%3E%3Ccircle cx='30' cy='30' r='27'/%3E%3C/g%3E%3C/svg%3E");
   background-size: 60px 60px;
@@ -120,17 +127,17 @@ html, body {
    between opaque panel cards (not the whole page), so - unlike the default
    above - they use noticeably higher contrast and smaller, denser tiles;
    the first attempt at this was too subtle to see there. */
-:root[data-bg="geometric-gold"] body {
+:root[data-bg="geometric-gold"] {
   background-image:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'%3E%3Cg fill='none' stroke='%23b98b2a' stroke-opacity='0.45' stroke-width='1.4'%3E%3Cpath d='M28 3 L34 14 L46 14 L37 23 L41 37 L28 29 L15 37 L19 23 L10 14 L22 14 Z'/%3E%3Ccircle cx='28' cy='28' r='25'/%3E%3C/g%3E%3C/svg%3E");
   background-size: 56px 56px;
 }
-:root[data-bg="waves"] body {
+:root[data-bg="waves"] {
   background-image:
     repeating-linear-gradient(135deg, rgba(31,111,92,0.16) 0px, rgba(31,111,92,0.16) 3px, transparent 3px, transparent 16px),
     repeating-linear-gradient(45deg, rgba(31,111,92,0.13) 0px, rgba(31,111,92,0.13) 3px, transparent 3px, transparent 22px);
 }
-:root[data-bg="stars-scatter"] body {
+:root[data-bg="stars-scatter"] {
   background-image:
     radial-gradient(circle at 10% 20%, rgba(185,139,42,0.55) 1.8px, transparent 1.8px),
     radial-gradient(circle at 70% 60%, rgba(185,139,42,0.45) 1.4px, transparent 1.4px),
@@ -1314,6 +1321,18 @@ main#app {
   text-align: center;
   padding: 20px;
   margin-top: 20px;
+}
+/* Its own surface behind the text: this line sits directly on the page
+   background, and against a busy pattern (the star/scatter ones) plain
+   text on top of it is genuinely hard to read. */
+.app-footer .muted {
+  display: inline-block;
+  max-width: 640px;
+  margin: 0;
+  padding: 10px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 /* The fixed bottom nav bar (see the phones/tablets media query above) sits
    over the last ~80px of the page, so the footer needs the same clearance
