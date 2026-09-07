@@ -88,6 +88,15 @@
         <option value="xlarge">كبير جدًا</option>
       </select>
     </label>
+    <div class="settings-field">
+      العمل دون إنترنت
+      <button id="btn-offline-prefetch" class="btn"></button>
+      <p class="muted" id="offline-prefetch-status">حمّل سور خطتك الآن ليعمل الحفظ والمراجعة دون اتصال.</p>
+    </div>
+    <div class="settings-field settings-legal">
+      <button id="btn-privacy" class="link-btn">سياسة الخصوصية</button>
+      <button id="btn-terms" class="link-btn">شروط الاستخدام</button>
+    </div>
   </div>
 </div>
 
@@ -390,7 +399,14 @@
 </main>
 
 <footer class="app-footer">
-  <p class="muted">يعمل باستخدام بيانات القرآن الكريم من alquran.cloud و quran.com — يُحفظ تقدمك محليًا في متصفحك.</p>
+  <p class="muted">
+    يعمل باستخدام بيانات القرآن الكريم من alquran.cloud و quran.com — يُحفظ تقدمك محليًا في متصفحك.
+    <span class="footer-links">
+      <button id="btn-privacy-footer" class="link-btn">سياسة الخصوصية</button>
+      <span aria-hidden="true">·</span>
+      <button id="btn-terms-footer" class="link-btn">شروط الاستخدام</button>
+    </span>
+  </p>
 </footer>
 
 <!-- TAFSIR / WORD-MEANINGS MODAL (also reused as a generic confirm dialog) -->

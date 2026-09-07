@@ -1,4 +1,31 @@
-const CACHE = "tadabbur-v2";
+// Offline support.
+//
+// The app shell alone isn't enough to be usable offline: every ayah, word
+// meaning, tafsir and recitation comes from a third-party origin, and this
+// worker used to skip cross-origin requests entirely - so offline the shell
+// loaded and then had nothing to show. Each kind of request gets the
+// strategy that suits it:
+//
+//   app shell   network-first  - whatever is deployed wins while online,
+//                                cache covers offline (a stale-first shell
+//                                used to hide deployed fixes for a reload
+//                                or two)
+//   Quran data  network-first  - text/meanings stay fresh online, and every
+//                                response seen once is readable offline
+//   fonts       cache-first    - immutable, versioned URLs
+//   audio       cache-first    - a given ayah's recitation never changes;
+//                                kept to a cap so it can't grow unbounded
+//
+// Anything an ayah's data was never fetched for can't be shown offline, so
+// the settings panel offers a prefetch for the surahs actually in use.
+
+const VERSION = "v3";
+const SHELL_CACHE = `tadabbur-shell-${VERSION}`;
+const DATA_CACHE = `tadabbur-data-${VERSION}`;
+const FONT_CACHE = `tadabbur-fonts-${VERSION}`;
+const AUDIO_CACHE = `tadabbur-audio-${VERSION}`;
+const KEEP = [SHELL_CACHE, DATA_CACHE, FONT_CACHE, AUDIO_CACHE];
+
 const SHELL = [
   "./",
   "index.html",
@@ -9,39 +36,93 @@ const SHELL = [
   "icons/icon-512.png",
 ];
 
+const DATA_HOSTS = ["api.alquran.cloud", "api.quran.com"];
+const FONT_HOSTS = ["fonts.googleapis.com", "fonts.gstatic.com"];
+const AUDIO_HOSTS = ["cdn.islamic.network"];
+const AUDIO_MAX_ENTRIES = 400;
+
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)));
+  event.waitUntil(caches.open(SHELL_CACHE).then((c) => c.addAll(SHELL)));
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+    caches.keys().then((keys) => Promise.all(keys.filter((k) => !KEEP.includes(k)).map((k) => caches.delete(k))))
   );
   self.clients.claim();
 });
 
+// An opaque response (audio fetched no-cors by the <audio> element) reports
+// status 0 but is still perfectly replayable from the cache.
+function isCacheable(res) {
+  return res && (res.ok || res.type === "opaque");
+}
+
+async function networkFirst(request, cacheName) {
+  const cache = await caches.open(cacheName);
+  try {
+    const res = await fetch(request);
+    // Not awaited so the response isn't held up by the write, but a put can
+    // legitimately reject (a Vary:* or partial response), and unhandled it
+    // would surface as an error in the worker.
+    if (isCacheable(res)) cache.put(request, res.clone()).catch(() => {});
+    return res;
+  } catch (e) {
+    const cached = await cache.match(request);
+    if (cached) return cached;
+    throw e;
+  }
+}
+
+async function cacheFirst(request, cacheName, maxEntries) {
+  const cache = await caches.open(cacheName);
+  const cached = await cache.match(request);
+  if (cached) return cached;
+  const res = await fetch(request);
+  if (isCacheable(res)) {
+    await cache.put(request, res.clone()).catch(() => {});
+    if (maxEntries) trimCache(cacheName, maxEntries);
+  }
+  return res;
+}
+
+// Oldest-first: cache.keys() returns insertion order.
+async function trimCache(cacheName, maxEntries) {
+  const cache = await caches.open(cacheName);
+  const keys = await cache.keys();
+  for (let i = 0; i < keys.length - maxEntries; i++) await cache.delete(keys[i]);
+}
+
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
-  if (url.origin !== self.location.origin) return; // let external API/audio/font requests pass through normally
 
-  // Network-first for the app shell: cache-first-with-background-refresh
-  // (the previous strategy) always serves whatever was cached on a PRIOR
-  // visit instantly and only updates the cache for the visit AFTER that -
-  // so a deployed change (new styles, new features) stayed invisible for
-  // at least one extra reload, sometimes reading as "this isn't working"
-  // when it had actually already shipped. Offline is still covered by the
-  // cache fallback; when online, whatever's actually live wins.
-  event.respondWith(
-    fetch(event.request)
-      .then((res) => {
-        if (res && res.status === 200) {
-          const clone = res.clone();
-          caches.open(CACHE).then((c) => c.put(event.request, clone));
-        }
-        return res;
-      })
-      .catch(() => caches.match(event.request))
-  );
+  if (url.origin === self.location.origin) {
+    // A navigation that can't reach the network still has to open the app,
+    // so it falls back to the cached shell rather than the browser's
+    // offline error page.
+    event.respondWith(
+      networkFirst(event.request, SHELL_CACHE).catch(() =>
+        event.request.mode === "navigate"
+          ? caches.match("index.html", { ignoreSearch: true })
+          : Response.error()
+      )
+    );
+    return;
+  }
+
+  if (DATA_HOSTS.includes(url.hostname)) {
+    event.respondWith(networkFirst(event.request, DATA_CACHE));
+    return;
+  }
+  if (FONT_HOSTS.includes(url.hostname)) {
+    event.respondWith(cacheFirst(event.request, FONT_CACHE));
+    return;
+  }
+  if (AUDIO_HOSTS.includes(url.hostname)) {
+    event.respondWith(cacheFirst(event.request, AUDIO_CACHE, AUDIO_MAX_ENTRIES));
+    return;
+  }
+  // anything else: leave it to the network untouched
 });

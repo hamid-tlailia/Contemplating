@@ -2810,6 +2810,84 @@ function initSettingsPanel() {
     saveState();
     applyFontSize();
   });
+
+  const prefetchBtn = document.getElementById("btn-offline-prefetch");
+  prefetchBtn.innerHTML = iconLabel("book", "تحميل سور خطتي للاستخدام دون إنترنت");
+  prefetchBtn.addEventListener("click", prefetchPlanForOffline);
+
+  document.getElementById("btn-privacy").addEventListener("click", showPrivacyPolicy);
+  document.getElementById("btn-terms").addEventListener("click", showTerms);
+  document.getElementById("btn-privacy-footer").addEventListener("click", showPrivacyPolicy);
+  document.getElementById("btn-terms-footer").addEventListener("click", showTerms);
+}
+
+// Warms the service worker's data cache for the surahs actually in use -
+// the one being memorized plus every surah in the review plan - so those
+// work offline without having had to browse each of them online first.
+// (Reviews themselves already work offline regardless: each item's text is
+// kept in localStorage with its schedule.)
+async function prefetchPlanForOffline() {
+  const status = document.getElementById("offline-prefetch-status");
+  const surahs = new Set([state.learningPointer.surah]);
+  Object.values(state.ayahs).forEach((item) => surahs.add(item.surah));
+  if (state.mushafPointer) surahs.add(state.mushafPointer.surah);
+
+  const list = [...surahs].filter(Boolean);
+  status.textContent = `جاري التحميل... (0 من ${list.length})`;
+  let done = 0;
+  let failed = 0;
+  try {
+    await fetchSurahList();
+  } catch (e) {
+    failed++;
+  }
+  for (const surah of list) {
+    try {
+      await fetchSurahAyahs(surah);
+    } catch (e) {
+      failed++;
+    }
+    done++;
+    status.textContent = `جاري التحميل... (${done} من ${list.length})`;
+  }
+  status.textContent = failed
+    ? `تم تحميل ${done - failed} من ${list.length} سورة - تعذّر تحميل الباقي، تحقق من الاتصال وأعد المحاولة.`
+    : `✓ جاهز للعمل دون إنترنت (${done} ${done === 1 ? "سورة" : "سور"}). ما تفتحه لاحقًا يُحفظ تلقائيًا أيضًا.`;
+}
+
+// Deliberately specific rather than boilerplate: the two things people
+// can't guess from the UI are that nothing leaves the device except the
+// third-party fetches listed here, and that the browser's own speech
+// recognition sends recorded audio to its vendor - which matters when the
+// feature is used to recite Quran aloud.
+function showPrivacyPolicy() {
+  openInfoModal("سياسة الخصوصية", `
+    <p><strong>لا حساب ولا خادم.</strong> لا يطلب التطبيق تسجيل دخول ولا اسمًا ولا بريدًا، ولا يملك خادمًا يرسل إليه بياناتك.</p>
+    <p><strong>أين يُحفظ تقدمك؟</strong> كل شيء (الآيات المحفوظة، مواعيد المراجعة، النقاط، الإعدادات) يُخزَّن محليًا في متصفح جهازك فقط. حذف بيانات الموقع من المتصفح يمسحها نهائيًا، ولا توجد لدينا نسخة منها.</p>
+    <p><strong>لا تتبّع ولا إعلانات.</strong> لا يستخدم التطبيق أدوات تحليلات أو تتبّع أو إعلانات، ولا يضع كوكيز لهذا الغرض.</p>
+    <p><strong>خدمات خارجية يتصل بها التطبيق:</strong></p>
+    <ul>
+      <li>alquran.cloud — نص القرآن الكريم والتفسير والبحث.</li>
+      <li>quran.com — معاني الكلمات.</li>
+      <li>cdn.islamic.network — تلاوات القرّاء الصوتية.</li>
+      <li>Google Fonts — ملفات الخطوط.</li>
+    </ul>
+    <p>هذه الخدمات تتلقى - كأي موقع تزوره - عنوان الـ IP ونوع المتصفح ووقت الطلب، وتخضع لسياسات الخصوصية الخاصة بها. لا نرسل إليها أي شيء عن تقدمك في الحفظ.</p>
+    <p><strong>اختبار التسميع بالصوت:</strong> يستخدم خاصية التعرّف على الكلام المدمجة في المتصفح. في معظم المتصفحات (ومنها كروم على أندرويد) يُرسَل الصوت المسجَّل إلى خوادم مزوّد المتصفح لتحويله إلى نص، وهذا خارج عن سيطرة التطبيق. التطبيق نفسه لا يسجّل صوتك ولا يحتفظ به ولا يرسله إلى أي جهة؛ يستقبل النص الناتج فقط ويستخدمه في الجهاز. إن لم ترغب بذلك، فلا تستخدم زر "اختبر بالنطق".</p>
+    <p><strong>دون إنترنت:</strong> يحتفظ التطبيق بنسخة من الصفحات والنصوص والتلاوات التي فتحتها داخل ذاكرة المتصفح ليعمل بلا اتصال، وتبقى هذه النسخة على جهازك.</p>
+  `);
+}
+
+function showTerms() {
+  openInfoModal("شروط الاستخدام", `
+    <p><strong>أداة للحفظ لا للإفتاء.</strong> هذا التطبيق أداة لتنظيم حفظ القرآن الكريم ومراجعته. ليس مرجعًا شرعيًا، ولا يُستفتى في مسألة دينية.</p>
+    <p><strong>راجع نصّ المصحف.</strong> نصوص الآيات والتفسير ومعاني الكلمات تأتي من خدمات خارجية (alquran.cloud و quran.com)، وقد يقع فيها خطأ أو نقص أو انقطاع. اعتمد على المصحف المطبوع عند أي شك، خصوصًا في الرسم والضبط. لا نتحمّل مسؤولية خطأ في بيانات هذه الخدمات.</p>
+    <p><strong>نتائج اختبار التسميع تقريبية.</strong> التعرّف على الصوت يخطئ، خاصة مع التجويد والمدّ الطويل، فلا تُعدّ نتيجته حكمًا على صحة حفظك.</p>
+    <p><strong>النقاط والمكافآت.</strong> النقاط والمظاهر والخطوط والخلفيات عناصر تحفيزية داخل التطبيق فقط: لا قيمة مالية لها، ولا تُشترى أو تُباع أو تُستبدل بمال، ويمكن أن تُفقد بحذف بيانات المتصفح.</p>
+    <p><strong>حفظ تقدمك مسؤوليتك.</strong> البيانات محفوظة في متصفحك وحده؛ حذف بيانات الموقع أو المتصفح أو الجهاز يعني فقدانها دون إمكانية استرجاع.</p>
+    <p><strong>التطبيق كما هو.</strong> يُقدَّم دون ضمانات من أي نوع، ولا ضمان لاستمرار توفّر الخدمات الخارجية التي يعتمد عليها.</p>
+    <p><strong>حقوق الجهات الأخرى.</strong> استخدامك لبيانات الخدمات المذكورة يخضع لشروطها هي، ولا يمنحك هذا التطبيق أي حقوق عليها.</p>
+  `);
 }
 
 // ---------- PWA service worker ----------

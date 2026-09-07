@@ -1322,6 +1322,24 @@ main#app {
   padding: 20px;
   margin-top: 20px;
 }
+.link-btn {
+  border: none;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--primary);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.link-btn:hover { color: var(--primary-dark); }
+.settings-legal { flex-direction: row; gap: 16px; justify-content: center; }
+.footer-links { display: block; margin-top: 8px; }
+.footer-links > * { margin: 0 4px; }
+
+.info-modal-body ul { margin: 8px 0; padding-inline-start: 20px; }
+.info-modal-body li { margin-bottom: 4px; }
+
 /* Its own surface behind the text: this line sits directly on the page
    background, and against a busy pattern (the star/scatter ones) plain
    text on top of it is genuinely hard to read. */
