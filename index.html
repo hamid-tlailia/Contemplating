@@ -45,7 +45,7 @@
     </button>
   </nav>
   <div class="header-left">
-    <span id="header-points-badge" class="header-points-badge" title="نقاطك">🪙 <span id="header-points-value">0</span></span>
+    <span id="header-points-badge" class="header-points-badge" title="نقاطك"><span class="coin-icon">🪙</span><span id="header-points-value">0</span></span>
     <button id="btn-settings" class="icon-only-btn" title="الإعدادات" aria-label="الإعدادات">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
     </button>
@@ -198,6 +198,7 @@
       <div class="mode-switch" role="tablist">
         <button class="mode-btn active" data-mode="mcq">🔘 اختيار من متعدد</button>
         <button class="mode-btn" data-mode="type">⌨️ اكتب الكلمة</button>
+        <button class="mode-btn" data-mode="partial">🙈 إخفاء جزئي</button>
       </div>
 
       <div class="ayah-display learn-ayah-display">
@@ -223,46 +224,78 @@
         <button id="btn-type-submit" class="btn primary">تحقق ✓</button>
       </div>
 
+      <div id="learn-partial-controls" class="mode-controls hidden">
+        <button id="btn-learn-mask-more" class="btn"></button>
+        <button id="btn-learn-mask-reset" class="btn"></button>
+      </div>
+      <div id="learn-partial-actions" class="reveal-controls hidden">
+        <p class="muted">اختبر نفسك، ثم سجّل كيف تذكّرتها:</p>
+        <div class="partial-round-buttons">
+          <button id="btn-learn-partial-wrong" class="btn grade-again">❌ أخطأت في كلمة</button>
+          <button id="btn-learn-partial-correct" class="btn primary">✅ تذكرتها جيدًا</button>
+        </div>
+      </div>
+
       <audio id="learn-audio"></audio>
     </div>
   </section>
 
   <!-- BROWSE / ADD -->
   <section id="tab-browse" class="tab-panel">
-    <div class="panel">
+    <div class="panel browse-add-panel">
       <h2>إضافة آيات إلى خطة المراجعة مباشرة</h2>
       <p class="muted">للمتقدمين: أضف آيات مباشرة دون المرور برحلة "ابدأ الحفظ" التدريجية. إن كانت الآية المختارة تمثل قفزة عن تسلسل حفظك الحالي في هذه السورة، ستُضاف كـ"مراجعة مؤقتة" فقط ولن تُحتسب ضمن نسبة تقدّمك.</p>
 
-      <div class="add-form">
-        <div class="combo" id="surah-combo">
-          <label for="surah-combo-input">السورة</label>
-          <input type="text" id="surah-combo-input" placeholder="ابحث عن سورة بالاسم أو الرقم..." autocomplete="off">
-          <div class="combo-list hidden" id="surah-combo-list"></div>
+      <div class="browse-add-section">
+        <p class="browse-add-section-title">تصفح حسب السورة والنطاق</p>
+        <div class="add-form">
+          <div class="combo" id="surah-combo">
+            <label for="surah-combo-input">السورة</label>
+            <input type="text" id="surah-combo-input" placeholder="ابحث عن سورة بالاسم أو الرقم..." autocomplete="off">
+            <div class="combo-list hidden" id="surah-combo-list"></div>
+          </div>
+          <div class="range-inputs">
+            <label>
+              من آية
+              <input type="number" id="ayah-from" min="1" value="1">
+            </label>
+            <span class="range-dash">–</span>
+            <label>
+              إلى آية
+              <input type="number" id="ayah-to" min="1" value="1">
+            </label>
+          </div>
         </div>
-        <label>
-          من آية
-          <input type="number" id="ayah-from" min="1" value="1">
-        </label>
-        <label>
-          إلى آية
-          <input type="number" id="ayah-to" min="1" value="1">
-        </label>
+        <button id="btn-add-range" class="btn primary browse-add-range-btn">إضافة النطاق إلى الخطة</button>
+        <p class="muted" id="surah-meta-info"></p>
       </div>
-      <div class="add-form">
-        <label class="grow">
-          🔍 أو ابحث عن آية برقمها أو بكلمة منها
+
+      <div class="browse-add-divider"><span>أو</span></div>
+
+      <div class="browse-add-section">
+        <p class="browse-add-section-title">ابحث عن آية</p>
+        <label class="search-field">
+          <span class="search-field-icon" id="ayah-search-icon"></span>
           <input type="text" id="ayah-search" placeholder="مثال: 255 أو الرحمن">
         </label>
-        <button id="btn-add-range" class="btn primary">إضافة النطاق إلى الخطة</button>
       </div>
-      <p class="muted" id="surah-meta-info"></p>
     </div>
 
     <div class="panel">
       <h2 id="browse-surah-title">معاينة الآيات</h2>
       <p class="surah-info-caption" id="browse-surah-info"></p>
-      <p class="muted" id="browse-preview-hint"></p>
-      <div id="browse-ayahs" class="ayah-browse-list"></div>
+
+      <div id="browse-results-range">
+        <details id="browse-range-details" class="plan-surah-group" open>
+          <summary id="browse-range-summary" class="plan-surah-summary browse-range-summary"></summary>
+          <div id="browse-ayahs-range" class="ayah-browse-list plan-surah-items"></div>
+        </details>
+      </div>
+
+      <div id="browse-results-search" class="hidden">
+        <p class="muted" id="browse-search-hint"></p>
+        <div id="browse-ayahs-search" class="ayah-browse-list"></div>
+      </div>
     </div>
   </section>
 

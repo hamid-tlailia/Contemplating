@@ -62,6 +62,7 @@ const ICONS = {
   flash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>',
   check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 4.5-5"/></svg>',
   checkDone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-11"/></svg>',
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.35-4.35"/></svg>',
   chevronRight: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>',
   chevronLeft: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
 };
@@ -1063,6 +1064,8 @@ document.getElementById("btn-start-challenge").addEventListener("click", startDa
 let selectedBrowseSurah = 1;
 let selectedBrowseSurahName = "";
 
+document.getElementById("ayah-search-icon").innerHTML = ICONS.search;
+
 async function initBrowseTab() {
   const input = document.getElementById("surah-combo-input");
   const list = document.getElementById("surah-combo-list");
@@ -1215,29 +1218,41 @@ function handleAddAyahClick(surahNumber, surahName, ayahObj, buttonEl) {
   }
 }
 
+// Browsing a surah range sits behind an accordion (it's the default view
+// and can get long), while any search - a specific ayah number or a phrase
+// - is what the person is actively looking for right now, so it's shown
+// flat and open instead of needing an extra click to reveal.
+function showBrowseResults(mode) {
+  document.getElementById("browse-results-range").classList.toggle("hidden", mode !== "range");
+  document.getElementById("browse-results-search").classList.toggle("hidden", mode !== "search");
+}
+
 function renderBrowsePreview() {
-  const listEl = document.getElementById("browse-ayahs");
-  const hint = document.getElementById("browse-preview-hint");
   const ayahs = surahAyahsCache[selectedBrowseSurah];
   if (!ayahs) return;
 
   const searchVal = document.getElementById("ayah-search").value.trim();
-  let matches;
   if (searchVal) {
     // A plain number jumps within the currently open surah instantly; any
     // other text is handled by performGlobalAyahSearch instead (searching
     // only the pre-selected surah would force the person to already know
     // which surah an ayah is in before they could find it).
     const asNumber = Number(searchVal);
-    matches = ayahs.filter((a) => a.numberInSurah === asNumber);
-    hint.textContent = `آية رقم ${searchVal} من ${selectedBrowseSurahName}`;
-  } else {
-    const from = Number(document.getElementById("ayah-from").value) || 1;
-    const to = Number(document.getElementById("ayah-to").value) || from;
-    matches = ayahs.filter((a) => a.numberInSurah >= from && a.numberInSurah <= to);
-    hint.textContent = `عرض الآيات من ${from} إلى ${to} (${matches.length} آية) — عدّل النطاق أعلاه أو استخدم البحث لعرض آيات أخرى`;
+    const matches = ayahs.filter((a) => a.numberInSurah === asNumber);
+    showBrowseResults("search");
+    document.getElementById("browse-search-hint").textContent = `آية رقم ${searchVal} من ${selectedBrowseSurahName}`;
+    const listEl = document.getElementById("browse-ayahs-search");
+    listEl.innerHTML = "";
+    matches.slice(0, 50).forEach((a) => listEl.appendChild(buildAyahRow(selectedBrowseSurah, selectedBrowseSurahName, a, false)));
+    return;
   }
 
+  const from = Number(document.getElementById("ayah-from").value) || 1;
+  const to = Number(document.getElementById("ayah-to").value) || from;
+  const matches = ayahs.filter((a) => a.numberInSurah >= from && a.numberInSurah <= to);
+  showBrowseResults("range");
+  document.getElementById("browse-range-summary").textContent = `عرض الآيات من ${from} إلى ${to} (${matches.length} آية)`;
+  const listEl = document.getElementById("browse-ayahs-range");
   listEl.innerHTML = "";
   matches.slice(0, 50).forEach((a) => listEl.appendChild(buildAyahRow(selectedBrowseSurah, selectedBrowseSurahName, a, false)));
 }
@@ -1247,8 +1262,9 @@ function renderBrowsePreview() {
 // phrase they remember without first having to know - or guess - which
 // surah it's in.
 async function performGlobalAyahSearch(query) {
-  const hint = document.getElementById("browse-preview-hint");
-  const listEl = document.getElementById("browse-ayahs");
+  showBrowseResults("search");
+  const hint = document.getElementById("browse-search-hint");
+  const listEl = document.getElementById("browse-ayahs-search");
   hint.textContent = `جاري البحث عن "${query}" في القرآن الكريم كاملاً...`;
   listEl.innerHTML = "";
   try {
@@ -1622,7 +1638,8 @@ let learnCurrentKey = null;
 let learnWords = [];
 let learnWordIndex = 0;
 let learnMistakeThisRound = false;
-let learnMode = "mcq"; // 'mcq' | 'type'
+let learnMode = "mcq"; // 'mcq' | 'type' | 'partial'
+let learnMaskLevel = 0; // only used in 'partial' mode - 0 = none masked ... up to full mask
 
 document.querySelectorAll(".mode-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
@@ -1689,6 +1706,7 @@ async function loadLearnAyah() {
   learnWords = stripWaqfTokens(ayahObj.text.split(/\s+/));
   learnWordIndex = 0;
   learnMistakeThisRound = false;
+  learnMaskLevel = 0;
 
   document.getElementById("learn-ref").textContent = `${meta.name} - الآية ${pointer.ayah}`;
   document.getElementById("learn-round-info").textContent = `الجولة ${(item.roundStreak || 0) + 1} من ${ROUNDS_TO_MASTER}`;
@@ -1721,6 +1739,21 @@ function scrollIntoViewIfNeeded(selector) {
 
 function renderLearnRound() {
   scrollIntoViewIfNeeded(".learn-ayah-display");
+
+  const mcqContainer = document.getElementById("mcq-options");
+  const typeContainer = document.getElementById("type-answer");
+  const partialControls = document.getElementById("learn-partial-controls");
+  const partialActions = document.getElementById("learn-partial-actions");
+  mcqContainer.classList.toggle("hidden", learnMode !== "mcq");
+  typeContainer.classList.toggle("hidden", learnMode !== "type");
+  partialControls.classList.toggle("hidden", learnMode !== "partial");
+  partialActions.classList.toggle("hidden", learnMode !== "partial");
+
+  if (learnMode === "partial") {
+    renderLearnPartialMask();
+    return;
+  }
+
   const container = document.getElementById("learn-text");
   container.innerHTML = learnWords
     .map((w, idx) => {
@@ -1730,12 +1763,7 @@ function renderLearnRound() {
     })
     .join(" ");
 
-  const mcqContainer = document.getElementById("mcq-options");
-  const typeContainer = document.getElementById("type-answer");
   mcqContainer.innerHTML = "";
-  mcqContainer.classList.toggle("hidden", learnMode !== "mcq");
-  typeContainer.classList.toggle("hidden", learnMode !== "type");
-
   if (learnMode === "mcq") {
     const correctWord = learnWords[learnWordIndex];
     const options = buildMcqOptions(correctWord, learnWords);
@@ -1752,6 +1780,21 @@ function renderLearnRound() {
     input.className = "";
     input.focus();
   }
+}
+
+// 'partial' mode: shows the whole ayah at once with only some words masked
+// (tap to reveal one), instead of the sequential mcq/type modes' full hide
+// of everything past the current word - a lighter drill for someone who's
+// already partway through memorizing this ayah rather than starting fresh.
+function renderLearnPartialMask() {
+  renderMaskedWordsInto(document.getElementById("learn-text"), learnWords, learnMaskLevel);
+}
+
+function finishPartialRound(recalledCorrectly) {
+  learnMistakeThisRound = !recalledCorrectly;
+  if (recalledCorrectly) playSuccessSound();
+  else playErrorSound();
+  completeLearnRound();
 }
 
 const COMMON_QURAN_WORDS = [
@@ -2098,9 +2141,10 @@ function loadReviewItem() {
   closeInfoModal();
 }
 
-function renderMaskedText() {
-  const container = document.getElementById("review-text");
-  const n = currentWords.length;
+// Picks which word indices to hide for a given mask level (0 = none, higher
+// = more), using a seeded shuffle so the same level always hides the same
+// words for a given ayah length instead of jumping around on every render.
+function computeHiddenIndices(n, maskLevel) {
   const hiddenIndices = new Set();
   if (maskLevel > 0) {
     const fractionToHide = Math.min(maskLevel * 0.34, 1);
@@ -2114,17 +2158,24 @@ function renderMaskedText() {
     }
     indices.slice(0, countToHide).forEach((idx) => hiddenIndices.add(idx));
   }
+  return hiddenIndices;
+}
 
-  container.innerHTML = currentWords
+function renderMaskedWordsInto(container, words, maskLevel) {
+  const hiddenIndices = computeHiddenIndices(words.length, maskLevel);
+  container.innerHTML = words
     .map((w, idx) => {
       if (hiddenIndices.has(idx)) return `<span class="word masked" data-idx="${idx}">${w}</span>`;
       return `<span class="word">${w}</span>`;
     })
     .join(" ");
-
   container.querySelectorAll(".word.masked").forEach((el) => {
     el.addEventListener("click", () => el.classList.remove("masked"));
   });
+}
+
+function renderMaskedText() {
+  renderMaskedWordsInto(document.getElementById("review-text"), currentWords, maskLevel);
 }
 
 setupAudioControls("review-audio-controls", "review-audio");
@@ -2135,6 +2186,8 @@ document.getElementById("btn-review-voice").innerHTML = iconLabel("mic", "اخت
 document.getElementById("btn-learn-tafsir").innerHTML = iconLabel("book", "التفسير");
 document.getElementById("btn-learn-meanings").innerHTML = iconLabel("bulb", "معاني الكلمات");
 document.getElementById("btn-learn-voice").innerHTML = iconLabel("mic", "اختبر بالنطق");
+document.getElementById("btn-learn-mask-more").innerHTML = iconLabel("eyeOff", "إخفاء المزيد");
+document.getElementById("btn-learn-mask-reset").innerHTML = iconLabel("eye", "إظهار الكل");
 
 // ---------- Tafsir (persistent per-ayah button, reuses the whole-ayah fallback API) ----------
 // Shown in the shared info modal instead of an inline panel, so opening it
@@ -2183,6 +2236,19 @@ document.getElementById("btn-mask-reset").addEventListener("click", () => {
   maskLevel = 0;
   renderMaskedText();
 });
+
+document.getElementById("btn-learn-mask-more").addEventListener("click", () => {
+  learnMaskLevel = Math.min(learnMaskLevel + 1, 3);
+  renderLearnPartialMask();
+});
+
+document.getElementById("btn-learn-mask-reset").addEventListener("click", () => {
+  learnMaskLevel = 0;
+  renderLearnPartialMask();
+});
+
+document.getElementById("btn-learn-partial-correct").addEventListener("click", () => finishPartialRound(true));
+document.getElementById("btn-learn-partial-wrong").addEventListener("click", () => finishPartialRound(false));
 
 document.getElementById("btn-review-voice").addEventListener("click", () => {
   const item = reviewQueue[reviewIndex];

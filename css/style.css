@@ -171,9 +171,10 @@ h1, h2 { font-family: 'Tajawal', sans-serif; margin: 0; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: 4px;
   font-size: 0.8rem;
   font-weight: 700;
+  line-height: 1;
   color: var(--primary);
   background: var(--bg);
   border: 1px solid var(--border);
@@ -181,6 +182,14 @@ h1, h2 { font-family: 'Tajawal', sans-serif; margin: 0; }
   padding: 5px 10px;
   white-space: nowrap;
 }
+.header-points-badge .coin-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  line-height: 1;
+}
+.header-points-badge #header-points-value { line-height: 1; }
 
 /* Bottom app-style navigation on phones/tablets: easier to reach with a thumb,
    and it keeps the brand header from competing with four tab pills for width. */
@@ -479,6 +488,91 @@ main#app {
 .combo-item:hover { background: var(--bg); }
 .combo-empty { padding: 12px; text-align: center; }
 
+/* ---------- Browse/add tab: grouped sections instead of two loose rows ---------- */
+.browse-add-section {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-top: 14px;
+}
+.browse-add-section-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--primary);
+  margin-bottom: 10px;
+}
+.browse-add-range-btn { width: 100%; margin-top: 12px; }
+#surah-meta-info { margin-top: 8px; }
+
+.range-inputs {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+}
+.range-inputs label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--muted);
+  flex: 1;
+}
+.range-inputs input[type=number] {
+  font-family: inherit;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.95rem;
+  width: 100%;
+}
+.range-dash { color: var(--muted); padding-bottom: 9px; }
+
+.browse-add-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.browse-add-divider::before, .browse-add-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.search-field {
+  position: relative;
+  display: block;
+}
+.search-field-icon {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+  pointer-events: none;
+}
+.search-field-icon svg { width: 100%; height: 100%; }
+.search-field input {
+  width: 100%;
+  font-family: inherit;
+  padding: 9px 38px 9px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.browse-range-summary { font-weight: 400; color: var(--muted); font-size: 0.85rem; }
+
 /* ---------- Settings panel ---------- */
 .settings-overlay {
   position: fixed;
@@ -705,7 +799,7 @@ main#app {
   75% { transform: translateX(6px); }
 }
 
-.mode-controls, .grade-buttons { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.mode-controls, .grade-buttons, .partial-round-buttons { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
 .grade-controls { text-align: center; }
 .grade-again { border-color: var(--danger); color: var(--danger); }
 .grade-hard { border-color: var(--warn); color: var(--warn); }
@@ -735,11 +829,14 @@ main#app {
 
 .mode-switch {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 6px;
   background: var(--bg);
   border-radius: 999px;
   padding: 4px;
   width: fit-content;
+  max-width: 100%;
   margin: 0 auto 16px;
 }
 .mode-btn {
@@ -751,6 +848,7 @@ main#app {
   font-family: inherit;
   font-size: 0.82rem;
   color: var(--muted);
+  white-space: nowrap;
 }
 .mode-btn.active { background: var(--primary); color: #fff; }
 
