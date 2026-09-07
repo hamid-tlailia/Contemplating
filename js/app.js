@@ -807,47 +807,52 @@ async function initMushafCard() {
     }
   });
 
-  loadBtn.addEventListener("click", async () => {
-    if (mushafInputMode === "page") {
-      const pageNumber = Number(document.getElementById("mushaf-page-input").value);
-      if (!pageNumber || pageNumber < 1 || pageNumber > 604) {
-        showToast("أدخل رقم صفحة صحيح بين 1 و604.", "error");
-        return;
-      }
-      // A page-number jump should still cover the daily wird plan (e.g. a
-      // 2-page target starting from the requested page), matching what
-      // range mode already does from an ayah - not just the single page
-      // typed in, which read as ignoring the plan entirely.
-      const pageCount = state.wirdTargetType === "pages" ? Math.max(1, state.wirdTarget || 1) : 1;
-      try {
-        const ayahs = [];
-        for (let p = pageNumber; p < pageNumber + pageCount && p <= 604; p++) {
-          const res = await fetchWithTimeout(`${API_BASE}/page/${p}/quran-uthmani`, 8000);
-          const json = await res.json();
-          (json.data.ayahs || []).forEach((a) => ayahs.push({ ...a, surahNumberForReader: a.surah.number }));
-        }
-        if (ayahs.length === 0) return;
-        openMushafReader(ayahs);
-      } catch (e) {
-        showToast("تعذّر تحميل الصفحة. تحقق من الاتصال بالإنترنت.", "error");
-      }
+  loadBtn.addEventListener("click", openTodaysWirdReading);
+}
+
+// Opens the fullscreen reader on whatever the reading card is currently
+// set to. Shared by that card's own button and by the dashboard's quick
+// "ابدأ ورد اليوم" shortcut, so the shortcut can't drift from the card.
+async function openTodaysWirdReading() {
+  if (mushafInputMode === "page") {
+    const pageNumber = Number(document.getElementById("mushaf-page-input").value);
+    if (!pageNumber || pageNumber < 1 || pageNumber > 604) {
+      showToast("أدخل رقم صفحة صحيح بين 1 و604.", "error");
       return;
     }
-    const surahNumber = selectedMushafSurah;
-    const from = Number(document.getElementById("mushaf-from").value) || 1;
-    const to = Number(document.getElementById("mushaf-to").value) || from;
-    if (!surahNumber || from > to) return;
+    // A page-number jump should still cover the daily wird plan (e.g. a
+    // 2-page target starting from the requested page), matching what
+    // range mode already does from an ayah - not just the single page
+    // typed in, which read as ignoring the plan entirely.
+    const pageCount = state.wirdTargetType === "pages" ? Math.max(1, state.wirdTarget || 1) : 1;
     try {
-      const ayahs = await fetchSurahAyahs(surahNumber);
-      const matches = ayahs
-        .filter((a) => a.numberInSurah >= from && a.numberInSurah <= to)
-        .map((a) => ({ ...a, surahNumberForReader: surahNumber }));
-      if (matches.length === 0) return;
-      openMushafReader(matches);
+      const ayahs = [];
+      for (let p = pageNumber; p < pageNumber + pageCount && p <= 604; p++) {
+        const res = await fetchWithTimeout(`${API_BASE}/page/${p}/quran-uthmani`, 8000);
+        const json = await res.json();
+        (json.data.ayahs || []).forEach((a) => ayahs.push({ ...a, surahNumberForReader: a.surah.number }));
+      }
+      if (ayahs.length === 0) return;
+      openMushafReader(ayahs);
     } catch (e) {
-      showToast("تعذّر تحميل النص. تحقق من الاتصال بالإنترنت.", "error");
+      showToast("تعذّر تحميل الصفحة. تحقق من الاتصال بالإنترنت.", "error");
     }
-  });
+    return;
+  }
+  const surahNumber = selectedMushafSurah;
+  const from = Number(document.getElementById("mushaf-from").value) || 1;
+  const to = Number(document.getElementById("mushaf-to").value) || from;
+  if (!surahNumber || from > to) return;
+  try {
+    const ayahs = await fetchSurahAyahs(surahNumber);
+    const matches = ayahs
+      .filter((a) => a.numberInSurah >= from && a.numberInSurah <= to)
+      .map((a) => ({ ...a, surahNumberForReader: surahNumber }));
+    if (matches.length === 0) return;
+    openMushafReader(matches);
+  } catch (e) {
+    showToast("تعذّر تحميل النص. تحقق من الاتصال بالإنترنت.", "error");
+  }
 }
 
 // Resume wherever the last Mushaf-reading session left off; otherwise
@@ -1219,6 +1224,18 @@ async function renderSurahProgress() {
 }
 
 document.getElementById("btn-start-challenge").addEventListener("click", startDailyChallenge);
+
+// Straight into today's reading from the top of the dashboard, instead of
+// scrolling down to the reading card to press its button. If that card
+// hasn't managed to load a surah yet (offline on a first run, say), fall
+// back to bringing it into view rather than doing nothing.
+document.getElementById("btn-quick-wird").addEventListener("click", () => {
+  if (mushafInputMode === "range" && !selectedMushafSurah) {
+    document.querySelector(".mushaf-card").scrollIntoView({ behavior: "smooth", block: "center" });
+    return;
+  }
+  openTodaysWirdReading();
+});
 
 // ---------- Browse / Add (manual, advanced) ----------
 

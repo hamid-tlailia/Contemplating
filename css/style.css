@@ -373,6 +373,16 @@ main#app {
   white-space: nowrap;
 }
 .btn.accent:hover { background: var(--accent-light); }
+/* Second action on the challenge card's dark green: readable there without
+   competing with the gold primary next to it. */
+.challenge-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.btn.challenge-secondary {
+  background: rgba(255,255,255,0.14);
+  border-color: rgba(255,255,255,0.45);
+  color: #fff;
+  white-space: nowrap;
+}
+.btn.challenge-secondary:hover { background: rgba(255,255,255,0.24); }
 .challenge-card.done { background: linear-gradient(135deg, var(--good), #245e3c); }
 
 #onboarding-panel { display: none; }
@@ -670,7 +680,12 @@ main#app {
   position: fixed;
   inset: 0;
   background: rgba(20,20,15,0.45);
-  z-index: 200;
+  /* Above the fullscreen reader (400), since settings is reachable from
+     inside it via the floating gear - at 200 it opened behind the reader
+     and looked like nothing had happened. Still below the info/voice
+     modals (500) so a purchase confirm opens on top of settings, which is
+     where it's triggered from. */
+  z-index: 450;
   display: flex;
   align-items: center;
   justify-content: center;
