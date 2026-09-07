@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="تدبر">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Tajawal:wght@400;500;700&family=Scheherazade+New:wght@400;700&family=Lateef:wght@400;700&family=Aref+Ruqaa:wght@400;700&family=Reem+Kufi:wght@400;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -65,11 +65,19 @@
     </div>
     <div class="settings-field">
       القارئ (افتح المزيد بالنقاط)
-      <div id="reciter-grid" class="reciter-grid"></div>
+      <div id="reciter-grid" class="swatch-grid"></div>
     </div>
     <div class="settings-field">
-      المظهر (افتح المزيد بجمع النقاط)
-      <div id="theme-grid" class="theme-grid"></div>
+      المظهر (افتح المزيد بالنقاط)
+      <div id="theme-grid" class="swatch-grid"></div>
+    </div>
+    <div class="settings-field">
+      خط الآيات (افتح المزيد بالنقاط)
+      <div id="font-grid" class="swatch-grid"></div>
+    </div>
+    <div class="settings-field">
+      خلفية التطبيق (افتح المزيد بالنقاط)
+      <div id="background-grid" class="swatch-grid"></div>
     </div>
     <label class="settings-field">
       حجم نص الآيات
@@ -165,13 +173,39 @@
 
     <div class="panel mushaf-card">
       <h2>📖 قراءة اليوم من المصحف</h2>
-      <p class="muted">اقرأ بملء الشاشة بمعزل عن الحفظ والمراجعة - يُضاف ما تقرؤه إلى ورد اليوم عند تأكيد إنهاء القراءة.</p>
-      <div class="mushaf-controls">
-        <select id="mushaf-surah-select"></select>
-        <input type="number" id="mushaf-from" min="1" value="1" placeholder="من آية">
-        <input type="number" id="mushaf-to" min="1" value="5" placeholder="إلى آية">
-        <button id="btn-mushaf-load" class="btn primary"></button>
+      <p class="muted">اقرأ بملء الشاشة بمعزل عن الحفظ والمراجعة - يُضاف ما تقرؤه إلى ورد اليوم عند تأكيد إنهاء القراءة. يتذكّر التطبيق آخر موضع توقفت عنده ليبدأ منه المرة القادمة.</p>
+
+      <div class="mushaf-mode-toggle">
+        <button type="button" class="mushaf-mode-btn active" data-mushaf-mode="range">نطاق آيات</button>
+        <button type="button" class="mushaf-mode-btn" data-mushaf-mode="page">رقم الصفحة</button>
       </div>
+
+      <div id="mushaf-range-controls" class="mushaf-controls">
+        <div class="combo" id="mushaf-surah-combo">
+          <input type="text" id="mushaf-surah-combo-input" placeholder="ابحث عن سورة..." autocomplete="off">
+          <div class="combo-list hidden" id="mushaf-surah-combo-list"></div>
+        </div>
+        <div class="range-inputs">
+          <label>
+            من آية
+            <input type="number" id="mushaf-from" min="1" value="1">
+          </label>
+          <span class="range-dash">–</span>
+          <label>
+            إلى آية
+            <input type="number" id="mushaf-to" min="1" value="5">
+          </label>
+        </div>
+      </div>
+
+      <div id="mushaf-page-controls" class="mushaf-controls hidden">
+        <label class="mushaf-page-field">
+          رقم الصفحة (١-٦٠٤)
+          <input type="number" id="mushaf-page-input" min="1" max="604" placeholder="مثال: 262">
+        </label>
+      </div>
+
+      <button id="btn-mushaf-load" class="btn primary mushaf-load-btn"></button>
     </div>
 
     <div class="panel" id="onboarding-panel">

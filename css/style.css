@@ -77,6 +77,23 @@
   --good: #7fd19d;
   --shadow: 0 1px 3px rgba(0,0,0,0.5);
 }
+/* A rich maroon-and-gold "embroidered Mushaf cover" palette - the priciest
+   theme, deliberately more ornate than the calmer color-only themes above. */
+:root[data-theme="embroidered"] {
+  --bg: #1a0e0f;
+  --surface: #2b1416;
+  --border: #4a2226;
+  --text: #f3e3c8;
+  --muted: #b89a7a;
+  --primary: #8c1f2b;
+  --primary-dark: #6e1620;
+  --accent: #d4af37;
+  --accent-light: #e8cd6f;
+  --danger: #e0574a;
+  --warn: #e0b45c;
+  --good: #6fbf8a;
+  --shadow: 0 1px 3px rgba(0,0,0,0.5);
+}
 
 * { box-sizing: border-box; }
 
@@ -88,12 +105,34 @@ html, body {
   min-height: 100%;
 }
 
-/* Subtle Islamic geometric pattern (8-point star tiling) behind everything */
-body {
+/* Subtle Islamic geometric pattern (8-point star tiling) behind everything -
+   the default background choice (see BACKGROUNDS in app.js); the other
+   purchasable patterns below replace it via [data-bg] on the root. */
+:root:not([data-bg]) body, :root[data-bg="default"] body {
   background-image:
     radial-gradient(circle at 0 0, transparent 9px, var(--bg) 10px),
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60' viewBox='0 0 60 60'%3E%3Cg fill='none' stroke='%231f6f5c' stroke-opacity='0.06' stroke-width='1'%3E%3Cpath d='M30 2 L37 15 L52 15 L41 25 L46 40 L30 31 L14 40 L19 25 L8 15 L23 15 Z'/%3E%3Ccircle cx='30' cy='30' r='27'/%3E%3C/g%3E%3C/svg%3E");
   background-size: auto, 60px 60px;
+}
+:root[data-bg="geometric-gold"] body {
+  background-image:
+    radial-gradient(circle at 0 0, transparent 9px, var(--bg) 10px),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='84' height='84' viewBox='0 0 84 84'%3E%3Cg fill='none' stroke='%23b98b2a' stroke-opacity='0.16' stroke-width='1.2'%3E%3Cpath d='M42 4 L50 20 L68 20 L56 34 L62 54 L42 42 L22 54 L28 34 L16 20 L34 20 Z'/%3E%3Ccircle cx='42' cy='42' r='38'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: auto, 84px 84px;
+}
+:root[data-bg="waves"] body {
+  background-image:
+    repeating-linear-gradient(135deg, rgba(31,111,92,0.05) 0px, rgba(31,111,92,0.05) 2px, transparent 2px, transparent 26px),
+    repeating-linear-gradient(45deg, rgba(31,111,92,0.04) 0px, rgba(31,111,92,0.04) 2px, transparent 2px, transparent 34px);
+}
+:root[data-bg="stars-scatter"] body {
+  background-image:
+    radial-gradient(circle at 10% 20%, rgba(185,139,42,0.22) 1.5px, transparent 1.5px),
+    radial-gradient(circle at 70% 60%, rgba(185,139,42,0.18) 1px, transparent 1px),
+    radial-gradient(circle at 40% 80%, rgba(185,139,42,0.2) 1.2px, transparent 1.2px),
+    radial-gradient(circle at 90% 15%, rgba(185,139,42,0.16) 1px, transparent 1px),
+    radial-gradient(circle at 25% 45%, rgba(185,139,42,0.14) 1px, transparent 1px);
+  background-size: 140px 140px, 90px 90px, 120px 120px, 100px 100px, 70px 70px;
 }
 
 h1, h2 { font-family: 'Tajawal', sans-serif; margin: 0; }
@@ -380,7 +419,7 @@ main#app {
   border-color: var(--primary);
 }
 .plan-item .snippet {
-  font-family: 'Amiri', serif;
+  font-family: var(--ayah-font-family, 'Amiri', serif);
   font-size: 1.1rem;
   color: var(--text);
   flex: 1;
@@ -678,7 +717,7 @@ main#app {
   color: var(--muted);
 }
 .ayah-browse-text {
-  font-family: 'Amiri', serif;
+  font-family: var(--ayah-font-family, 'Amiri', serif);
   font-size: 1.3rem;
   line-height: 2.2;
   width: 100%;
@@ -744,7 +783,7 @@ main#app {
 .ayah-display::after { bottom: 8px; left: 8px; border-right: none; border-top: none; }
 
 .ayah-text {
-  font-family: 'Amiri', serif;
+  font-family: var(--ayah-font-family, 'Amiri', serif);
   font-size: var(--ayah-font-size, 1.8rem);
   line-height: 2.2;
   text-align: center;
@@ -865,7 +904,7 @@ main#app {
   border-bottom: 1px solid var(--border);
 }
 .info-modal-body .meaning-chip:last-child { border-bottom: none; }
-.meaning-chip .mw-ar { font-family: 'Amiri', serif; font-size: 1.15rem; color: var(--text); }
+.meaning-chip .mw-ar { font-family: var(--ayah-font-family, 'Amiri', serif); font-size: 1.15rem; color: var(--text); }
 
 .learn-controls { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin: 14px 0; }
 
@@ -916,7 +955,7 @@ main#app {
   margin-top: 14px;
 }
 .mcq-btn {
-  font-family: 'Amiri', serif;
+  font-family: var(--ayah-font-family, 'Amiri', serif);
   font-size: 1.2rem;
   padding: 10px 18px;
   border-radius: 12px;
@@ -932,7 +971,7 @@ main#app {
 
 .type-answer { display: flex; gap: 10px; justify-content: center; margin-top: 14px; flex-wrap: wrap; }
 .type-answer input {
-  font-family: 'Amiri', serif;
+  font-family: var(--ayah-font-family, 'Amiri', serif);
   font-size: 1.2rem;
   padding: 10px 14px;
   border-radius: 10px;
@@ -1069,15 +1108,18 @@ main#app {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  padding: 24px;
+  padding: 24px 10px;
   touch-action: pan-y;
 }
 /* Centering the overflowing text with align-items:center (rather than an
    auto margin on the item itself) makes the part of it above the visual
    center permanently unreachable by scrolling in most browsers - a well
    known flexbox pitfall. margin:auto still centers short pages but doesn't
-   trap the top of a long one. */
-.mushaf-reader-body .mushaf-text { font-size: 1.7rem; text-align: center; margin: auto 0; }
+   trap the top of a long one. Justified (rather than centered) so the text
+   itself spans the full width of the page instead of sitting in a narrower
+   centered column; text-align-last keeps the final line from stretching
+   into awkward gaps like the rest of a justified paragraph would. */
+.mushaf-reader-body .mushaf-text { font-size: 1.7rem; text-align: justify; text-align-last: center; margin: auto 0; }
 .mushaf-bismillah {
   display: block;
   font-size: 0.85em;
@@ -1170,7 +1212,7 @@ main#app {
   margin-bottom: 14px;
   background: var(--bg);
   border-radius: 12px;
-  font-family: 'Amiri', serif;
+  font-family: var(--ayah-font-family, 'Amiri', serif);
   font-size: 1.2rem;
 }
 .voice-word-chip {
@@ -1190,7 +1232,7 @@ main#app {
   text-align: center;
   margin-bottom: 14px;
 }
-.voice-score-area .vr-text { font-family: 'Amiri', serif; font-size: 1.3rem; line-height: 2.2; }
+.voice-score-area .vr-text { font-family: var(--ayah-font-family, 'Amiri', serif); font-size: 1.3rem; line-height: 2.2; }
 .voice-score-area .vr-word.ok { color: var(--good); }
 .voice-score-area .vr-word.bad { color: var(--danger); text-decoration: line-through; }
 .voice-score-area .vr-score { margin-top: 8px; font-weight: 700; color: var(--primary); }
@@ -1274,13 +1316,15 @@ main#app {
 }
 .points-display-row strong { color: var(--primary); font-size: 1.1rem; }
 
-.theme-grid {
+/* Shared by every cosmetic collectible grid (reciters, themes, fonts,
+   backgrounds) - see renderCollectibleGrid in app.js. */
+.swatch-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 10px;
   margin-top: 8px;
 }
-.theme-swatch {
+.swatch {
   font-family: inherit;
   display: flex;
   flex-direction: column;
@@ -1295,44 +1339,27 @@ main#app {
   text-align: right;
   transition: transform .1s ease, border-color .15s ease;
 }
-.theme-swatch:hover:not(.locked) { transform: translateY(-2px); }
-.theme-swatch.active { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary) inset; }
-.theme-swatch.locked { opacity: 0.55; cursor: not-allowed; }
-.theme-swatch-name { font-weight: 600; font-size: 0.9rem; }
-.theme-swatch-sub { font-size: 0.75rem; color: var(--muted); }
-.theme-swatch.theme-default { background: linear-gradient(135deg, #eef7f2, #d8ecdf); }
-.theme-swatch.theme-sepia { background: linear-gradient(135deg, #f7ecd8, #ecd8ae); }
-.theme-swatch.theme-night { background: linear-gradient(135deg, #1a2436, #2a3a52); color: #eaf0fb; }
-.theme-swatch.theme-night .theme-swatch-sub { color: #b7c4dd; }
-.theme-swatch.theme-forest { background: linear-gradient(135deg, #16281c, #28402e); color: #e6f3ea; }
-.theme-swatch.theme-forest .theme-swatch-sub { color: #b9d6c2; }
+.swatch:hover { transform: translateY(-2px); }
+.swatch.active { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary) inset; }
+.swatch.locked { border-style: dashed; color: var(--muted); }
+.swatch-name { font-weight: 600; font-size: 0.9rem; }
+.swatch-sub { font-size: 0.75rem; color: var(--muted); }
 
-.reciter-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
-  margin-top: 8px;
-}
-.reciter-swatch {
-  font-family: inherit;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  padding: 10px 14px;
-  border-radius: 12px;
-  border: 2px solid var(--border);
-  background: var(--surface);
-  color: var(--text);
-  cursor: pointer;
-  text-align: right;
-  transition: transform .1s ease, border-color .15s ease;
-}
-.reciter-swatch:hover { transform: translateY(-2px); }
-.reciter-swatch.active { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary) inset; }
-.reciter-swatch.locked { border-style: dashed; color: var(--muted); }
-.reciter-swatch-name { font-weight: 600; font-size: 0.85rem; }
-.reciter-swatch-sub { font-size: 0.72rem; color: var(--muted); }
+.swatch.theme-default { background: linear-gradient(135deg, #eef7f2, #d8ecdf); }
+.swatch.theme-sepia { background: linear-gradient(135deg, #f7ecd8, #ecd8ae); }
+.swatch.theme-night { background: linear-gradient(135deg, #1a2436, #2a3a52); color: #eaf0fb; }
+.swatch.theme-night .swatch-sub { color: #b7c4dd; }
+.swatch.theme-forest { background: linear-gradient(135deg, #16281c, #28402e); color: #e6f3ea; }
+.swatch.theme-forest .swatch-sub { color: #b9d6c2; }
+.swatch.theme-embroidered { background: linear-gradient(135deg, #2b1416, #6e1620); color: #f3e3c8; }
+.swatch.theme-embroidered .swatch-sub { color: #d8bd8f; }
+
+.swatch.bg-default { background: repeating-linear-gradient(45deg, var(--surface), var(--surface) 8px, var(--bg) 8px, var(--bg) 16px); }
+.swatch.bg-geometric-gold { background: linear-gradient(135deg, var(--surface), #f2e2b8); }
+.swatch.bg-waves { background: repeating-linear-gradient(135deg, var(--surface) 0, var(--surface) 6px, var(--border) 6px, var(--border) 8px); }
+.swatch.bg-stars-scatter { background: radial-gradient(circle at 25% 30%, var(--accent) 1.5px, transparent 1.5px), radial-gradient(circle at 70% 65%, var(--accent) 1.5px, transparent 1.5px), radial-gradient(circle at 50% 90%, var(--accent) 1.5px, transparent 1.5px), var(--surface); background-size: 14px 14px, 18px 18px, 22px 22px, auto; }
+
+.font-grid .swatch-name { font-size: 1.3rem; }
 
 /* ---------- Daily wird card ---------- */
 
@@ -1456,20 +1483,49 @@ main#app {
 
 /* ---------- Mushaf reading (logs wird independently of memorization) ---------- */
 
-.mushaf-controls { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-.mushaf-controls select { flex: 1; min-width: 140px; }
-.mushaf-controls input { width: 84px; }
-.mushaf-controls select, .mushaf-controls input {
+.mushaf-mode-toggle {
+  display: flex;
+  gap: 6px;
+  background: var(--bg);
+  border-radius: 999px;
+  padding: 4px;
+  width: fit-content;
+  margin-top: 10px;
+}
+.mushaf-mode-btn {
+  border: none;
+  background: transparent;
+  padding: 6px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.mushaf-mode-btn.active { background: var(--primary); color: #fff; }
+
+.mushaf-controls { margin-top: 10px; }
+.mushaf-controls .combo { min-width: 0; }
+.mushaf-controls .combo-list { z-index: 25; }
+.mushaf-page-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.mushaf-page-field input {
   font-family: inherit;
   padding: 9px 10px;
   border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
-  font-size: 0.9rem;
+  font-size: 0.95rem;
 }
+.mushaf-load-btn { width: 100%; margin-top: 12px; }
 .mushaf-text {
-  font-family: 'Amiri', serif;
+  font-family: var(--ayah-font-family, 'Amiri', serif);
   font-size: 1.5rem;
   line-height: 2.1;
   color: var(--text);

@@ -13,8 +13,9 @@ const ROUNDS_TO_MASTER = 3;
 // records the bitrate actually verified working for that reciter's per-ayah
 // files, not just a name people recognize.
 // The first reciter is always free; the rest are a points purchase (see
-// renderReciterGrid) rather than a themes-style cumulative-points-earned
-// threshold - once bought with points spent, a reciter stays unlocked.
+// renderReciterGrid) - once bought with points spent, a reciter stays
+// unlocked. Themes, fonts, and backgrounds below are the exact same kind of
+// purchase (see purchaseOrSelect), just cosmetic instead of audio.
 const RECITERS = [
   { id: "ar.alafasy", name: "مشاري راشد العفاسي", bitrate: 128, points: 0 },
   { id: "ar.husary", name: "محمود خليل الحصري", bitrate: 128, points: 40 },
@@ -24,24 +25,44 @@ const RECITERS = [
   { id: "ar.abdurrahmaansudais", name: "عبد الرحمن السديس", bitrate: 64, points: 80 },
 ];
 
-// Themes double as a motivational unlock: default is always free, the rest
-// open up as the points system below awards points for real memorization
-// work (mastering an ayah, reviewing, the daily challenge) - nothing that
-// affects actual memorization is ever gated, only this cosmetic reward.
 const THEMES = [
   { id: "default", name: "أخضر هادئ", points: 0 },
   { id: "sepia", name: "صحراوي دافئ", points: 50 },
   { id: "night", name: "أزرق ليلي", points: 150 },
   { id: "forest", name: "أخضر داكن مريح", points: 300 },
+  { id: "embroidered", name: "مطرز فاخر", points: 400 },
 ];
 
+// Ayah text font - a purely typographic choice, unlocked and applied the
+// same way as a theme (see applyFont/renderFontGrid).
+const FONTS = [
+  { id: "amiri", name: "أميري (تقليدي)", family: "'Amiri', serif", points: 0 },
+  { id: "scheherazade", name: "شهرزاد", family: "'Scheherazade New', serif", points: 30 },
+  { id: "lateef", name: "لطيف", family: "'Lateef', serif", points: 30 },
+  { id: "arefruqaa", name: "عارف رقعة", family: "'Aref Ruqaa', serif", points: 60 },
+  { id: "reemkufi", name: "ريم كوفي", family: "'Reem Kufi', sans-serif", points: 60 },
+];
+
+// A decorative background pattern behind the whole app (CSS-only - no
+// external images to keep this offline-friendly and licensing-free),
+// selected/purchased exactly like a theme or font (see applyBackground).
+const BACKGROUNDS = [
+  { id: "default", name: "النجمة الافتراضية", points: 0 },
+  { id: "geometric-gold", name: "زخرفة ذهبية", points: 40 },
+  { id: "waves", name: "أمواج هادئة", points: 60 },
+  { id: "stars-scatter", name: "سماء مرصّعة", points: 80 },
+];
+
+// Kept deliberately modest - these are a motivational layer on top of real
+// memorization work, not a reward loop, so unlocking a reciter/theme/font/
+// background should take sustained use, not a single session.
 const POINTS = {
-  masterAyah: 10,
-  reviewEasy: 3,
-  reviewGood: 3,
+  masterAyah: 6,
+  reviewEasy: 2,
+  reviewGood: 2,
   reviewHard: 1,
   reviewAgain: 0,
-  dailyChallenge: 20,
+  dailyChallenge: 10,
 };
 
 // Small inline icon set matching the bottom-nav's stroke style, used instead
@@ -101,6 +122,8 @@ function loadState() {
       parsed.dailyChallenge = parsed.dailyChallenge || { date: null, score: 0, total: 0 };
       parsed.reciter = parsed.reciter || RECITERS[0].id;
       parsed.theme = parsed.theme || THEMES[0].id;
+      parsed.font = parsed.font || FONTS[0].id;
+      parsed.background = parsed.background || BACKGROUNDS[0].id;
       parsed.fontSize = parsed.fontSize || "medium";
       parsed.points = parsed.points || 0;
       parsed.wirdTarget = parsed.wirdTarget || 5;
@@ -108,6 +131,13 @@ function loadState() {
       parsed.dailyCounts = parsed.dailyCounts || {};
       parsed.dailyPageCounts = parsed.dailyPageCounts || {};
       parsed.unlockedReciters = parsed.unlockedReciters || [RECITERS[0].id];
+      // Anyone upgrading from the old cumulative-points-earned theme unlock
+      // keeps whichever theme they had active (even if it wouldn't be
+      // affordable to re-buy today) rather than being reset to default.
+      parsed.unlockedThemes = parsed.unlockedThemes || [THEMES[0].id, parsed.theme];
+      parsed.unlockedFonts = parsed.unlockedFonts || [FONTS[0].id];
+      parsed.unlockedBackgrounds = parsed.unlockedBackgrounds || [BACKGROUNDS[0].id];
+      parsed.mushafPointer = parsed.mushafPointer || null; // {surah, ayah} - where the Mushaf reader should resume next
       return parsed;
     }
   } catch (e) {
@@ -120,6 +150,8 @@ function loadState() {
     dailyChallenge: { date: null, score: 0, total: 0 },
     reciter: RECITERS[0].id,
     theme: THEMES[0].id,
+    font: FONTS[0].id,
+    background: BACKGROUNDS[0].id,
     fontSize: "medium",
     points: 0,
     wirdTarget: 5,
@@ -127,6 +159,10 @@ function loadState() {
     dailyCounts: {}, // "YYYY-MM-DD" -> number of ayahs mastered/reviewed/read that day
     dailyPageCounts: {}, // "YYYY-MM-DD" -> number of Mushaf pages read that day
     unlockedReciters: [RECITERS[0].id],
+    unlockedThemes: [THEMES[0].id],
+    unlockedFonts: [FONTS[0].id],
+    unlockedBackgrounds: [BACKGROUNDS[0].id],
+    mushafPointer: null, // {surah, ayah} - where the Mushaf reader should resume next
   };
 }
 
@@ -172,25 +208,46 @@ function markActivityToday() {
 }
 
 // Points are a pure motivational layer - they never gate any actual
-// memorization feature, only the cosmetic themes above. Awarding them here
-// (rather than scattering literal numbers at each call site) keeps the
-// "what earns points" list in one place and lets this also drive the
-// "you just unlocked a theme" celebration when a threshold is crossed.
+// memorization feature, only the cosmetic purchases in the settings panel
+// (theme/font/background/reciter - see purchaseOrSelect). Awarding them
+// here (rather than scattering literal numbers at each call site) keeps
+// the "what earns points" list in one place.
 function addPoints(amount) {
   if (!amount) return;
-  const before = state.points;
   state.points += amount;
   saveState();
   renderPointsDisplay();
-  let unlockedNew = false;
-  THEMES.forEach((t) => {
-    if (before < t.points && state.points >= t.points) {
-      unlockedNew = true;
-      fireConfetti(true);
-      showToast(`🔓 فتحت مظهرًا جديدًا: "${t.name}"! غيّره من الإعدادات ⚙️`, "success");
-    }
-  });
-  if (unlockedNew && document.getElementById("theme-grid")) renderThemeGrid();
+}
+
+// Shared click-purchase flow for every cosmetic collectible grid (reciters,
+// themes, fonts, backgrounds): selecting an already-owned item is free and
+// instant, selecting a locked one spends points behind a confirm dialog (or
+// explains the shortfall) - unlike the old cumulative-points-earned theme
+// unlock, points are actually spent and stay spent.
+function purchaseOrSelect(item, ownedList, { onSelect, confirmTitle, unlockedNoun, thisNoun }) {
+  if (ownedList.includes(item.id)) {
+    onSelect(item.id);
+    saveState();
+    return;
+  }
+  if (state.points >= item.points) {
+    showConfirmModal(
+      confirmTitle,
+      `افتح "${item.name}" مقابل ${item.points} 🪙 (رصيدك: ${state.points})؟`,
+      `أنفق ${item.points} 🪙 وافتحه`,
+      () => {
+        state.points -= item.points;
+        ownedList.push(item.id);
+        onSelect(item.id);
+        saveState();
+        renderPointsDisplay();
+        fireConfetti(true);
+        showToast(`🔓 فتحت ${unlockedNoun}: "${item.name}"!`, "success");
+      }
+    );
+  } else {
+    showToast(`🪙 يتطلب فتح ${thisNoun} ${item.points} نقطة ولا تملك ما يكفي (رصيدك: ${state.points}).`, "error");
+  }
 }
 
 function renderPointsDisplay() {
@@ -691,49 +748,113 @@ function toArabicIndicDigits(n) {
 // the wird is just reading, not new memorization. Reading happens in a
 // fullscreen, distraction-free reader (see openMushafReader below) rather
 // than inline on the dashboard.
+let selectedMushafSurah = null;
+let mushafInputMode = "range"; // "range" | "page"
+
+document.querySelectorAll(".mushaf-mode-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    mushafInputMode = btn.dataset.mushafMode;
+    document.querySelectorAll(".mushaf-mode-btn").forEach((b) => b.classList.toggle("active", b === btn));
+    document.getElementById("mushaf-range-controls").classList.toggle("hidden", mushafInputMode !== "range");
+    document.getElementById("mushaf-page-controls").classList.toggle("hidden", mushafInputMode !== "page");
+  });
+});
+
 async function initMushafCard() {
-  const select = document.getElementById("mushaf-surah-select");
   const loadBtn = document.getElementById("btn-mushaf-load");
   loadBtn.innerHTML = iconLabel("book", "عرض للقراءة");
 
   try {
     const surahs = await fetchSurahList();
-    select.innerHTML = surahs.map((s) => `<option value="${s.number}">${s.number}. ${s.name}</option>`).join("");
-    // Default to wherever memorization currently stands instead of always
-    // the first surah in the list, so this doesn't reset to Al-Fatiha
-    // every time regardless of how far the person has actually progressed.
-    if (surahs.some((s) => s.number === state.learningPointer.surah)) {
-      select.value = String(state.learningPointer.surah);
-    }
-    await updateMushafDefaultRange();
+    const startSurah = defaultMushafSurah(surahs);
+    setupSurahCombo("mushaf-surah-combo", "mushaf-surah-combo-input", "mushaf-surah-combo-list", surahs, (surahNumber) => {
+      updateMushafDefaultRange(surahNumber);
+    }).setValue(startSurah);
+    await updateMushafDefaultRange(startSurah);
   } catch (e) {
-    select.innerHTML = `<option value="">تعذّر تحميل قائمة السور</option>`;
+    document.getElementById("mushaf-surah-combo-input").placeholder = "تعذّر تحميل قائمة السور";
   }
 
-  select.addEventListener("change", updateMushafDefaultRange);
+  document.getElementById("mushaf-from").addEventListener("input", async () => {
+    if (!selectedMushafSurah) return;
+    try {
+      const ayahs = await fetchSurahAyahs(selectedMushafSurah);
+      const from = Math.max(1, Math.min(Number(document.getElementById("mushaf-from").value) || 1, ayahs.length));
+      document.getElementById("mushaf-to").value = computeMushafTo(ayahs, from);
+    } catch (e) {
+      // leave whatever's there
+    }
+  });
 
   loadBtn.addEventListener("click", async () => {
-    const surahNumber = Number(select.value);
+    if (mushafInputMode === "page") {
+      const pageNumber = Number(document.getElementById("mushaf-page-input").value);
+      if (!pageNumber || pageNumber < 1 || pageNumber > 604) {
+        showToast("أدخل رقم صفحة صحيح بين 1 و604.", "error");
+        return;
+      }
+      try {
+        const res = await fetchWithTimeout(`${API_BASE}/page/${pageNumber}/quran-uthmani`, 8000);
+        const json = await res.json();
+        const ayahs = (json.data.ayahs || []).map((a) => ({ ...a, surahNumberForReader: a.surah.number }));
+        if (ayahs.length === 0) return;
+        openMushafReader(ayahs);
+      } catch (e) {
+        showToast("تعذّر تحميل الصفحة. تحقق من الاتصال بالإنترنت.", "error");
+      }
+      return;
+    }
+    const surahNumber = selectedMushafSurah;
     const from = Number(document.getElementById("mushaf-from").value) || 1;
     const to = Number(document.getElementById("mushaf-to").value) || from;
     if (!surahNumber || from > to) return;
     try {
       const ayahs = await fetchSurahAyahs(surahNumber);
-      const matches = ayahs.filter((a) => a.numberInSurah >= from && a.numberInSurah <= to);
+      const matches = ayahs
+        .filter((a) => a.numberInSurah >= from && a.numberInSurah <= to)
+        .map((a) => ({ ...a, surahNumberForReader: surahNumber }));
       if (matches.length === 0) return;
-      openMushafReader(matches, surahNumber);
+      openMushafReader(matches);
     } catch (e) {
       showToast("تعذّر تحميل النص. تحقق من الاتصال بالإنترنت.", "error");
     }
   });
 }
 
-// Defaults the from/to range to whatever the wird plan actually asks for
-// (N ayahs, or however many ayahs the next N real Mushaf pages hold) instead
-// of an arbitrary fixed 1-5, so the reading card matches the daily target.
-async function updateMushafDefaultRange() {
-  const select = document.getElementById("mushaf-surah-select");
-  const surahNumber = Number(select && select.value);
+// Resume wherever the last Mushaf-reading session left off; otherwise
+// default to wherever memorization currently stands, so this doesn't reset
+// to Al-Fatiha every time regardless of how far the person has progressed.
+function defaultMushafSurah(surahs) {
+  if (state.mushafPointer && surahs.some((s) => s.number === state.mushafPointer.surah)) {
+    return state.mushafPointer.surah;
+  }
+  if (surahs.some((s) => s.number === state.learningPointer.surah)) {
+    return state.learningPointer.surah;
+  }
+  return surahs[0].number;
+}
+
+// How many ayahs the daily wird plan actually asks for, starting from a
+// given ayah (N ayahs, or however many ayahs the next N real Mushaf pages
+// hold) - shared by the default-range calculation and by manually editing
+// the "from" field, so either path keeps "to" in sync with the daily target.
+function computeMushafTo(ayahs, from) {
+  if (state.wirdTargetType === "pages") {
+    const pages = groupAyahsIntoMushafPages(ayahs);
+    let fromPageIdx = pages.findIndex((p) => p.ayahs[p.ayahs.length - 1].numberInSurah >= from);
+    if (fromPageIdx === -1) fromPageIdx = 0;
+    const pageCount = Math.max(1, Math.min(state.wirdTarget || 1, pages.length - fromPageIdx));
+    const lastPage = pages[fromPageIdx + pageCount - 1];
+    return lastPage.ayahs[lastPage.ayahs.length - 1].numberInSurah;
+  }
+  return Math.min(from + (state.wirdTarget || 5) - 1, ayahs.length);
+}
+
+// Defaults the from/to range to wherever this surah's reading should pick
+// up (see defaultMushafSurah) and how far the wird plan says to go from
+// there, instead of an arbitrary fixed 1-5.
+async function updateMushafDefaultRange(surahNumber) {
+  selectedMushafSurah = surahNumber;
   if (!surahNumber) return;
   const fromInput = document.getElementById("mushaf-from");
   const toInput = document.getElementById("mushaf-to");
@@ -741,26 +862,16 @@ async function updateMushafDefaultRange() {
     const ayahs = await fetchSurahAyahs(surahNumber);
     fromInput.max = ayahs.length;
     toInput.max = ayahs.length;
-    // Picking up from the current memorization ayah only makes sense when
-    // this surah IS the one currently being memorized - otherwise (the
-    // person browsed to a different surah) there's no "current position"
-    // in it, so it starts from ayah 1 like before.
-    const from = surahNumber === state.learningPointer.surah
-      ? Math.min(state.learningPointer.ayah, ayahs.length)
-      : 1;
-    let to;
-    if (state.wirdTargetType === "pages") {
-      const pages = groupAyahsIntoMushafPages(ayahs);
-      let fromPageIdx = pages.findIndex((p) => p.ayahs[p.ayahs.length - 1].numberInSurah >= from);
-      if (fromPageIdx === -1) fromPageIdx = 0;
-      const pageCount = Math.max(1, Math.min(state.wirdTarget || 1, pages.length - fromPageIdx));
-      const lastPage = pages[fromPageIdx + pageCount - 1];
-      to = lastPage.ayahs[lastPage.ayahs.length - 1].numberInSurah;
+    let from;
+    if (state.mushafPointer && state.mushafPointer.surah === surahNumber) {
+      from = Math.min(state.mushafPointer.ayah, ayahs.length);
+    } else if (surahNumber === state.learningPointer.surah) {
+      from = Math.min(state.learningPointer.ayah, ayahs.length);
     } else {
-      to = Math.min(from + (state.wirdTarget || 5) - 1, ayahs.length);
+      from = 1;
     }
     fromInput.value = from;
-    toInput.value = to;
+    toInput.value = computeMushafTo(ayahs, from);
   } catch (e) {
     // leave whatever values are already there
   }
@@ -776,7 +887,6 @@ async function updateMushafDefaultRange() {
 let mushafPages = [];
 let mushafPageIndex = 0;
 let mushafVisitedPages = new Set(); // pages actually displayed this session - only credited on "نعم، أنهيت"
-let mushafReaderSurahNumber = null;
 
 // Every surah but At-Tawbah (9) has the Quran's Uthmani text carrying
 // "بسم الله الرحمن الرحيم" glued onto the START of ayah 1's own text - real
@@ -806,11 +916,13 @@ function groupAyahsIntoMushafPages(ayahs) {
   return pages;
 }
 
-function openMushafReader(ayahs, surahNumber) {
+// ayahs must each carry a surahNumberForReader (see the two loadBtn paths
+// above) - reading by page number can cross a surah boundary within a
+// single page, so the reader can't assume one surah for the whole session.
+function openMushafReader(ayahs) {
   mushafPages = groupAyahsIntoMushafPages(ayahs);
   mushafPageIndex = 0;
   mushafVisitedPages = new Set();
-  mushafReaderSurahNumber = surahNumber;
   document.getElementById("mushaf-reader-overlay").classList.remove("modal-closed");
   renderMushafReaderPage();
 }
@@ -826,7 +938,7 @@ function renderMushafReaderPage() {
   const bodyHTML = page.ayahs
     .map((a) => {
       let text = a.text;
-      if (a.numberInSurah === 1 && mushafReaderSurahNumber !== 1) {
+      if (a.numberInSurah === 1 && a.surahNumberForReader !== 1) {
         const { bismillah, rest } = splitBismillah(text);
         if (bismillah) {
           // A span (not a <p>, which browsers won't let nest inside the
@@ -874,12 +986,32 @@ function goToNextMushafPage() {
   }
 }
 
-function finishMushafReading() {
+async function finishMushafReading() {
   const visitedPages = mushafPages.filter((p) => mushafVisitedPages.has(p.pageNumber));
   const totalAyahs = visitedPages.reduce((sum, p) => sum + p.ayahs.length, 0);
   const today = todayISO();
   state.dailyCounts[today] = (state.dailyCounts[today] || 0) + totalAyahs;
   state.dailyPageCounts[today] = (state.dailyPageCounts[today] || 0) + visitedPages.length;
+
+  // Remember where this session left off, so the reading card resumes from
+  // there next time instead of always restarting from ayah 1 - rolling over
+  // to the next surah's ayah 1 if this one is now fully read.
+  const lastPage = visitedPages[visitedPages.length - 1];
+  if (lastPage) {
+    const lastAyah = lastPage.ayahs[lastPage.ayahs.length - 1];
+    const lastSurah = lastAyah.surahNumberForReader;
+    try {
+      const surahs = await fetchSurahList();
+      const meta = surahs.find((s) => s.number === lastSurah);
+      const finishedSurah = meta && lastAyah.numberInSurah >= meta.numberOfAyahs;
+      state.mushafPointer = finishedSurah
+        ? { surah: Math.min(lastSurah + 1, 114), ayah: 1 }
+        : { surah: lastSurah, ayah: lastAyah.numberInSurah + 1 };
+    } catch (e) {
+      state.mushafPointer = { surah: lastSurah, ayah: lastAyah.numberInSurah + 1 };
+    }
+  }
+
   saveState();
   renderWirdCard();
   closeMushafReader();
@@ -890,7 +1022,7 @@ function finishMushafReading() {
   const total = counts[today] || 0;
   if (total > target) {
     const surplus = total - target;
-    const bonus = surplus * (type === "pages" ? 5 : 1);
+    const bonus = surplus * (type === "pages" ? 2 : 1);
     addPoints(bonus);
     // A long-lived toast (see .toast timing) that layers above the modal
     // stack (toast-container's z-index), so it stays visible even though
@@ -1066,53 +1198,71 @@ let selectedBrowseSurahName = "";
 
 document.getElementById("ayah-search-icon").innerHTML = ICONS.search;
 
+// A searchable surah combobox - replaces a native <select>, which on
+// mobile browsers (especially Android Chrome) takes over the whole screen
+// with a plain OS list instead of a small in-page dropdown. Shared between
+// the browse tab and the Mushaf reading card instead of each rolling its
+// own copy of the same filter/select/outside-click logic.
+function setupSurahCombo(containerId, inputId, listId, surahs, onSelect) {
+  const container = document.getElementById(containerId);
+  const input = document.getElementById(inputId);
+  const list = document.getElementById(listId);
+
+  function renderComboList(filterText) {
+    const f = (filterText || "").trim().toLowerCase();
+    const matches = surahs.filter(
+      (s) => !f || String(s.number) === f || s.name.includes(filterText.trim()) || s.englishName.toLowerCase().includes(f)
+    );
+    list.innerHTML =
+      matches
+        .slice(0, 30)
+        .map((s) => `<div class="combo-item" data-number="${s.number}">${s.number}. ${s.name} <span class="muted">(${s.englishName})</span></div>`)
+        .join("") || `<div class="combo-empty muted">لا توجد نتائج</div>`;
+    list.querySelectorAll(".combo-item").forEach((el) => {
+      el.addEventListener("click", () => {
+        const surahNumber = Number(el.dataset.number);
+        const meta = surahs.find((s) => s.number === surahNumber);
+        setValue(surahNumber);
+        list.classList.add("hidden");
+        onSelect(surahNumber, meta);
+      });
+    });
+  }
+
+  function setValue(surahNumber) {
+    const meta = surahs.find((s) => s.number === surahNumber);
+    if (!meta) return;
+    input.value = `${meta.number}. ${meta.name}`;
+    input.dataset.selected = "1";
+  }
+
+  input.addEventListener("focus", () => {
+    renderComboList(input.dataset.selected ? "" : input.value);
+    list.classList.remove("hidden");
+  });
+  input.addEventListener("input", () => {
+    input.dataset.selected = "";
+    renderComboList(input.value);
+    list.classList.remove("hidden");
+  });
+  document.addEventListener("click", (e) => {
+    if (!container.contains(e.target)) list.classList.add("hidden");
+  });
+
+  return { setValue };
+}
+
 async function initBrowseTab() {
-  const input = document.getElementById("surah-combo-input");
-  const list = document.getElementById("surah-combo-list");
   try {
     const surahs = await fetchSurahList();
+    setupSurahCombo("surah-combo", "surah-combo-input", "surah-combo-list", surahs, (surahNumber, meta) => {
+      selectedBrowseSurah = surahNumber;
+      selectedBrowseSurahName = meta.name;
+      loadBrowseSurah(surahNumber);
+    }).setValue(surahs[0].number);
 
-    function renderComboList(filterText) {
-      const f = (filterText || "").trim().toLowerCase();
-      const matches = surahs.filter(
-        (s) => !f || String(s.number) === f || s.name.includes(filterText.trim()) || s.englishName.toLowerCase().includes(f)
-      );
-      list.innerHTML =
-        matches
-          .slice(0, 30)
-          .map((s) => `<div class="combo-item" data-number="${s.number}">${s.number}. ${s.name} <span class="muted">(${s.englishName})</span></div>`)
-          .join("") || `<div class="combo-empty muted">لا توجد نتائج</div>`;
-      list.querySelectorAll(".combo-item").forEach((el) => {
-        el.addEventListener("click", () => {
-          const surahNumber = Number(el.dataset.number);
-          const meta = surahs.find((s) => s.number === surahNumber);
-          selectedBrowseSurah = surahNumber;
-          selectedBrowseSurahName = meta.name;
-          input.value = `${meta.number}. ${meta.name}`;
-          list.classList.add("hidden");
-          loadBrowseSurah(surahNumber);
-        });
-      });
-    }
-
-    input.addEventListener("focus", () => {
-      renderComboList(input.dataset.selected ? "" : input.value);
-      list.classList.remove("hidden");
-    });
-    input.addEventListener("input", () => {
-      input.dataset.selected = "";
-      renderComboList(input.value);
-      list.classList.remove("hidden");
-    });
-    document.addEventListener("click", (e) => {
-      if (!document.getElementById("surah-combo").contains(e.target)) list.classList.add("hidden");
-    });
-
-    const first = surahs[0];
-    selectedBrowseSurah = first.number;
-    selectedBrowseSurahName = first.name;
-    input.value = `${first.number}. ${first.name}`;
-    input.dataset.selected = "1";
+    selectedBrowseSurah = surahs[0].number;
+    selectedBrowseSurahName = surahs[0].name;
     loadBrowseSurah(selectedBrowseSurah);
   } catch (e) {
     document.getElementById("surah-meta-info").textContent = "تعذّر تحميل قائمة السور. تحقق من الاتصال بالإنترنت.";
@@ -2334,6 +2484,15 @@ function applyFontSize() {
   document.documentElement.style.setProperty("--ayah-font-size", FONT_SIZES[state.fontSize] || FONT_SIZES.medium);
 }
 
+function applyFont() {
+  const font = FONTS.find((f) => f.id === state.font) || FONTS[0];
+  document.documentElement.style.setProperty("--ayah-font-family", font.family);
+}
+
+function applyBackground() {
+  document.documentElement.dataset.bg = state.background;
+}
+
 // Update whichever ayah's audio element is currently loaded to the newly
 // chosen reciter's file, instead of leaving the old reciter's src in place
 // until the next ayah loads (which used to make it look like changing the
@@ -2355,77 +2514,98 @@ function refreshCurrentAudioSrc() {
   }
 }
 
-function renderThemeGrid() {
-  const grid = document.getElementById("theme-grid");
-  grid.innerHTML = THEMES.map((t) => {
-    const unlocked = state.points >= t.points;
-    const active = state.theme === t.id;
-    const sub = t.points === 0 ? "مجاني" : unlocked ? "مفتوح ✓" : `🔒 ${t.points} نقطة`;
+// A generic points-purchase collectible grid (reciters, themes, fonts,
+// backgrounds all use this): each button is either free, owned (click to
+// select instantly), or locked (click to spend points behind a confirm, via
+// purchaseOrSelect) - previewHTML lets each grid render its own swatch look
+// (a color gradient, a font-styled sample, a reciter/pattern name) while
+// sharing the unlock/select mechanics and layout.
+function renderCollectibleGrid({ gridId, items, ownedList, activeId, extraClass, previewHTML, onSelect, afterRender, confirmTitle, unlockedNoun, thisNoun }) {
+  const grid = document.getElementById(gridId);
+  if (!grid) return;
+  grid.innerHTML = items.map((item) => {
+    const owned = ownedList.includes(item.id);
+    const active = activeId === item.id;
+    const sub = item.points === 0 ? "مجاني" : owned ? "مملوك ✓" : `🔒 ${item.points} نقطة`;
     return `
-      <button class="theme-swatch theme-${t.id} ${active ? "active" : ""} ${unlocked ? "" : "locked"}" data-theme-id="${t.id}" ${unlocked ? "" : "disabled"}>
-        <span class="theme-swatch-name">${t.name}</span>
-        <span class="theme-swatch-sub">${sub}</span>
+      <button class="swatch ${extraClass ? extraClass(item) : ""} ${active ? "active" : ""} ${owned ? "" : "locked"}" data-id="${item.id}">
+        ${previewHTML ? previewHTML(item) : `<span class="swatch-name">${item.name}</span>`}
+        <span class="swatch-sub">${sub}</span>
       </button>
     `;
   }).join("");
-  grid.querySelectorAll(".theme-swatch").forEach((btn) => {
+  grid.querySelectorAll(".swatch").forEach((btn) => {
     btn.addEventListener("click", () => {
-      state.theme = btn.dataset.themeId;
-      saveState();
-      applyTheme();
-      renderThemeGrid();
+      const item = items.find((i) => i.id === btn.dataset.id);
+      purchaseOrSelect(item, ownedList, {
+        onSelect: (id) => {
+          onSelect(id);
+          if (afterRender) afterRender();
+          renderCollectibleGrid({ gridId, items, ownedList, activeId: id, extraClass, previewHTML, onSelect, afterRender, confirmTitle, unlockedNoun, thisNoun });
+        },
+        confirmTitle,
+        unlockedNoun,
+        thisNoun,
+      });
     });
   });
 }
 
-// Unlike themes (a cumulative-points-earned threshold), a reciter is a
-// one-time points purchase that permanently unlocks it - selecting an
-// already-owned one is free and instant, selecting a locked one asks to
-// spend points (or explains the shortfall if there aren't enough).
+function renderThemeGrid() {
+  renderCollectibleGrid({
+    gridId: "theme-grid",
+    items: THEMES,
+    ownedList: state.unlockedThemes,
+    activeId: state.theme,
+    extraClass: (t) => `theme-${t.id}`,
+    previewHTML: (t) => `<span class="swatch-name">${t.name}</span>`,
+    onSelect: (id) => { state.theme = id; applyTheme(); },
+    confirmTitle: "فتح مظهر جديد",
+    unlockedNoun: "مظهرًا جديدًا",
+    thisNoun: "هذا المظهر",
+  });
+}
+
 function renderReciterGrid() {
-  const grid = document.getElementById("reciter-grid");
-  grid.innerHTML = RECITERS.map((r) => {
-    const owned = state.unlockedReciters.includes(r.id);
-    const active = state.reciter === r.id;
-    const sub = r.points === 0 ? "مجاني" : owned ? "مملوك ✓" : `🔒 ${r.points} نقطة`;
-    return `
-      <button class="reciter-swatch ${active ? "active" : ""} ${owned ? "" : "locked"}" data-reciter-id="${r.id}">
-        <span class="reciter-swatch-name">${r.name}</span>
-        <span class="reciter-swatch-sub">${sub}</span>
-      </button>
-    `;
-  }).join("");
-  grid.querySelectorAll(".reciter-swatch").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const id = btn.dataset.reciterId;
-      const reciter = RECITERS.find((r) => r.id === id);
-      if (state.unlockedReciters.includes(id)) {
-        state.reciter = id;
-        saveState();
-        refreshCurrentAudioSrc();
-        renderReciterGrid();
-        showToast("تم تغيير القارئ ✓", "success");
-      } else if (state.points >= reciter.points) {
-        showConfirmModal(
-          "فتح قارئ جديد",
-          `افتح صوت "${reciter.name}" مقابل ${reciter.points} 🪙 (رصيدك: ${state.points})؟`,
-          `أنفق ${reciter.points} 🪙 وافتحه`,
-          () => {
-            state.points -= reciter.points;
-            state.unlockedReciters.push(id);
-            state.reciter = id;
-            saveState();
-            renderPointsDisplay();
-            refreshCurrentAudioSrc();
-            renderReciterGrid();
-            fireConfetti(true);
-            showToast(`🔓 فتحت صوت "${reciter.name}"!`, "success");
-          }
-        );
-      } else {
-        showToast(`🪙 يتطلب فتح هذا القارئ ${reciter.points} نقطة ولا تملك ما يكفي (رصيدك: ${state.points}).`, "error");
-      }
-    });
+  renderCollectibleGrid({
+    gridId: "reciter-grid",
+    items: RECITERS,
+    ownedList: state.unlockedReciters,
+    activeId: state.reciter,
+    previewHTML: (r) => `<span class="swatch-name">${r.name}</span>`,
+    onSelect: (id) => { state.reciter = id; refreshCurrentAudioSrc(); },
+    confirmTitle: "فتح قارئ جديد",
+    unlockedNoun: "صوت",
+    thisNoun: "هذا القارئ",
+  });
+}
+
+function renderFontGrid() {
+  renderCollectibleGrid({
+    gridId: "font-grid",
+    items: FONTS,
+    ownedList: state.unlockedFonts,
+    activeId: state.font,
+    previewHTML: (f) => `<span class="swatch-name" style="font-family:${f.family}">بِسْمِ اللَّهِ</span>`,
+    onSelect: (id) => { state.font = id; applyFont(); },
+    confirmTitle: "فتح خط جديد",
+    unlockedNoun: "خطًا جديدًا",
+    thisNoun: "هذا الخط",
+  });
+}
+
+function renderBackgroundGrid() {
+  renderCollectibleGrid({
+    gridId: "background-grid",
+    items: BACKGROUNDS,
+    ownedList: state.unlockedBackgrounds,
+    activeId: state.background,
+    extraClass: (b) => `bg-${b.id}`,
+    previewHTML: (b) => `<span class="swatch-name">${b.name}</span>`,
+    onSelect: (id) => { state.background = id; applyBackground(); },
+    confirmTitle: "فتح خلفية جديدة",
+    unlockedNoun: "خلفية جديدة",
+    thisNoun: "هذه الخلفية",
   });
 }
 
@@ -2436,6 +2616,8 @@ function initSettingsPanel() {
   fontSizeSelect.value = state.fontSize;
   renderReciterGrid();
   renderThemeGrid();
+  renderFontGrid();
+  renderBackgroundGrid();
   renderPointsDisplay();
 
   document.getElementById("btn-settings").addEventListener("click", () => overlay.classList.remove("modal-closed"));
@@ -2463,6 +2645,8 @@ if ("serviceWorker" in navigator) {
 
 applyTheme();
 applyFontSize();
+applyFont();
+applyBackground();
 initSettingsPanel();
 initWirdCard();
 initMushafCard();
