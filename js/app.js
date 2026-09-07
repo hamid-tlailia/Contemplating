@@ -12,13 +12,16 @@ const ROUNDS_TO_MASTER = 3;
 // popular ones 403 at 128kbps but work at 64kbps, and vice versa. Each entry
 // records the bitrate actually verified working for that reciter's per-ayah
 // files, not just a name people recognize.
+// The first reciter is always free; the rest are a points purchase (see
+// renderReciterGrid) rather than a themes-style cumulative-points-earned
+// threshold - once bought with points spent, a reciter stays unlocked.
 const RECITERS = [
-  { id: "ar.alafasy", name: "مشاري راشد العفاسي", bitrate: 128 },
-  { id: "ar.husary", name: "محمود خليل الحصري", bitrate: 128 },
-  { id: "ar.minshawi", name: "محمد صديق المنشاوي", bitrate: 128 },
-  { id: "ar.mahermuaiqly", name: "ماهر المعيقلي", bitrate: 128 },
-  { id: "ar.abdulbasitmurattal", name: "عبد الباسط عبد الصمد", bitrate: 64 },
-  { id: "ar.abdurrahmaansudais", name: "عبد الرحمن السديس", bitrate: 64 },
+  { id: "ar.alafasy", name: "مشاري راشد العفاسي", bitrate: 128, points: 0 },
+  { id: "ar.husary", name: "محمود خليل الحصري", bitrate: 128, points: 40 },
+  { id: "ar.minshawi", name: "محمد صديق المنشاوي", bitrate: 128, points: 40 },
+  { id: "ar.mahermuaiqly", name: "ماهر المعيقلي", bitrate: 128, points: 60 },
+  { id: "ar.abdulbasitmurattal", name: "عبد الباسط عبد الصمد", bitrate: 64, points: 60 },
+  { id: "ar.abdurrahmaansudais", name: "عبد الرحمن السديس", bitrate: 64, points: 80 },
 ];
 
 // Themes double as a motivational unlock: default is always free, the rest
@@ -103,6 +106,7 @@ function loadState() {
       parsed.wirdTargetType = parsed.wirdTargetType || "ayahs";
       parsed.dailyCounts = parsed.dailyCounts || {};
       parsed.dailyPageCounts = parsed.dailyPageCounts || {};
+      parsed.unlockedReciters = parsed.unlockedReciters || [RECITERS[0].id];
       return parsed;
     }
   } catch (e) {
@@ -121,6 +125,7 @@ function loadState() {
     wirdTargetType: "ayahs", // "ayahs" | "pages" - which unit wirdTarget is measured in
     dailyCounts: {}, // "YYYY-MM-DD" -> number of ayahs mastered/reviewed/read that day
     dailyPageCounts: {}, // "YYYY-MM-DD" -> number of Mushaf pages read that day
+    unlockedReciters: [RECITERS[0].id],
   };
 }
 
@@ -515,6 +520,11 @@ document.querySelectorAll("[data-tab]").forEach((btn) => {
 });
 
 function switchTab(tab) {
+  // Every tab shares the one document scroll, so without this, scrolling
+  // down on one tab left the next tab opened already scrolled past its own
+  // top content (startSingleItemReview restores a specific scroll position
+  // afterward on its own, which still works since that runs after this).
+  window.scrollTo(0, 0);
   document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
   document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === `tab-${tab}`));
   if (tab === "dashboard") renderDashboard();
@@ -654,6 +664,12 @@ async function initMushafCard() {
   try {
     const surahs = await fetchSurahList();
     select.innerHTML = surahs.map((s) => `<option value="${s.number}">${s.number}. ${s.name}</option>`).join("");
+    // Default to wherever memorization currently stands instead of always
+    // the first surah in the list, so this doesn't reset to Al-Fatiha
+    // every time regardless of how far the person has actually progressed.
+    if (surahs.some((s) => s.number === state.learningPointer.surah)) {
+      select.value = String(state.learningPointer.surah);
+    }
     await updateMushafDefaultRange();
   } catch (e) {
     select.innerHTML = `<option value="">تعذّر تحميل قائمة السور</option>`;
@@ -690,12 +706,20 @@ async function updateMushafDefaultRange() {
     const ayahs = await fetchSurahAyahs(surahNumber);
     fromInput.max = ayahs.length;
     toInput.max = ayahs.length;
-    const from = 1;
+    // Picking up from the current memorization ayah only makes sense when
+    // this surah IS the one currently being memorized - otherwise (the
+    // person browsed to a different surah) there's no "current position"
+    // in it, so it starts from ayah 1 like before.
+    const from = surahNumber === state.learningPointer.surah
+      ? Math.min(state.learningPointer.ayah, ayahs.length)
+      : 1;
     let to;
     if (state.wirdTargetType === "pages") {
       const pages = groupAyahsIntoMushafPages(ayahs);
-      const pageCount = Math.max(1, Math.min(state.wirdTarget || 1, pages.length));
-      const lastPage = pages[pageCount - 1];
+      let fromPageIdx = pages.findIndex((p) => p.ayahs[p.ayahs.length - 1].numberInSurah >= from);
+      if (fromPageIdx === -1) fromPageIdx = 0;
+      const pageCount = Math.max(1, Math.min(state.wirdTarget || 1, pages.length - fromPageIdx));
+      const lastPage = pages[fromPageIdx + pageCount - 1];
       to = lastPage.ayahs[lastPage.ayahs.length - 1].numberInSurah;
     } else {
       to = Math.min(from + (state.wirdTarget || 5) - 1, ayahs.length);
@@ -710,9 +734,9 @@ async function updateMushafDefaultRange() {
 // ---------- Fullscreen Mushaf reader ----------
 // Paginated by the real Madani Mushaf page number the API already tags
 // each ayah with (so a page holds exactly as many ayahs as an actual
-// printed page, not an arbitrary chunk), with each page's ayah count
-// credited to today's wird the moment the person turns past it - no
-// separate "mark as read" step needed.
+// printed page, not an arbitrary chunk). Every page displayed this
+// session is credited to today's wird in one batch once "نعم، أنهيت" is
+// confirmed - see finishMushafReading.
 
 let mushafPages = [];
 let mushafPageIndex = 0;
@@ -2203,14 +2227,63 @@ function renderThemeGrid() {
   });
 }
 
+// Unlike themes (a cumulative-points-earned threshold), a reciter is a
+// one-time points purchase that permanently unlocks it - selecting an
+// already-owned one is free and instant, selecting a locked one asks to
+// spend points (or explains the shortfall if there aren't enough).
+function renderReciterGrid() {
+  const grid = document.getElementById("reciter-grid");
+  grid.innerHTML = RECITERS.map((r) => {
+    const owned = state.unlockedReciters.includes(r.id);
+    const active = state.reciter === r.id;
+    const sub = r.points === 0 ? "مجاني" : owned ? "مملوك ✓" : `🔒 ${r.points} نقطة`;
+    return `
+      <button class="reciter-swatch ${active ? "active" : ""} ${owned ? "" : "locked"}" data-reciter-id="${r.id}">
+        <span class="reciter-swatch-name">${r.name}</span>
+        <span class="reciter-swatch-sub">${sub}</span>
+      </button>
+    `;
+  }).join("");
+  grid.querySelectorAll(".reciter-swatch").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.reciterId;
+      const reciter = RECITERS.find((r) => r.id === id);
+      if (state.unlockedReciters.includes(id)) {
+        state.reciter = id;
+        saveState();
+        refreshCurrentAudioSrc();
+        renderReciterGrid();
+        showToast("تم تغيير القارئ ✓", "success");
+      } else if (state.points >= reciter.points) {
+        showConfirmModal(
+          "فتح قارئ جديد",
+          `افتح صوت "${reciter.name}" مقابل ${reciter.points} 🪙 (رصيدك: ${state.points})؟`,
+          `أنفق ${reciter.points} 🪙 وافتحه`,
+          () => {
+            state.points -= reciter.points;
+            state.unlockedReciters.push(id);
+            state.reciter = id;
+            saveState();
+            renderPointsDisplay();
+            refreshCurrentAudioSrc();
+            renderReciterGrid();
+            fireConfetti(true);
+            showToast(`🔓 فتحت صوت "${reciter.name}"!`, "success");
+          }
+        );
+      } else {
+        showToast(`🪙 يتطلب فتح هذا القارئ ${reciter.points} نقطة ولا تملك ما يكفي (رصيدك: ${state.points}).`, "error");
+      }
+    });
+  });
+}
+
 function initSettingsPanel() {
   const overlay = document.getElementById("settings-overlay");
-  const reciterSelect = document.getElementById("reciter-select");
   const fontSizeSelect = document.getElementById("font-size-select");
 
-  reciterSelect.innerHTML = RECITERS.map((r) => `<option value="${r.id}">${r.name}</option>`).join("");
-  reciterSelect.value = state.reciter;
   fontSizeSelect.value = state.fontSize;
+  renderReciterGrid();
   renderThemeGrid();
   renderPointsDisplay();
 
@@ -2220,12 +2293,6 @@ function initSettingsPanel() {
     if (e.target === overlay) overlay.classList.add("modal-closed");
   });
 
-  reciterSelect.addEventListener("change", () => {
-    state.reciter = reciterSelect.value;
-    saveState();
-    refreshCurrentAudioSrc();
-    showToast("تم تغيير القارئ ✓", "success");
-  });
   fontSizeSelect.addEventListener("change", () => {
     state.fontSize = fontSizeSelect.value;
     saveState();

@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
 <title>تدبر - تطبيق حفظ القرآن الكريم بذكاء</title>
 <meta name="description" content="احفظ القرآن الكريم بالتكرار المتباعد، الاختيار من متعدد، الكتابة، والاختبار الصوتي.">
 <meta name="theme-color" content="#1f6f5c">
@@ -63,10 +63,10 @@
       <span>🪙 نقاطك</span>
       <strong id="points-display">0</strong>
     </div>
-    <label class="settings-field">
-      القارئ
-      <select id="reciter-select"></select>
-    </label>
+    <div class="settings-field">
+      القارئ (افتح المزيد بالنقاط)
+      <div id="reciter-grid" class="reciter-grid"></div>
+    </div>
     <div class="settings-field">
       المظهر (افتح المزيد بجمع النقاط)
       <div id="theme-grid" class="theme-grid"></div>
@@ -132,6 +132,11 @@
       <div id="plan-list" class="plan-list"></div>
     </div>
 
+    <div class="panel">
+      <h2>التقدم حسب السورة</h2>
+      <div id="surah-progress" class="surah-progress-list"></div>
+    </div>
+
     <div class="panel wird-card">
       <div class="wird-header">
         <div>
@@ -160,7 +165,7 @@
 
     <div class="panel mushaf-card">
       <h2>📖 قراءة اليوم من المصحف</h2>
-      <p class="muted">اقرأ بملء الشاشة بمعزل عن الحفظ والمراجعة - يُسجَّل ما تقرؤه ضمن ورد اليوم تلقائيًا كل ما قلّبت صفحة.</p>
+      <p class="muted">اقرأ بملء الشاشة بمعزل عن الحفظ والمراجعة - يُضاف ما تقرؤه إلى ورد اليوم عند تأكيد إنهاء القراءة.</p>
       <div class="mushaf-controls">
         <select id="mushaf-surah-select"></select>
         <input type="number" id="mushaf-from" min="1" value="1" placeholder="من آية">
@@ -173,11 +178,6 @@
       <h2>🌱 لم تبدأ رحلة الحفظ بعد</h2>
       <p class="muted">اضغط لتبدأ حفظ سورة الفاتحة آيةً آية، بأسلوب تفاعلي ممتع.</p>
       <button class="btn primary" data-tab="learn">ابدأ الآن بسورة الفاتحة</button>
-    </div>
-
-    <div class="panel">
-      <h2>التقدم حسب السورة</h2>
-      <div id="surah-progress" class="surah-progress-list"></div>
     </div>
   </section>
 
