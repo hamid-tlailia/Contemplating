@@ -745,7 +745,17 @@ function renderWirdCard() {
     }
     // Full names don't all fit at once, so the strip scrolls - but today
     // should never be the part that scrolls out of sight by default.
-    if (todayEl) todayEl.scrollIntoView({ behavior: "instant", inline: "center", block: "nearest" });
+    // scrollIntoView scrolls EVERY scrollable ancestor, the page included,
+    // so on load this quietly dragged the whole document down to the wird
+    // card - the app opened already scrolled past its own header. Restoring
+    // the page's own offset right after (the scroll is instant, so this is
+    // the same frame) keeps the strip centred without moving the page.
+    if (todayEl) {
+      const pageY = window.scrollY;
+      const pageX = window.scrollX;
+      todayEl.scrollIntoView({ behavior: "instant", inline: "center", block: "nearest" });
+      window.scrollTo(pageX, pageY);
+    }
   }
 }
 
@@ -2811,6 +2821,9 @@ function initSettingsPanel() {
     applyFontSize();
   });
 
+  document.getElementById("btn-settings-floating").addEventListener("click", () => overlay.classList.remove("modal-closed"));
+  setupFloatingSettingsButton();
+
   const prefetchBtn = document.getElementById("btn-offline-prefetch");
   prefetchBtn.innerHTML = iconLabel("book", "تحميل سور خطتي للاستخدام دون إنترنت");
   prefetchBtn.addEventListener("click", prefetchPlanForOffline);
@@ -2819,6 +2832,47 @@ function initSettingsPanel() {
   document.getElementById("btn-terms").addEventListener("click", showTerms);
   document.getElementById("btn-privacy-footer").addEventListener("click", showPrivacyPolicy);
   document.getElementById("btn-terms-footer").addEventListener("click", showTerms);
+}
+
+// Keeps the settings gear reachable once the header has scrolled out of
+// view, and inside the fullscreen reader. Visibility is derived rather
+// than toggled from each call site: an IntersectionObserver tracks whether
+// the header is on screen (no scroll handler running on every frame), and
+// a MutationObserver watches the overlays' own open/closed class, so
+// nothing has to remember to notify this when a modal opens.
+function setupFloatingSettingsButton() {
+  const fab = document.getElementById("btn-settings-floating");
+  const header = document.querySelector(".app-header");
+  const reader = document.getElementById("mushaf-reader-overlay");
+  // Modals that should own the screen while they're open.
+  const blockingOverlays = ["settings-overlay", "info-modal-overlay", "voice-modal-overlay"].map((id) => document.getElementById(id));
+
+  function update() {
+    const readerOpen = !reader.classList.contains("modal-closed");
+    const blocked = blockingOverlays.some((el) => el && !el.classList.contains("modal-closed"));
+    // Read the header's position rather than trusting the observer entry:
+    // its first callback can arrive before layout exists and report "not
+    // intersecting", and at the top of the page nothing changes afterwards
+    // to correct it - which left the button showing over its own header.
+    const headerVisible = header.getBoundingClientRect().bottom > 0;
+    // Same coordinates in every state, so it reads as one button staying
+    // put rather than moving around (the reader header reserves room for
+    // it - see .mushaf-reader-header).
+    fab.classList.toggle("visible", !blocked && (readerOpen || !headerVisible));
+  }
+
+  // The observer is only a trigger - it fires exactly when the header
+  // crosses in or out of view, which avoids a handler running on every
+  // scroll frame.
+  new IntersectionObserver(update, { threshold: 0 }).observe(header);
+
+  const classWatcher = new MutationObserver(update);
+  [reader, ...blockingOverlays].forEach((el) => {
+    if (el) classWatcher.observe(el, { attributes: true, attributeFilter: ["class"] });
+  });
+
+  requestAnimationFrame(update);
+  window.addEventListener("load", update);
 }
 
 // Warms the service worker's data cache for the surahs actually in use -
