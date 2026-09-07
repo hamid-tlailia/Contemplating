@@ -170,6 +170,7 @@ h1, h2 { font-family: 'Tajawal', sans-serif; margin: 0; }
 .header-points-badge {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 3px;
   font-size: 0.8rem;
   font-weight: 700;
@@ -847,13 +848,15 @@ main#app {
 .type-answer input.wrong { border-color: var(--danger); animation: shake .4s ease; }
 
 /* Pinned above the on-screen keyboard on phones instead of sitting in the
-   normal page flow, where the keyboard opening pushed it (and the focus
-   scroll that follows it) far enough down to carry the ayah panel above it
-   off-screen too. Sits over the bottom nav (briefly hidden) while typing -
-   the interactive-widget=resizes-content viewport meta tag is what makes
+   normal page flow, where the keyboard opening could still carry the ayah
+   panel above it off-screen too - but only while the input actually has
+   focus (see the focus/blur listeners), not for the whole time "type" mode
+   is active: fixed positioning would otherwise sit over the bottom nav
+   (same screen region) and block it even when the keyboard isn't open.
+   The interactive-widget=resizes-content viewport meta tag is what makes
    position:fixed land right above the keyboard rather than under it. */
 @media (max-width: 820px) {
-  .type-answer:not(.hidden) {
+  .type-answer.keyboard-active {
     position: fixed;
     bottom: 0;
     left: 0;
@@ -866,7 +869,7 @@ main#app {
     box-shadow: 0 -4px 16px rgba(0,0,0,0.08);
     flex-wrap: nowrap;
   }
-  .type-answer:not(.hidden) input { flex: 1; min-width: 0; }
+  .type-answer.keyboard-active input { flex: 1; min-width: 0; }
 }
 
 /* ---------- Voice recitation modal ---------- */

@@ -248,6 +248,12 @@ function normalizeArabic(s) {
   return (s || "")
     .replace(/\p{Mn}/gu, "")
     .replace(/[\u0625\u0623\u0622\u0671\u0627]/g, "\u0627")
+    // The Uthmani rasm sometimes spells a word's hamza as its own standalone
+    // letter (\u0621) rather than sitting on an alef - e.g. "\u0671\u0644\u0652\u0621\u064E\u0627\u062E\u0650\u0631\u0650" for
+    // "\u0627\u0644\u0622\u062E\u0631" - which almost nobody actually types or says that way, so a
+    // perfectly correct answer using any normal spelling was being marked
+    // wrong. Dropped like a diacritic instead of compared literally.
+    .replace(/\u0621/g, "")
     .replace(/\u0649/g, "\u064A")
     .replace(/\u0629/g, "\u0647")
     .replace(/\u0624/g, "\u0648")
@@ -519,20 +525,37 @@ document.querySelectorAll("[data-tab]").forEach((btn) => {
   btn.addEventListener("click", () => switchTab(btn.dataset.tab));
 });
 
+// This is a plain HTML/CSS/JS app (no framework, no build step, no
+// router) - "tabs" are one document with .tab-panel sections toggled by
+// class, sharing one window scroll position rather than being separate
+// pages. That's why a refresh always landed back on the dashboard (nothing
+// recorded which tab was open) and why scrolling on one tab could carry
+// into whichever tab opened next. Recording the tab in the URL hash (so a
+// refresh restores it) and remembering each tab's own scroll position
+// (instead of just always resetting to 0) approximates the independent-
+// pages behavior a router would give without needing one.
+const tabScrollPositions = {};
+let currentTabName = "dashboard";
+
 function switchTab(tab) {
-  // Every tab shares the one document scroll, so without this, scrolling
-  // down on one tab left the next tab opened already scrolled past its own
-  // top content (startSingleItemReview restores a specific scroll position
-  // afterward on its own, which still works since that runs after this).
-  window.scrollTo(0, 0);
+  tabScrollPositions[currentTabName] = window.scrollY;
+  currentTabName = tab;
+  history.replaceState(null, "", "#" + tab);
   document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
   document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === `tab-${tab}`));
   if (tab === "dashboard") renderDashboard();
   if (tab === "review" && !isChallengeMode && !isEphemeralReview) startReviewSession();
   if (tab === "learn") loadLearnAyah();
+  // A tab's content can still be loading (async fetches in loadLearnAyah/
+  // the browse tab) when switchTab returns, so the saved scroll position
+  // is applied once rendering has had a moment to settle instead of
+  // immediately, or it can land wrong against not-yet-final content height.
+  setTimeout(() => window.scrollTo(0, tabScrollPositions[tab] || 0), 60);
 }
 
 // ---------- Dashboard ----------
+
+const openPlanGroups = new Set(); // surah numbers currently expanded in the plan list
 
 function renderDashboard() {
   const items = Object.values(state.ayahs);
@@ -580,6 +603,17 @@ function renderDashboard() {
         const dueInGroup = items2.filter((i) => i.due <= today).length;
         const details = document.createElement("details");
         details.className = "plan-surah-group";
+        // renderDashboard rebuilds this list from scratch on every call (a
+        // review grading, an ayah added, etc.), which without this defaults
+        // every group back to closed - including ones the person just
+        // opened - leaving the arrow (which does track the real [open]
+        // state correctly) pointing the "open" way on a group that then
+        // immediately looks and acts closed again.
+        details.open = openPlanGroups.has(surahNum);
+        details.addEventListener("toggle", () => {
+          if (details.open) openPlanGroups.add(surahNum);
+          else openPlanGroups.delete(surahNum);
+        });
         const summary = document.createElement("summary");
         summary.className = "plan-surah-summary";
         summary.innerHTML = `
@@ -1415,6 +1449,27 @@ let voiceModalStoppedByUser = false;
 let voiceModalFinalTranscript = "";
 const VOICE_FATAL_ERRORS = new Set(["not-allowed", "audio-capture", "service-not-allowed"]);
 
+// A start() call right after a previous session's onend can throw
+// (InvalidStateError) if the OS hasn't fully released the microphone yet -
+// retrying once after a short delay instead of giving up immediately is
+// what was silently ending a recording attempt on an auto-restart.
+function attemptRecognitionStart(recognition, micBtn, statusText, isRetry) {
+  try {
+    recognition.start();
+  } catch (e) {
+    if (isRetry) {
+      voiceModalStoppedByUser = true;
+      micBtn.classList.remove("listening");
+      statusText.textContent = "تعذّر بدء الاستماع.";
+      return;
+    }
+    setTimeout(() => {
+      if (voiceModalStoppedByUser) return;
+      attemptRecognitionStart(recognition, micBtn, statusText, true);
+    }, 300);
+  }
+}
+
 function startVoiceModalRecording() {
   resetVoiceModal();
   voiceModalStoppedByUser = false;
@@ -1465,16 +1520,16 @@ function beginVoiceRecognitionSession() {
       }
       showVoiceModalWords(transcript);
     } else {
-      beginVoiceRecognitionSession();
+      // A short pause before restarting - starting a new session the
+      // instant this one ends can throw on some devices because the OS
+      // hasn't released the microphone from the previous session yet,
+      // which was silently dropping speech right after an auto-restart.
+      setTimeout(() => {
+        if (!voiceModalStoppedByUser) beginVoiceRecognitionSession();
+      }, 250);
     }
   };
-  try {
-    recognition.start();
-  } catch (e) {
-    voiceModalStoppedByUser = true;
-    micBtn.classList.remove("listening");
-    statusText.textContent = "تعذّر بدء الاستماع.";
-  }
+  attemptRecognitionStart(recognition, micBtn, statusText);
 }
 
 function showVoiceModalWords(transcript) {
@@ -1733,7 +1788,11 @@ document.getElementById("btn-type-submit").addEventListener("click", submitTyped
 // positioning doesn't react to - explicitly re-surfacing it once the
 // keyboard has finished animating in covers those too.
 document.getElementById("type-input").addEventListener("focus", () => {
+  document.getElementById("type-answer").classList.add("keyboard-active");
   setTimeout(() => scrollIntoViewIfNeeded(".learn-ayah-display"), 350);
+});
+document.getElementById("type-input").addEventListener("blur", () => {
+  document.getElementById("type-answer").classList.remove("keyboard-active");
 });
 document.getElementById("type-input").addEventListener("keydown", (e) => {
   if (e.key === "Enter") submitTypedAnswer();
@@ -1904,7 +1963,6 @@ document.getElementById("btn-learn-voice").addEventListener("click", () => {
 let isChallengeMode = false;
 let isEphemeralReview = false;
 let isSingleItemReview = false;
-let dashboardScrollY = 0;
 
 // A jump-ahead ayah found via search/browsing opens as a single one-off
 // practice round instead of being written to state.ayahs - so it never
@@ -1935,8 +1993,7 @@ function startEphemeralReview(surahNumber, surahName, ayahObj) {
 // once graded, returning to the exact dashboard scroll position instead of
 // stranding the person on the review tab (see finishReviewOrChallenge).
 function startSingleItemReview(item) {
-  dashboardScrollY = window.scrollY;
-  switchTab("review"); // runs the normal due-queue session first (also resets isSingleItemReview)...
+  switchTab("review"); // runs the normal due-queue session first (also resets isSingleItemReview); also remembers the dashboard's scroll position to return to...
   isSingleItemReview = true; // ...then this narrows it to just this ayah
   reviewQueue = [item];
   reviewIndex = 0;
@@ -2156,11 +2213,12 @@ function finishReviewOrChallenge() {
     empty.innerHTML = `<p>✅ انتهت المراجعة المؤقتة.</p><p class="muted">لم تُضَف هذه الآية إلى خطتك ولا إلى تقدّمك — يمكنك البحث عنها ومراجعتها في أي وقت من "تصفح وإضافة".</p>`;
   } else if (isSingleItemReview) {
     // Opened straight from one dashboard row, so return to that same spot
-    // instead of stranding the person on the (now-empty) review tab.
+    // instead of stranding the person on the (now-empty) review tab -
+    // switchTab's own per-tab scroll memory (see its definition) already
+    // restores exactly where the dashboard was left.
     isSingleItemReview = false;
     showToast(randomEncouragement(), "success");
     switchTab("dashboard");
-    requestAnimationFrame(() => window.scrollTo(0, dashboardScrollY));
     return;
   } else {
     fireConfetti(false);
@@ -2316,4 +2374,13 @@ initSettingsPanel();
 initWirdCard();
 initMushafCard();
 initBrowseTab();
-renderDashboard();
+
+// Restores whichever tab was open before a refresh (see switchTab's own
+// comment on why this app needs to do this itself instead of a router
+// handling it) instead of always landing back on the dashboard.
+const initialTab = location.hash.slice(1);
+if (["dashboard", "learn", "browse", "review"].includes(initialTab)) {
+  switchTab(initialTab);
+} else {
+  renderDashboard();
+}
