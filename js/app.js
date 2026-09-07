@@ -1411,7 +1411,7 @@ function openVoiceModal(correctText, onSuccess) {
 }
 
 function closeVoiceModal() {
-  voiceModalStoppedByUser = true; // don't let a pending onend auto-restart after closing
+  voiceModalShouldContinue = false; // don't let a pending onend auto-restart after closing
   if (voiceModalRecognition) {
     try { voiceModalRecognition.abort(); } catch (e) { /* already stopped */ }
     voiceModalRecognition = null;
@@ -1420,7 +1420,7 @@ function closeVoiceModal() {
 }
 
 function resetVoiceModal() {
-  voiceModalStoppedByUser = true;
+  voiceModalShouldContinue = false;
   if (voiceModalRecognition) {
     try { voiceModalRecognition.abort(); } catch (e) { /* already stopped */ }
     voiceModalRecognition = null;
@@ -1436,100 +1436,131 @@ function resetVoiceModal() {
   document.getElementById("voice-modal-actions").classList.add("hidden");
 }
 
-// continuous:true turned out to duplicate words heavily on some Android
-// builds - their continuous-mode engine periodically re-reports audio it
-// already finalized as a "new" final segment, which no amount of reading
-// e.results differently could fix since the duplication is in the data
-// itself. Non-continuous sessions don't have that problem, so a long ayah's
-// natural breathing pauses (which end a non-continuous session on their
-// own) are instead handled by immediately starting a fresh session the
-// instant one ends by itself - only stopping for real once the user taps
-// the mic again themselves.
-let voiceModalStoppedByUser = false;
-let voiceModalFinalTranscript = "";
+// Ported from a working continuous-dictation implementation in another of
+// the same author's apps (mishkat), after two earlier attempts at this
+// (switching continuous off, then rebuilding the transcript from e.results
+// each time) still duplicated or dropped words. The actual fix isn't about
+// continuous mode at all - it's storing each final result at ITS OWN INDEX
+// in e.results instead of concatenating into a flat string. Some Android
+// builds' continuous engine re-reports an already-finalized segment again
+// later; overwriting the same array slot with it is idempotent, while
+// appending it (what both earlier attempts did) duplicates it. Restarting
+// the SAME recognition instance in onend (rather than a new one each time)
+// also avoids the InvalidStateError races a fresh instance could hit.
+let voiceModalShouldContinue = false;
+let voiceModalBaseText = ""; // text folded in from completed sessions before the current one
+let voiceModalFinalSegments = []; // this session's final results, indexed by result index
+let voiceModalLiveTranscript = ""; // the full merged transcript so far, kept live so stopping needs no extra step
 const VOICE_FATAL_ERRORS = new Set(["not-allowed", "audio-capture", "service-not-allowed"]);
+
+// Merges transcript segments into one deduped string: an exact repeat or a
+// segment that's already a suffix of what's accumulated is dropped, a
+// segment that's a longer/updated version of the accumulated text replaces
+// it, and anything else is genuinely new content and gets appended.
+function mergeVoiceSegments(segments) {
+  let acc = "";
+  for (const seg of segments) {
+    const s = String(seg || "").replace(/\s+/g, " ").trim();
+    if (!s) continue;
+    if (!acc) { acc = s; continue; }
+    if (s === acc || acc.endsWith(s)) continue;
+    if (s.startsWith(acc)) { acc = s; continue; }
+    acc += " " + s;
+  }
+  return acc;
+}
+
+function createVoiceRecognitionInstance() {
+  const recognition = new SpeechRecognitionImpl();
+  recognition.lang = "ar-SA";
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.maxAlternatives = 1;
+  return recognition;
+}
 
 // A start() call right after a previous session's onend can throw
 // (InvalidStateError) if the OS hasn't fully released the microphone yet -
-// retrying once after a short delay instead of giving up immediately is
-// what was silently ending a recording attempt on an auto-restart.
-function attemptRecognitionStart(recognition, micBtn, statusText, isRetry) {
+// retrying once after a short delay instead of giving up immediately
+// avoids silently ending a recording attempt on an auto-restart.
+function attemptRecognitionStart(recognition, isRetry) {
   try {
     recognition.start();
+    voiceModalRecognition = recognition;
   } catch (e) {
     if (isRetry) {
-      voiceModalStoppedByUser = true;
-      micBtn.classList.remove("listening");
-      statusText.textContent = "تعذّر بدء الاستماع.";
+      voiceModalShouldContinue = false;
+      document.getElementById("btn-voice-mic").classList.remove("listening");
+      document.getElementById("voice-status-text").textContent = "تعذّر بدء الاستماع.";
       return;
     }
     setTimeout(() => {
-      if (voiceModalStoppedByUser) return;
-      attemptRecognitionStart(recognition, micBtn, statusText, true);
+      if (voiceModalShouldContinue) attemptRecognitionStart(recognition, true);
     }, 300);
   }
 }
 
 function startVoiceModalRecording() {
   resetVoiceModal();
-  voiceModalStoppedByUser = false;
-  voiceModalFinalTranscript = "";
-  document.getElementById("btn-voice-mic").classList.add("listening");
-  document.getElementById("voice-status-text").textContent = "🔴 يستمع الآن... اقرأ الآية، ثم اضغط الميكروفون مجددًا لإنهاء التسجيل";
-  beginVoiceRecognitionSession();
-}
-
-function beginVoiceRecognitionSession() {
+  const recognition = createVoiceRecognitionInstance();
+  voiceModalShouldContinue = true;
+  voiceModalBaseText = "";
+  voiceModalFinalSegments = [];
+  voiceModalLiveTranscript = "";
   const micBtn = document.getElementById("btn-voice-mic");
   const statusText = document.getElementById("voice-status-text");
-  const recognition = new SpeechRecognitionImpl();
-  voiceModalRecognition = recognition;
-  recognition.lang = "ar-SA";
-  recognition.interimResults = true;
-  recognition.maxAlternatives = 1;
+  micBtn.classList.add("listening");
+  statusText.textContent = "🔴 يستمع الآن... اقرأ الآية، ثم اضغط الميكروفون مجددًا لإنهاء التسجيل";
 
-  let sessionFinal = "";
   recognition.onresult = (e) => {
-    let combinedFinal = "";
     let interim = "";
-    for (let k = 0; k < e.results.length; k++) {
-      const r = e.results[k];
-      if (r.isFinal) combinedFinal += r[0].transcript + " ";
-      else interim += r[0].transcript;
+    for (let i = 0; i < e.results.length; i++) {
+      const result = e.results[i];
+      const transcript = (result[0] && result[0].transcript) || "";
+      if (result.isFinal) voiceModalFinalSegments[i] = transcript;
+      else if (i >= e.resultIndex) interim += transcript;
     }
-    sessionFinal = combinedFinal;
-    if (interim) statusText.textContent = interim;
+    const merged = mergeVoiceSegments([...voiceModalFinalSegments.filter(Boolean), interim]);
+    voiceModalLiveTranscript = (voiceModalBaseText + merged).replace(/\s+/g, " ").trimStart();
+    statusText.textContent = voiceModalLiveTranscript || "🔴 يستمع الآن...";
   };
   recognition.onerror = (e) => {
+    if (e.error === "aborted") return; // our own stop()/close() triggers this - not a real error
     if (VOICE_FATAL_ERRORS.has(e.error)) {
-      voiceModalStoppedByUser = true;
+      voiceModalShouldContinue = false;
       micBtn.classList.remove("listening");
       statusText.textContent = `تعذّر الاستماع (${e.error}). تأكد من السماح بالوصول للميكروفون وحاول مجددًا.`;
     }
     // other errors (e.g. "no-speech" during a pause) are left to onend below
   };
   recognition.onend = () => {
-    voiceModalRecognition = null;
-    if (sessionFinal.trim()) voiceModalFinalTranscript += sessionFinal;
-    if (voiceModalStoppedByUser) {
-      micBtn.classList.remove("listening");
-      const transcript = mergeDetachedConjunctions(voiceModalFinalTranscript.trim());
-      if (!transcript) {
-        statusText.textContent = "لم يُسمع شيء، حاول مرة أخرى.";
-        return;
-      }
-      showVoiceModalWords(transcript);
-    } else {
-      // A short pause before restarting - starting a new session the
-      // instant this one ends can throw on some devices because the OS
-      // hasn't released the microphone from the previous session yet,
-      // which was silently dropping speech right after an auto-restart.
-      setTimeout(() => {
-        if (!voiceModalStoppedByUser) beginVoiceRecognitionSession();
-      }, 250);
-    }
+    // Reached only on a NATURAL end (a pause) - stopVoiceModalRecording
+    // nulls this handler out before its own abort(), so a manual stop
+    // never lands here. Fold this session's segments into the persistent
+    // base text and keep listening on the same instance.
+    if (!voiceModalShouldContinue) return;
+    voiceModalBaseText = (voiceModalBaseText + mergeVoiceSegments(voiceModalFinalSegments.filter(Boolean))).replace(/\s+/g, " ") + " ";
+    voiceModalFinalSegments = [];
+    attemptRecognitionStart(recognition);
   };
-  attemptRecognitionStart(recognition, micBtn, statusText);
+  attemptRecognitionStart(recognition);
+}
+
+function stopVoiceModalRecording() {
+  voiceModalShouldContinue = false;
+  const recognition = voiceModalRecognition;
+  voiceModalRecognition = null;
+  document.getElementById("btn-voice-mic").classList.remove("listening");
+  if (recognition) {
+    recognition.onend = null;
+    try { recognition.abort(); } catch (e) { /* already stopped */ }
+  }
+  const transcript = mergeDetachedConjunctions(voiceModalLiveTranscript.trim());
+  if (!transcript) {
+    document.getElementById("voice-status-text").textContent = "لم يُسمع شيء، حاول مرة أخرى.";
+    return;
+  }
+  showVoiceModalWords(transcript);
 }
 
 function showVoiceModalWords(transcript) {
@@ -1568,12 +1599,8 @@ function verifyVoiceModal() {
 // (recognition.stop() finalizes whatever was captured and fires onend) -
 // needed now that continuous recognition won't stop on its own.
 document.getElementById("btn-voice-mic").addEventListener("click", () => {
-  if (voiceModalRecognition) {
-    voiceModalStoppedByUser = true;
-    voiceModalRecognition.stop();
-  } else {
-    startVoiceModalRecording();
-  }
+  if (voiceModalRecognition) stopVoiceModalRecording();
+  else startVoiceModalRecording();
 });
 document.getElementById("btn-voice-retry").addEventListener("click", startVoiceModalRecording);
 document.getElementById("btn-voice-verify").addEventListener("click", verifyVoiceModal);
