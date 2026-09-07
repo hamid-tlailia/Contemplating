@@ -88,16 +88,20 @@ function shuffleArray(arr) {
   return a;
 }
 
-// Strip tashkeel + normalize letter variants so typed/spoken answers match forgivingly.
+// Strip tashkeel/waqf marks + normalize letter variants so typed/spoken answers
+// match forgivingly. \p{Mn} catches every Unicode combining mark used in the
+// Uthmani script (not just the basic harakat range: waqf signs, small-high
+// marks, etc). Quran text also carries wasla alef (\u0671) which a normal
+// keyboard never produces, so it must fold into \u0627 (alef) too.
 function normalizeArabic(s) {
   return (s || "")
-    .replace(/[ً-ٰٟۖ-ۭ]/g, "")
-    .replace(/[إأآا]/g, "ا")
-    .replace(/ى/g, "ي")
-    .replace(/ة/g, "ه")
-    .replace(/ؤ/g, "و")
-    .replace(/ئ/g, "ي")
-    .replace(/[^ء-ي\s]/g, "")
+    .replace(/\p{Mn}/gu, "")
+    .replace(/[\u0625\u0623\u0622\u0671\u0627]/g, "\u0627")
+    .replace(/\u0649/g, "\u064A")
+    .replace(/\u0629/g, "\u0647")
+    .replace(/\u0624/g, "\u0648")
+    .replace(/\u0626/g, "\u064A")
+    .replace(/[^\u0621-\u064A\s]/g, "")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -161,7 +165,7 @@ async function fetchSurahAyahs(surahNumber) {
 async function fetchWordMeanings(surah, ayah) {
   const key = `${surah}:${ayah}`;
   if (wordMeaningsCache[key]) return wordMeaningsCache[key];
-  const res = await fetchWithTimeout(`${WORD_MEANING_API}/${key}?words=true&word_fields=text_uthmani&translation_fields=text`, 6000);
+  const res = await fetchWithTimeout(`${WORD_MEANING_API}/${key}?words=true&word_fields=text_uthmani&translation_fields=text&word_translation_language=ar`, 6000);
   const json = await res.json();
   const words = (json.verse && json.verse.words) || [];
   const meanings = words
@@ -303,32 +307,60 @@ function renderDashboard() {
   const planList = document.getElementById("plan-list");
   planList.innerHTML = "";
   const srsItems = items.filter((i) => i.learningStage === "srs");
-  const sorted = [...srsItems].sort((a, b) => (a.due || "").localeCompare(b.due || ""));
-  if (sorted.length === 0) {
+  if (srsItems.length === 0) {
     planList.innerHTML = `<p class="muted">لا توجد آيات في جدول المراجعة بعد. أكمل حفظ آية من تبويب "ابدأ الحفظ" لتظهر هنا.</p>`;
-  }
-  sorted.slice(0, 30).forEach((item) => {
-    const div = document.createElement("div");
-    div.className = "plan-item";
-    let badge = "scheduled";
-    let badgeText = `يُستحق: ${item.due}`;
-    if (item.due <= today) { badge = "due"; badgeText = "مستحقة الآن"; }
-    div.innerHTML = `
-      <span class="ref">${item.surahName || item.surah}:${item.ayah}</span>
-      <span class="snippet">${item.text || ""}</span>
-      <span class="badge ${badge}">${badgeText}</span>
-      <button class="icon-btn" title="إزالة من الخطة" data-key="${item.surah}:${item.ayah}">✕</button>
-    `;
-    div.querySelector(".icon-btn").addEventListener("click", (e) => {
-      const key = e.currentTarget.dataset.key;
-      delete state.ayahs[key];
-      saveState();
-      renderDashboard();
+  } else {
+    const bySurah = new Map();
+    srsItems.forEach((item) => {
+      if (!bySurah.has(item.surah)) bySurah.set(item.surah, { name: item.surahName || item.surah, items: [] });
+      bySurah.get(item.surah).items.push(item);
     });
-    planList.appendChild(div);
-  });
+    [...bySurah.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .forEach(([surahNum, group]) => {
+        const items2 = [...group.items].sort((a, b) => (a.due || "").localeCompare(b.due || ""));
+        const dueInGroup = items2.filter((i) => i.due <= today).length;
+        const details = document.createElement("details");
+        details.className = "plan-surah-group";
+        if (dueInGroup > 0) details.open = true;
+        const summary = document.createElement("summary");
+        summary.className = "plan-surah-summary";
+        summary.innerHTML = `
+          <span class="plan-surah-name">📖 ${group.name}</span>
+          <span class="plan-surah-meta">${items2.length} آية${dueInGroup ? ` <span class="badge due">${dueInGroup} مستحقة</span>` : ""}</span>
+        `;
+        details.appendChild(summary);
+        const itemsContainer = document.createElement("div");
+        itemsContainer.className = "plan-surah-items";
+        items2.forEach((item) => itemsContainer.appendChild(buildPlanItemRow(item, today)));
+        details.appendChild(itemsContainer);
+        planList.appendChild(details);
+      });
+  }
+
 
   renderSurahProgress();
+}
+
+function buildPlanItemRow(item, today) {
+  const div = document.createElement("div");
+  div.className = "plan-item";
+  let badge = "scheduled";
+  let badgeText = `\u064a\u064f\u0633\u062a\u062d\u0642: ${item.due}`;
+  if (item.due <= today) { badge = "due"; badgeText = "\u0645\u0633\u062a\u062d\u0642\u0629 \u0627\u0644\u0622\u0646"; }
+  div.innerHTML = `
+    <span class="ref">\u0622\u064a\u0629 ${item.ayah}</span>
+    <span class="snippet">${item.text || ""}</span>
+    <span class="badge ${badge}">${badgeText}</span>
+    <button class="icon-btn" title="\u0625\u0632\u0627\u0644\u0629 \u0645\u0646 \u0627\u0644\u062e\u0637\u0629" data-key="${item.surah}:${item.ayah}">\u2715</button>
+  `;
+  div.querySelector(".icon-btn").addEventListener("click", (e) => {
+    const key = e.currentTarget.dataset.key;
+    delete state.ayahs[key];
+    saveState();
+    renderDashboard();
+  });
+  return div;
 }
 
 function renderChallengeCard() {
@@ -499,16 +531,43 @@ function voiceSupported() {
   return !!SpeechRecognitionImpl;
 }
 
+// Speech recognition rarely returns words 1:1 with the reference text (it can
+// drop, merge or mishear a word), so a strict positional compare marks nearly
+// everything wrong after the first slip. Align both word lists with LCS
+// instead, so a single missed word doesn't cascade into a false failure for
+// the rest of the ayah.
 function diffRecitation(correctText, transcript) {
   const correctWords = correctText.split(/\s+/);
-  const saidWords = normalizeArabic(transcript).split(/\s+/).filter(Boolean);
-  let correctCount = 0;
-  const result = correctWords.map((w, i) => {
-    const ok = saidWords[i] !== undefined && normalizeArabic(saidWords[i]) === normalizeArabic(w);
-    if (ok) correctCount++;
-    return { word: w, ok };
-  });
-  const accuracy = correctWords.length ? Math.round((correctCount / correctWords.length) * 100) : 0;
+  const correctNorm = correctWords.map(normalizeArabic);
+  const saidNorm = normalizeArabic(transcript).split(/\s+/).filter(Boolean);
+
+  const n = correctNorm.length;
+  const m = saidNorm.length;
+  const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] = correctNorm[i] === saidNorm[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+
+  const result = [];
+  let i = 0;
+  let j = 0;
+  while (i < n) {
+    if (j < m && correctNorm[i] === saidNorm[j]) {
+      result.push({ word: correctWords[i], ok: true });
+      i++;
+      j++;
+    } else if (j < m && dp[i][j + 1] >= dp[i + 1][j]) {
+      j++; // an extra/misheard word in the transcript - skip it
+    } else {
+      result.push({ word: correctWords[i], ok: false });
+      i++;
+    }
+  }
+
+  const correctCount = result.filter((r) => r.ok).length;
+  const accuracy = n ? Math.round((correctCount / n) * 100) : 0;
   return { result, accuracy };
 }
 
@@ -521,12 +580,19 @@ function runVoiceTest(correctText, resultContainer) {
   const recognition = new SpeechRecognitionImpl();
   recognition.lang = "ar-SA";
   recognition.interimResults = false;
-  recognition.maxAlternatives = 1;
+  recognition.maxAlternatives = 5;
 
   recognition.onresult = (e) => {
     resultContainer.classList.remove("listening");
-    const transcript = e.results[0][0].transcript;
-    const { result, accuracy } = diffRecitation(correctText, transcript);
+    // The engine offers several guesses for what was said - score each one
+    // against the correct text and keep whichever aligns best, instead of
+    // blindly trusting alternative #0.
+    let best = null;
+    for (let k = 0; k < e.results[0].length; k++) {
+      const candidate = diffRecitation(correctText, e.results[0][k].transcript);
+      if (!best || candidate.accuracy > best.accuracy) best = candidate;
+    }
+    const { result, accuracy } = best;
     const html = result
       .map((r) => `<span class="vr-word ${r.ok ? "ok" : "bad"}">${r.word}</span>`)
       .join(" ");
