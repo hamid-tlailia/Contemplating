@@ -100,7 +100,9 @@ function loadState() {
       parsed.fontSize = parsed.fontSize || "medium";
       parsed.points = parsed.points || 0;
       parsed.wirdTarget = parsed.wirdTarget || 5;
+      parsed.wirdTargetType = parsed.wirdTargetType || "ayahs";
       parsed.dailyCounts = parsed.dailyCounts || {};
+      parsed.dailyPageCounts = parsed.dailyPageCounts || {};
       return parsed;
     }
   } catch (e) {
@@ -116,7 +118,9 @@ function loadState() {
     fontSize: "medium",
     points: 0,
     wirdTarget: 5,
-    dailyCounts: {}, // "YYYY-MM-DD" -> number of ayahs mastered/reviewed that day
+    wirdTargetType: "ayahs", // "ayahs" | "pages" - which unit wirdTarget is measured in
+    dailyCounts: {}, // "YYYY-MM-DD" -> number of ayahs mastered/reviewed/read that day
+    dailyPageCounts: {}, // "YYYY-MM-DD" -> number of Mushaf pages read that day
   };
 }
 
@@ -168,6 +172,8 @@ function renderPointsDisplay() {
   if (el) el.textContent = state.points;
   const dashEl = document.getElementById("stat-points");
   if (dashEl) dashEl.textContent = state.points;
+  const headerEl = document.getElementById("header-points-value");
+  if (headerEl) headerEl.textContent = state.points;
 }
 
 function computeStreak() {
@@ -556,12 +562,17 @@ function renderDashboard() {
   renderWirdCard();
 }
 
-const WIRD_DAY_LETTERS = ["ح", "ن", "ث", "ر", "خ", "ج", "س"]; // Sun..Sat initials, matches Date#getDay()
+// Two-letter abbreviations (matches Intl's own ar-locale "narrow" weekday
+// format) rather than a single letter - single letters like ح/خ/ج look too
+// similar to tell apart at a glance in a small circle.
+const WIRD_DAY_ABBR = ["أح", "إث", "ثل", "أر", "خم", "جم", "سب"]; // Sun..Sat, matches Date#getDay()
 
 function renderWirdCard() {
+  const type = state.wirdTargetType || "ayahs";
+  const counts = type === "pages" ? state.dailyPageCounts : state.dailyCounts;
   const target = state.wirdTarget || 5;
   const today = todayISO();
-  const todayCount = state.dailyCounts[today] || 0;
+  const todayCount = counts[today] || 0;
   const pct = Math.min(100, Math.round((todayCount / target) * 100));
 
   const ring = document.getElementById("wird-ring");
@@ -577,16 +588,21 @@ function renderWirdCard() {
       const d = new Date();
       d.setDate(d.getDate() - i);
       const iso = d.toISOString().slice(0, 10);
-      const count = state.dailyCounts[iso] || 0;
+      const count = counts[iso] || 0;
       const met = count >= target;
       const isToday = iso === today;
       const dayEl = document.createElement("div");
       dayEl.className = `wird-day${met ? " met" : ""}${isToday ? " today" : ""}`;
       dayEl.title = `${iso}: ${count}/${target}`;
-      dayEl.textContent = WIRD_DAY_LETTERS[d.getDay()];
+      dayEl.textContent = WIRD_DAY_ABBR[d.getDay()];
       weekEl.appendChild(dayEl);
     }
   }
+}
+
+const ARABIC_INDIC_DIGITS = ["٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"];
+function toArabicIndicDigits(n) {
+  return String(n).replace(/[0-9]/g, (d) => ARABIC_INDIC_DIGITS[Number(d)]);
 }
 
 // A way to log the daily wird from reading the Mushaf directly, instead of
@@ -602,9 +618,12 @@ async function initMushafCard() {
   try {
     const surahs = await fetchSurahList();
     select.innerHTML = surahs.map((s) => `<option value="${s.number}">${s.number}. ${s.name}</option>`).join("");
+    await updateMushafDefaultRange();
   } catch (e) {
     select.innerHTML = `<option value="">تعذّر تحميل قائمة السور</option>`;
   }
+
+  select.addEventListener("change", updateMushafDefaultRange);
 
   loadBtn.addEventListener("click", async () => {
     const surahNumber = Number(select.value);
@@ -620,6 +639,36 @@ async function initMushafCard() {
       showToast("تعذّر تحميل النص. تحقق من الاتصال بالإنترنت.", "error");
     }
   });
+}
+
+// Defaults the from/to range to whatever the wird plan actually asks for
+// (N ayahs, or however many ayahs the next N real Mushaf pages hold) instead
+// of an arbitrary fixed 1-5, so the reading card matches the daily target.
+async function updateMushafDefaultRange() {
+  const select = document.getElementById("mushaf-surah-select");
+  const surahNumber = Number(select && select.value);
+  if (!surahNumber) return;
+  const fromInput = document.getElementById("mushaf-from");
+  const toInput = document.getElementById("mushaf-to");
+  try {
+    const ayahs = await fetchSurahAyahs(surahNumber);
+    fromInput.max = ayahs.length;
+    toInput.max = ayahs.length;
+    const from = 1;
+    let to;
+    if (state.wirdTargetType === "pages") {
+      const pages = groupAyahsIntoMushafPages(ayahs);
+      const pageCount = Math.max(1, Math.min(state.wirdTarget || 1, pages.length));
+      const lastPage = pages[pageCount - 1];
+      to = lastPage.ayahs[lastPage.ayahs.length - 1].numberInSurah;
+    } else {
+      to = Math.min(from + (state.wirdTarget || 5) - 1, ayahs.length);
+    }
+    fromInput.value = from;
+    toInput.value = to;
+  } catch (e) {
+    // leave whatever values are already there
+  }
 }
 
 // ---------- Fullscreen Mushaf reader ----------
@@ -651,25 +700,30 @@ function openMushafReader(ayahs) {
   mushafPages = groupAyahsIntoMushafPages(ayahs);
   mushafPageIndex = 0;
   mushafSessionCountedPages = new Set();
-  document.getElementById("mushaf-reader-overlay").classList.remove("hidden");
+  document.getElementById("mushaf-reader-overlay").classList.remove("modal-closed");
   renderMushafReaderPage();
 }
 
 function closeMushafReader() {
-  document.getElementById("mushaf-reader-overlay").classList.add("hidden");
+  document.getElementById("mushaf-reader-overlay").classList.add("modal-closed");
 }
 
 function renderMushafReaderPage() {
   const page = mushafPages[mushafPageIndex];
-  document.getElementById("mushaf-reader-text").textContent = page.ayahs.map((a) => a.text).join(" ");
+  document.getElementById("mushaf-reader-text").innerHTML = page.ayahs
+    .map((a) => `${a.text} <span class="ayah-number-badge">${toArabicIndicDigits(a.numberInSurah)}</span>`)
+    .join(" ");
   document.getElementById("mushaf-reader-page-label").textContent = `الصفحة ${mushafPageIndex + 1} من ${mushafPages.length}`;
   document.getElementById("mushaf-reader-body").scrollTop = 0;
   document.getElementById("btn-mushaf-reader-prev").disabled = mushafPageIndex === 0;
-  document.getElementById("btn-mushaf-reader-prev").innerHTML = iconLabel("chevronLeft", "الصفحة السابقة");
+  // "previous" sits on the right (backward, toward where reading started)
+  // and "next" on the left (forward, matching RTL reading direction) - the
+  // chevrons point the same way their button sits relative to the other.
+  document.getElementById("btn-mushaf-reader-prev").innerHTML = iconLabel("chevronRight", "الصفحة السابقة");
   const isLast = mushafPageIndex === mushafPages.length - 1;
   document.getElementById("btn-mushaf-reader-next").innerHTML = isLast
     ? iconLabel("checkDone", "أنهيت القراءة")
-    : iconLabel("chevronRight", "الصفحة التالية");
+    : iconLabel("chevronLeft", "الصفحة التالية");
 }
 
 function creditMushafPageToWird(page) {
@@ -677,19 +731,47 @@ function creditMushafPageToWird(page) {
   mushafSessionCountedPages.add(page.pageNumber);
   const today = todayISO();
   state.dailyCounts[today] = (state.dailyCounts[today] || 0) + page.ayahs.length;
+  state.dailyPageCounts[today] = (state.dailyPageCounts[today] || 0) + 1;
   saveState();
   renderWirdCard();
 }
 
 function goToNextMushafPage() {
   const page = mushafPages[mushafPageIndex];
-  creditMushafPageToWird(page);
   if (mushafPageIndex < mushafPages.length - 1) {
+    creditMushafPageToWird(page);
     mushafPageIndex++;
     renderMushafReaderPage();
   } else {
-    showToast("🌙 أتممت القراءة! أُضيفت ضمن ورد اليوم.", "success");
-    closeMushafReader();
+    // Confirm rather than crediting-and-closing automatically, so reaching
+    // the last page while just browsing doesn't silently end the session.
+    showConfirmModal(
+      "إنهاء القراءة",
+      "هل أنهيت قراءة اليوم؟ سيُضاف ما قرأته إلى ورد اليوم.",
+      "نعم، أنهيت",
+      () => finishMushafReading(page)
+    );
+  }
+}
+
+function finishMushafReading(lastPage) {
+  creditMushafPageToWird(lastPage);
+  closeMushafReader();
+  const type = state.wirdTargetType || "ayahs";
+  const counts = type === "pages" ? state.dailyPageCounts : state.dailyCounts;
+  const today = todayISO();
+  const target = state.wirdTarget || 5;
+  const total = counts[today] || 0;
+  if (total > target) {
+    const surplus = total - target;
+    const bonus = surplus * (type === "pages" ? 5 : 1);
+    addPoints(bonus);
+    // A long-lived toast (see .toast timing) that layers above the modal
+    // stack (toast-container's z-index), so it stays visible even though
+    // the person was mid-modal when this fired, not just after closing it.
+    showToast(`🎉 تجاوزت هدف اليوم بـ ${surplus} ${type === "pages" ? "صفحة" : "آية"}! مكافأة: +${bonus} نقطة 🪙`, "success");
+  } else {
+    showToast("🌙 أُضيفت قراءتك ضمن ورد اليوم.", "success");
   }
 }
 
@@ -723,10 +805,32 @@ function initWirdCard() {
   const input = document.getElementById("wird-target-input");
   if (!input) return;
   input.value = state.wirdTarget || 5;
+
+  const typeBtns = [...document.querySelectorAll(".wird-type-btn")];
+  const unitLabel = document.getElementById("wird-target-unit");
+  function updateTypeUI() {
+    const type = state.wirdTargetType || "ayahs";
+    typeBtns.forEach((btn) => btn.classList.toggle("active", btn.dataset.type === type));
+    if (unitLabel) unitLabel.textContent = type === "pages" ? "صفحة/يوم" : "آية/يوم";
+  }
+  updateTypeUI();
+
+  typeBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.dataset.type === state.wirdTargetType) return;
+      state.wirdTargetType = btn.dataset.type;
+      saveState();
+      updateTypeUI();
+      renderWirdCard();
+      updateMushafDefaultRange();
+    });
+  });
+
   input.addEventListener("change", () => {
-    state.wirdTarget = Math.max(1, Math.min(100, Number(input.value) || 5));
+    state.wirdTarget = Math.max(1, Math.min(604, Number(input.value) || 5));
     saveState();
     renderWirdCard();
+    updateMushafDefaultRange();
   });
 }
 
@@ -1168,12 +1272,17 @@ function diffRecitation(correctText, transcript) {
 
 let voiceModalRecognition = null;
 let voiceModalCorrectText = "";
+let voiceModalOnSuccess = null;
 
-function openVoiceModal(correctText) {
+// onSuccess (optional): called after a high-accuracy verification, so the
+// caller can advance its own flow (next learning round/ayah, or reveal the
+// review grading buttons) instead of leaving the person stuck in the modal.
+function openVoiceModal(correctText, onSuccess) {
   if (!voiceSupported()) return;
   voiceModalCorrectText = correctText;
+  voiceModalOnSuccess = onSuccess || null;
   resetVoiceModal();
-  document.getElementById("voice-modal-overlay").classList.remove("hidden");
+  document.getElementById("voice-modal-overlay").classList.remove("modal-closed");
 }
 
 function closeVoiceModal() {
@@ -1181,7 +1290,7 @@ function closeVoiceModal() {
     try { voiceModalRecognition.abort(); } catch (e) { /* already stopped */ }
     voiceModalRecognition = null;
   }
-  document.getElementById("voice-modal-overlay").classList.add("hidden");
+  document.getElementById("voice-modal-overlay").classList.add("modal-closed");
 }
 
 function resetVoiceModal() {
@@ -1205,13 +1314,18 @@ function startVoiceModalRecording() {
   const micBtn = document.getElementById("btn-voice-mic");
   const statusText = document.getElementById("voice-status-text");
   micBtn.classList.add("listening");
-  statusText.textContent = "🔴 يستمع الآن... اقرأ الآية بصوت واضح";
+  statusText.textContent = "🔴 يستمع الآن... اقرأ الآية، ثم اضغط الميكروفون مجددًا لإنهاء التسجيل";
 
   const recognition = new SpeechRecognitionImpl();
   voiceModalRecognition = recognition;
   recognition.lang = "ar-SA";
   recognition.interimResults = true;
   recognition.maxAlternatives = 1;
+  // Without this the engine stops on the first short silence - which a long
+  // ayah's natural breathing pauses trigger constantly, cutting recitation
+  // off mid-ayah. continuous keeps it listening until stopped explicitly
+  // (tapping the mic again, handled by the toggle listener below).
+  recognition.continuous = true;
 
   let finalTranscript = "";
 
@@ -1266,11 +1380,28 @@ function verifyVoiceModal() {
   const scoreArea = document.getElementById("voice-score-area");
   scoreArea.innerHTML = `<p class="vr-text">${html}</p><p class="vr-score">دقة التسميع: ${accuracy}%</p>`;
   scoreArea.classList.remove("hidden");
-  if (accuracy >= 85) { playSuccessSound(); showToast(randomEncouragement()); }
-  else playErrorSound();
+  if (accuracy >= 85) {
+    playSuccessSound();
+    showToast(randomEncouragement());
+    if (voiceModalOnSuccess) {
+      const cb = voiceModalOnSuccess;
+      setTimeout(() => { closeVoiceModal(); cb(); }, 900); // brief pause so the score is visible before advancing
+    }
+  } else {
+    playErrorSound();
+  }
 }
 
-document.getElementById("btn-voice-mic").addEventListener("click", startVoiceModalRecording);
+// The mic button toggles: first tap starts listening, second tap stops it
+// (recognition.stop() finalizes whatever was captured and fires onend) -
+// needed now that continuous recognition won't stop on its own.
+document.getElementById("btn-voice-mic").addEventListener("click", () => {
+  if (voiceModalRecognition) {
+    voiceModalRecognition.stop();
+  } else {
+    startVoiceModalRecording();
+  }
+});
 document.getElementById("btn-voice-retry").addEventListener("click", startVoiceModalRecording);
 document.getElementById("btn-voice-verify").addEventListener("click", verifyVoiceModal);
 document.getElementById("btn-voice-close").addEventListener("click", closeVoiceModal);
@@ -1376,7 +1507,20 @@ function updateRoundDots(streak) {
   });
 }
 
+// Brings the ayah panel back into view if it's scrolled off-screen, instead
+// of leaving the person looking at a blank spot after answering a word/round
+// while scrolled down toward the controls below the ayah.
+function scrollIntoViewIfNeeded(selector) {
+  const el = document.querySelector(selector);
+  if (!el) return;
+  const rect = el.getBoundingClientRect();
+  if (rect.top < 0 || rect.bottom > window.innerHeight) {
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
+
 function renderLearnRound() {
+  scrollIntoViewIfNeeded(".learn-ayah-display");
   const container = document.getElementById("learn-text");
   container.innerHTML = learnWords
     .map((w, idx) => {
@@ -1466,6 +1610,13 @@ function handleLearnAnswer(isCorrect, sourceEl) {
 }
 
 document.getElementById("btn-type-submit").addEventListener("click", submitTypedAnswer);
+// The sticky ayah panel (see the CSS) handles most of the keyboard-covers-it
+// case, but some mobile browsers resize the visual viewport in a way sticky
+// positioning doesn't react to - explicitly re-surfacing it once the
+// keyboard has finished animating in covers those too.
+document.getElementById("type-input").addEventListener("focus", () => {
+  setTimeout(() => scrollIntoViewIfNeeded(".learn-ayah-display"), 350);
+});
 document.getElementById("type-input").addEventListener("keydown", (e) => {
   if (e.key === "Enter") submitTypedAnswer();
 });
@@ -1576,10 +1727,10 @@ function openInfoModal(title, bodyHTML) {
   document.getElementById("info-modal-title").textContent = title;
   document.getElementById("info-modal-body").innerHTML = bodyHTML;
   document.getElementById("info-modal-actions").classList.add("hidden");
-  document.getElementById("info-modal-overlay").classList.remove("hidden");
+  document.getElementById("info-modal-overlay").classList.remove("modal-closed");
 }
 function closeInfoModal() {
-  document.getElementById("info-modal-overlay").classList.add("hidden");
+  document.getElementById("info-modal-overlay").classList.add("modal-closed");
   document.getElementById("info-modal-actions").classList.add("hidden");
 }
 document.getElementById("btn-info-close").addEventListener("click", closeInfoModal);
@@ -1600,7 +1751,7 @@ function showConfirmModal(title, message, confirmLabel, onConfirm) {
     closeInfoModal();
     onConfirm();
   };
-  document.getElementById("info-modal-overlay").classList.remove("hidden");
+  document.getElementById("info-modal-overlay").classList.remove("modal-closed");
 }
 
 document.getElementById("btn-learn-meanings").addEventListener("click", async () => {
@@ -1621,7 +1772,13 @@ document.getElementById("btn-learn-meanings").addEventListener("click", async ()
 document.getElementById("btn-learn-voice").addEventListener("click", () => {
   const item = state.ayahs[learnCurrentKey];
   if (!item) return;
-  openVoiceModal(item.text);
+  // A correct full-ayah recitation counts the same as answering every word
+  // right via MCQ/typing: it completes this round (and the ayah itself, once
+  // 3 clean rounds are reached) instead of just showing a score and stopping.
+  openVoiceModal(item.text, () => {
+    learnMistakeThisRound = false;
+    completeLearnRound();
+  });
 });
 
 // ---------- Daily Ta'ahud challenge ----------
@@ -1828,15 +1985,16 @@ document.getElementById("btn-mask-reset").addEventListener("click", () => {
 document.getElementById("btn-review-voice").addEventListener("click", () => {
   const item = reviewQueue[reviewIndex];
   if (!item) return;
-  openVoiceModal(item.text);
+  openVoiceModal(item.text, revealForGrading);
 });
 
-document.getElementById("btn-reveal").addEventListener("click", () => {
+function revealForGrading() {
   maskLevel = 0;
   renderMaskedText();
   document.getElementById("grade-controls").classList.remove("hidden");
   document.getElementById("reveal-controls").classList.add("hidden");
-});
+}
+document.getElementById("btn-reveal").addEventListener("click", revealForGrading);
 
 document.querySelectorAll(".grade-buttons button").forEach((btn) => {
   btn.addEventListener("click", () => {
@@ -1962,10 +2120,10 @@ function initSettingsPanel() {
   renderThemeGrid();
   renderPointsDisplay();
 
-  document.getElementById("btn-settings").addEventListener("click", () => overlay.classList.remove("hidden"));
-  document.getElementById("btn-settings-close").addEventListener("click", () => overlay.classList.add("hidden"));
+  document.getElementById("btn-settings").addEventListener("click", () => overlay.classList.remove("modal-closed"));
+  document.getElementById("btn-settings-close").addEventListener("click", () => overlay.classList.add("modal-closed"));
   overlay.addEventListener("click", (e) => {
-    if (e.target === overlay) overlay.classList.add("hidden");
+    if (e.target === overlay) overlay.classList.add("modal-closed");
   });
 
   reciterSelect.addEventListener("change", () => {

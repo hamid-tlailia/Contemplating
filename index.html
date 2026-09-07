@@ -44,13 +44,16 @@
       <span class="tab-label">المراجعة</span>
     </button>
   </nav>
-  <button id="btn-settings" class="icon-only-btn" title="الإعدادات" aria-label="الإعدادات">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
-  </button>
+  <div class="header-left">
+    <span id="header-points-badge" class="header-points-badge" title="نقاطك">🪙 <span id="header-points-value">0</span></span>
+    <button id="btn-settings" class="icon-only-btn" title="الإعدادات" aria-label="الإعدادات">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+    </button>
+  </div>
 </header>
 
 <!-- SETTINGS PANEL -->
-<div id="settings-overlay" class="settings-overlay hidden">
+<div id="settings-overlay" class="settings-overlay modal-closed">
   <div class="settings-panel">
     <div class="settings-header">
       <h2>⚙️ الإعدادات</h2>
@@ -135,11 +138,17 @@
     <div class="panel wird-card">
       <div class="wird-header">
         <h2>🌙 ورد اليوم</h2>
-        <label class="wird-target-control">
-          الهدف:
-          <input type="number" id="wird-target-input" min="1" max="100" value="5">
-          آية/يوم
-        </label>
+        <div class="wird-target-control">
+          <div class="wird-type-toggle">
+            <button type="button" class="wird-type-btn" data-type="ayahs">آية</button>
+            <button type="button" class="wird-type-btn" data-type="pages">صفحة</button>
+          </div>
+          <label>
+            الهدف:
+            <input type="number" id="wird-target-input" min="1" max="604" value="5">
+            <span id="wird-target-unit">آية/يوم</span>
+          </label>
+        </div>
       </div>
       <div class="wird-progress">
         <div class="wird-ring" id="wird-ring">
@@ -318,7 +327,7 @@
 </footer>
 
 <!-- TAFSIR / WORD-MEANINGS MODAL (also reused as a generic confirm dialog) -->
-<div id="info-modal-overlay" class="info-modal-overlay hidden">
+<div id="info-modal-overlay" class="info-modal-overlay modal-closed">
   <div class="info-modal">
     <div class="info-modal-header">
       <h2 id="info-modal-title"></h2>
@@ -333,7 +342,7 @@
 </div>
 
 <!-- FULLSCREEN MUSHAF READER (paginated by real Mushaf page, swipe to turn) -->
-<div id="mushaf-reader-overlay" class="mushaf-reader-overlay hidden">
+<div id="mushaf-reader-overlay" class="mushaf-reader-overlay modal-closed">
   <div class="mushaf-reader-header">
     <button id="btn-mushaf-reader-close" class="icon-only-btn" aria-label="إغلاق">✕</button>
     <span id="mushaf-reader-page-label" class="muted"></span>
@@ -342,13 +351,13 @@
     <p id="mushaf-reader-text" class="mushaf-text"></p>
   </div>
   <div class="mushaf-reader-footer">
-    <button id="btn-mushaf-reader-next" class="btn primary"></button>
     <button id="btn-mushaf-reader-prev" class="btn"></button>
+    <button id="btn-mushaf-reader-next" class="btn primary"></button>
   </div>
 </div>
 
 <!-- VOICE RECITATION MODAL -->
-<div id="voice-modal-overlay" class="voice-modal-overlay hidden">
+<div id="voice-modal-overlay" class="voice-modal-overlay modal-closed">
   <div class="voice-modal">
     <div class="voice-modal-header">
       <h2>🎤 اختبار التسميع</h2>
