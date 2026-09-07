@@ -85,6 +85,11 @@
       خلفية التطبيق (افتح المزيد بالنقاط)
       <div id="background-grid" class="swatch-grid"></div>
     </div>
+    <div class="settings-field">
+      لمن الحفظ؟
+      <div class="age-mode-grid" id="settings-age-grid"></div>
+      <p class="muted" id="age-mode-note"></p>
+    </div>
     <label class="settings-field settings-toggle">
       <span>
         تنويع طريقة الاختبار تلقائيًا
@@ -282,7 +287,8 @@
 
     <div class="panel" id="onboarding-panel">
       <h2>🌱 لم تبدأ رحلة الحفظ بعد</h2>
-      <p class="muted">اضغط لتبدأ حفظ سورة الفاتحة آيةً آية، بأسلوب تفاعلي ممتع.</p>
+      <p class="muted">اختر لمن هذا الحفظ، ليضبط التطبيق طول الجلسة وطريقتها وحجم الخط ووتيرة المراجعة بما يناسبه — ويمكنك تغيير كل ذلك لاحقًا.</p>
+      <div class="age-mode-grid" id="onboarding-age-grid"></div>
       <button class="btn primary" data-tab="learn">ابدأ الآن بسورة الفاتحة</button>
     </div>
   </section>
@@ -330,10 +336,10 @@
       <div class="answer-area hidden" id="partial-area">
         <div id="learn-partial-controls" class="mode-controls">
           <button id="btn-learn-mask-more" class="btn"></button>
-          <button id="btn-learn-mask-reset" class="btn"></button>
         </div>
-        <div id="learn-partial-actions" class="reveal-controls">
-          <p class="muted">اختبر نفسك، ثم سجّل كيف تذكّرتها:</p>
+        <p class="muted" id="learn-partial-hint">استرجع الكلمات المخفية في نفسك، ثم اضغط على كل واحدة لكشفها.</p>
+        <div id="learn-partial-actions" class="reveal-controls hidden">
+          <p class="muted">كيف كان استرجاعك؟</p>
           <div class="partial-round-buttons">
             <button id="btn-learn-partial-wrong" class="btn grade-again"></button>
             <button id="btn-learn-partial-correct" class="btn grade-good"></button>

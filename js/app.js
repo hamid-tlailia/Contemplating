@@ -162,6 +162,7 @@ function loadState() {
       parsed.reviewCounts = parsed.reviewCounts || {};
       parsed.wirdPlan = parsed.wirdPlan || null;
       parsed.autoVaryModes = parsed.autoVaryModes !== false;
+      parsed.ageMode = parsed.ageMode || "adult";
       return parsed;
     }
   } catch (e) {
@@ -191,6 +192,7 @@ function loadState() {
     reviewCounts: {}, // "YYYY-MM-DD" -> ayahs graded in a review session that day
     wirdPlan: null, // {anchor, time:"HH:MM", place} - the when/where commitment
     autoVaryModes: true, // rotate the test mode across an ayah's three rounds
+    ageMode: "adult", // which age profile's defaults are in force
   };
 }
 
@@ -460,6 +462,95 @@ function cleanAyahText(text) {
   return quranWords(text).join(" ");
 }
 
+// ---------- Age profiles ----------
+//
+// The same drill does not fit a seven-year-old and a seventy-year-old.
+// What actually differs by age, and is worth acting on:
+//
+//   children     attention is measured in minutes, memorization is by ear,
+//                and writing an ayah is a handwriting exercise, not a recall
+//                one - so: a small daily target, larger text, no typing
+//                round;
+//   teenagers    the standard drill, at a normal pace;
+//   adults       the same, with the largest realistic daily load;
+//   older adults encoding is slower and needs shorter gaps, not more
+//                repetitions crammed into one sitting - so: a smaller daily
+//                target, the largest text, no typing round, and review
+//                intervals held tighter than SM-2 would set them.
+//
+// Everything a profile sets stays editable afterwards: it fills in sensible
+// starting values, it doesn't lock anything.
+const AGE_MODES = [
+  {
+    id: "child", label: "طفل", hint: "٥ - ١١ سنة", emoji: "🧒",
+    wirdTarget: 2, reviewDailyCap: 10, fontSize: "large",
+    modes: ["mcq", "partial"], intervalFactor: 0.8,
+    note: "ورد يومي صغير، خط أكبر، بلا جولة كتابة، ومراجعة أقرب.",
+  },
+  {
+    id: "teen", label: "يافع", hint: "١٢ - ١٧ سنة", emoji: "🧑",
+    wirdTarget: 5, reviewDailyCap: 20, fontSize: "medium",
+    modes: ["mcq", "partial", "type"], intervalFactor: 1,
+    note: "الجولات الثلاث كاملة بوتيرة معتادة.",
+  },
+  {
+    id: "adult", label: "بالغ", hint: "١٨ - ٥٩ سنة", emoji: "🧔",
+    wirdTarget: 5, reviewDailyCap: 20, fontSize: "medium",
+    modes: ["mcq", "partial", "type"], intervalFactor: 1,
+    note: "الإعداد المتوازن: الجولات الثلاث وسقف مراجعة كامل.",
+  },
+  {
+    id: "senior", label: "كبير السن", hint: "٦٠ سنة فأكثر", emoji: "🧓",
+    wirdTarget: 3, reviewDailyCap: 15, fontSize: "xlarge",
+    modes: ["mcq", "partial"], intervalFactor: 0.7,
+    note: "خط أكبر ما يكون، بلا جولة كتابة، وتباعد أقصر بين المراجعات.",
+  },
+];
+
+function ageProfile() {
+  return AGE_MODES.find((m) => m.id === state.ageMode) || AGE_MODES[2];
+}
+
+function applyAgeMode(id) {
+  const profile = AGE_MODES.find((m) => m.id === id);
+  if (!profile) return;
+  state.ageMode = profile.id;
+  state.wirdTarget = profile.wirdTarget;
+  state.reviewDailyCap = profile.reviewDailyCap;
+  state.fontSize = profile.fontSize;
+  learnModeManualOverride = false;
+  saveState();
+  applyFontSize();
+  renderAgeModeGrids();
+  renderDashboard();
+  const fontSizeSelect = document.getElementById("font-size-select");
+  if (fontSizeSelect) fontSizeSelect.value = state.fontSize;
+  const capSelect = document.getElementById("review-cap-select");
+  if (capSelect) capSelect.value = String(state.reviewDailyCap);
+  const wirdInput = document.getElementById("wird-target-input");
+  if (wirdInput) wirdInput.value = state.wirdTarget;
+  if (document.getElementById("tab-learn").classList.contains("active")) loadLearnAyah();
+  showToast(`${profile.emoji} ${profile.note}`, "success");
+}
+
+function renderAgeModeGrids() {
+  ["settings-age-grid", "onboarding-age-grid"].forEach((id) => {
+    const grid = document.getElementById(id);
+    if (!grid) return;
+    grid.innerHTML = "";
+    AGE_MODES.forEach((m) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `age-mode-btn${m.id === state.ageMode ? " active" : ""}`;
+      btn.innerHTML = `<span class="age-mode-emoji">${m.emoji}</span><span class="age-mode-label">${m.label}</span><span class="age-mode-hint">${m.hint}</span>`;
+      btn.addEventListener("click", () => applyAgeMode(m.id));
+      grid.appendChild(btn);
+    });
+  });
+  const note = document.getElementById("age-mode-note");
+  if (note) note.textContent = ageProfile().note;
+}
+
 // ---------- SM-2 spaced repetition ----------
 // quality: 0 = complete blackout, 3 = hard recall, 4 = good, 5 = easy
 function sm2Schedule(item, quality) {
@@ -472,6 +563,14 @@ function sm2Schedule(item, quality) {
     else if (item.repetition === 2) item.interval = 6;
     else item.interval = Math.round((item.interval || 1) * (item.ef || 2.5));
   }
+
+  // Slower encoding wants shorter gaps, not longer sittings, so the older
+  // profile pulls every interval in (see AGE_MODES). Applied to the final
+  // interval rather than to the ease factor, so it can be changed or
+  // undone by switching profile without having permanently skewed the
+  // per-ayah ease that SM-2 has been learning.
+  const factor = ageProfile().intervalFactor || 1;
+  if (factor !== 1) item.interval = Math.max(1, Math.round(item.interval * factor));
 
   let ef = (item.ef || 2.5) + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02));
   if (ef < 1.3) ef = 1.3;
@@ -2272,8 +2371,11 @@ document.getElementById("mode-btn-type").innerHTML = iconLabel("pencil", "كتا
 // drilled three times over. Each mode also tests something the others
 // don't - recognition is not recall, and recall is not production - and
 // three identical rounds is the shortest road to boredom.
-const MODE_ROTATION = ["mcq", "partial", "type"];
 const MODE_ROUND_LABEL = { mcq: "تعرُّف", partial: "تذكُّر", type: "كتابة" };
+
+function modeRotation() {
+  return (ageProfile().modes || ["mcq", "partial", "type"]);
+}
 
 // A mode picked by hand holds for the ayah being worked on, then rotation
 // resumes - it steers the current round without silently switching the
@@ -2372,7 +2474,8 @@ async function loadLearnAyah() {
 
   const round = item.roundStreak || 0;
   if (state.autoVaryModes && !learnModeManualOverride) {
-    setLearnMode(MODE_ROTATION[round % MODE_ROTATION.length]);
+    const rotation = modeRotation();
+    setLearnMode(rotation[round % rotation.length]);
   }
 
   document.getElementById("learn-ref").textContent = `${meta.name} - الآية ${pointer.ayah}`;
@@ -2583,7 +2686,29 @@ function renderLearnRound() {
 function renderLearnPartialMask() {
   const item = state.ayahs[learnCurrentKey];
   const round = item ? (item.roundStreak || 0) : 0;
-  renderMaskedWordsInto(document.getElementById("learn-text"), learnWords, learnMaskLevel, round + 1);
+  // Grading is offered only once every hidden word has actually been
+  // uncovered. Rating a recall you never checked is guesswork, and it is
+  // guesswork the SM-2 schedule then acts on - so the check has to happen
+  // before the rating, not instead of it.
+  renderMaskedWordsInto(
+    document.getElementById("learn-text"),
+    learnWords,
+    learnMaskLevel,
+    round + 1,
+    (stillHidden) => {
+      const done = stillHidden === 0;
+      const actions = document.getElementById("learn-partial-actions");
+      const hint = document.getElementById("learn-partial-hint");
+      if (!actions || !hint) return;
+      actions.classList.toggle("hidden", !done);
+      hint.classList.toggle("hidden", done);
+      hint.textContent = stillHidden === 1
+        ? "بقيت كلمة واحدة مخفية - اضغط عليها لكشفها."
+        : `استرجعها في نفسك، ثم اضغط على كل كلمة مخفية لكشفها (بقي ${stillHidden}).`;
+      fitLearnAyahHeight();
+      scheduleAnswerDockUpdate();
+    }
+  );
   fitLearnAyahHeight();
   scheduleAnswerDockUpdate();
 }
@@ -3075,7 +3200,7 @@ function computeHiddenIndices(n, maskLevel, seedOffset = 0) {
   return hiddenIndices;
 }
 
-function renderMaskedWordsInto(container, words, maskLevel, seedOffset = 0) {
+function renderMaskedWordsInto(container, words, maskLevel, seedOffset = 0, onReveal) {
   const hiddenIndices = computeHiddenIndices(words.length, maskLevel, seedOffset);
   container.innerHTML = words
     .map((w, idx) => {
@@ -3084,8 +3209,12 @@ function renderMaskedWordsInto(container, words, maskLevel, seedOffset = 0) {
     })
     .join(" ");
   container.querySelectorAll(".word.masked").forEach((el) => {
-    el.addEventListener("click", () => el.classList.remove("masked"));
+    el.addEventListener("click", () => {
+      el.classList.remove("masked");
+      if (onReveal) onReveal(container.querySelectorAll(".word.masked").length);
+    });
   });
+  if (onReveal) onReveal(hiddenIndices.size);
 }
 
 function renderMaskedText() {
@@ -3103,7 +3232,6 @@ document.getElementById("btn-learn-tafsir").innerHTML = iconLabel("book", "ال�
 document.getElementById("btn-learn-meanings").innerHTML = iconLabel("bulb", "معاني الكلمات");
 document.getElementById("btn-learn-voice").innerHTML = iconLabel("mic", "اختبر بالنطق");
 document.getElementById("btn-learn-mask-more").innerHTML = iconLabel("eyeOff", "إخفاء المزيد");
-document.getElementById("btn-learn-mask-reset").innerHTML = iconLabel("eye", "إظهار الكل");
 document.getElementById("btn-learn-partial-wrong").innerHTML = iconLabel("xCircle", "أخطأت في كلمة");
 document.getElementById("btn-learn-partial-correct").innerHTML = iconLabel("check", "تذكرتها جيدًا");
 
@@ -3157,11 +3285,6 @@ document.getElementById("btn-mask-reset").addEventListener("click", () => {
 
 document.getElementById("btn-learn-mask-more").addEventListener("click", () => {
   learnMaskLevel = Math.min(learnMaskLevel + 1, 3);
-  renderLearnPartialMask();
-});
-
-document.getElementById("btn-learn-mask-reset").addEventListener("click", () => {
-  learnMaskLevel = 0;
   renderLearnPartialMask();
 });
 
@@ -3407,6 +3530,7 @@ function initSettingsPanel() {
   fontSizeSelect.value = state.fontSize;
   reviewCapSelect.value = String(state.reviewDailyCap);
   autoVaryInput.checked = state.autoVaryModes !== false;
+  renderAgeModeGrids();
   renderReciterGrid();
   renderThemeGrid();
   renderFontGrid();

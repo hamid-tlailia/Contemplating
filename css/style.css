@@ -772,6 +772,35 @@ main#app {
 }
 /* A settings row whose control is a checkbox rather than a select: label on
    one side, switch on the other. */
+/* Four age profiles as picture-cards rather than a select: this is the
+   first question a new user is asked, and it should read as a choice about
+   a person, not a preference buried in a dropdown. */
+.age-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+.age-mode-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 4px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color .15s ease, background-color .15s ease, transform .1s ease;
+}
+.age-mode-btn:active { transform: translateY(1px); }
+.age-mode-btn.active { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, transparent); }
+.age-mode-emoji { font-size: 1.5rem; line-height: 1.2; }
+.age-mode-label { font-size: 0.8rem; font-weight: 700; }
+.age-mode-hint { font-size: 0.65rem; color: var(--muted); }
+
 .settings-toggle {
   flex-direction: row;
   align-items: center;
@@ -898,7 +927,7 @@ main#app {
 
 .ayah-display {
   background: var(--bg);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Cg fill='none' stroke='%23b98b2a' stroke-opacity='0.16' stroke-width='1.5'%3E%3Cpath d='M80 10 L95 45 L133 45 L103 68 L115 105 L80 83 L45 105 L57 68 L27 45 L65 45 Z'/%3E%3Ccircle cx='80' cy='80' r='70'/%3E%3C/g%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Cg fill='none' stroke='%23b98b2a' stroke-opacity='0.16' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M80 55C68 45 50 42 33 45v66c17-3 35 0 47 10 12-10 30-13 47-10V45c-17-3-35 0-47 10Z'/%3E%3Cpath d='M80 55v66'/%3E%3Cpath d='M45 60h22M45 74h22M45 88h18M93 60h22M93 74h22M93 88h18'/%3E%3Ccircle cx='80' cy='80' r='70'/%3E%3C/g%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: center;
   background-size: 220px 220px;
@@ -1095,7 +1124,14 @@ main#app {
 
 .learn-ayah-display { min-height: 160px; }
 .ayah-display { flex-direction: column; }
-.ayah-scroll { width: 100%; }
+.ayah-scroll {
+  width: 100%;
+  /* The panel's own fade already says there is more below; a scrollbar
+     column on top of it just puts a grey bar through the frame. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.ayah-scroll::-webkit-scrollbar { width: 0; height: 0; display: none; }
 
 .info-modal-body .meaning-chip {
   display: flex;
