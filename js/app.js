@@ -41,6 +41,29 @@ const POINTS = {
   dailyChallenge: 20,
 };
 
+// Small inline icon set matching the bottom-nav's stroke style, used instead
+// of emoji on buttons where an emoji reads as inconsistent/childish next to
+// the app's own iconography.
+const ICONS = {
+  book: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5V4.5A2.5 2.5 0 0 1 6.5 2H20v15H6.5a2.5 2.5 0 0 0 0 5H20"/></svg>',
+  eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>',
+  eyeOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-6.5 0-10-7-10-7a19.7 19.7 0 0 1 4.22-5.36M9.9 4.24A10.6 10.6 0 0 1 12 4c6.5 0 10 7 10 7a19.6 19.6 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><path d="M2 2l20 20"/></svg>',
+  volume: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>',
+  play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4v16l14-8Z"/></svg>',
+  pause: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>',
+  stop: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>',
+  repeat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2 21 6l-4 4"/><path d="M3 12v-1a4 4 0 0 1 4-4h14"/><path d="M7 22 3 18l4-4"/><path d="M21 12v1a4 4 0 0 1-4 4H3"/></svg>',
+  bulb: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.2 1 2.05V17h6v-.25c0-.85.4-1.55 1-2.05A7 7 0 0 0 12 2Z"/></svg>',
+  mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v4"/><path d="M8 23h8"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>',
+  flash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 4.5-5"/></svg>',
+  checkDone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-11"/></svg>',
+};
+function iconLabel(iconKey, text) {
+  return `<span class="icon-label">${ICONS[iconKey]}<span>${text}</span></span>`;
+}
+
 function audioSrcFor(globalAyahNumber) {
   const reciter = RECITERS.find((r) => r.id === state.reciter) || RECITERS[0];
   return `${AUDIO_CDN}/${reciter.bitrate}/${reciter.id}/${globalAyahNumber}.mp3`;
@@ -483,6 +506,12 @@ function renderDashboard() {
   document.getElementById("stat-mastered").textContent = masteredCount;
   document.getElementById("stat-streak").textContent = computeStreak();
 
+  const TOTAL_QURAN_AYAHS = 6236;
+  const overallPct = Math.min(100, (masteredCount / TOTAL_QURAN_AYAHS) * 100);
+  document.getElementById("overall-progress-fill").style.width = `${overallPct}%`;
+  document.getElementById("overall-progress-text").textContent =
+    `${masteredCount} / ${TOTAL_QURAN_AYAHS} (${overallPct.toFixed(1)}%)`;
+
   document.getElementById("onboarding-panel").classList.toggle("show", items.length === 0);
 
   renderChallengeCard();
@@ -558,6 +587,59 @@ function renderWirdCard() {
   }
 }
 
+// A way to log the daily wird from reading the Mushaf directly, instead of
+// only being able to bump dailyCounts by memorizing/reviewing - some days
+// the wird is just reading, not new memorization.
+let mushafLoadedCount = 0;
+
+async function initMushafCard() {
+  const select = document.getElementById("mushaf-surah-select");
+  const loadBtn = document.getElementById("btn-mushaf-load");
+  const markBtn = document.getElementById("btn-mushaf-mark-read");
+  const area = document.getElementById("mushaf-reading-area");
+  const textEl = document.getElementById("mushaf-text");
+  loadBtn.innerHTML = iconLabel("book", "عرض للقراءة");
+  markBtn.innerHTML = iconLabel("checkDone", "سجّلت قراءتها");
+
+  try {
+    const surahs = await fetchSurahList();
+    select.innerHTML = surahs.map((s) => `<option value="${s.number}">${s.number}. ${s.name}</option>`).join("");
+  } catch (e) {
+    select.innerHTML = `<option value="">تعذّر تحميل قائمة السور</option>`;
+  }
+
+  loadBtn.addEventListener("click", async () => {
+    const surahNumber = Number(select.value);
+    const from = Number(document.getElementById("mushaf-from").value) || 1;
+    const to = Number(document.getElementById("mushaf-to").value) || from;
+    if (!surahNumber || from > to) return;
+    area.classList.remove("hidden");
+    textEl.textContent = "جاري التحميل...";
+    markBtn.disabled = false;
+    markBtn.innerHTML = iconLabel("checkDone", "سجّلت قراءتها");
+    try {
+      const ayahs = await fetchSurahAyahs(surahNumber);
+      const matches = ayahs.filter((a) => a.numberInSurah >= from && a.numberInSurah <= to);
+      mushafLoadedCount = matches.length;
+      textEl.textContent = matches.map((a) => a.text).join(" ");
+    } catch (e) {
+      mushafLoadedCount = 0;
+      textEl.textContent = "تعذّر تحميل النص. تحقق من الاتصال بالإنترنت.";
+    }
+  });
+
+  markBtn.addEventListener("click", () => {
+    if (mushafLoadedCount <= 0) return;
+    const today = todayISO();
+    state.dailyCounts[today] = (state.dailyCounts[today] || 0) + mushafLoadedCount;
+    saveState();
+    renderWirdCard();
+    markBtn.innerHTML = iconLabel("checkDone", "تم التسجيل");
+    markBtn.disabled = true;
+    showToast(`🌙 أُضيفت ${mushafLoadedCount} آية إلى ورد اليوم`, "success");
+  });
+}
+
 function initWirdCard() {
   const input = document.getElementById("wird-target-input");
   if (!input) return;
@@ -571,26 +653,33 @@ function initWirdCard() {
 
 function buildPlanItemRow(item, today) {
   const div = document.createElement("div");
-  div.className = "plan-item";
+  const isDue = item.due <= today;
+  div.className = `plan-item${isDue ? " due-now" : ""}`;
   let badge = "scheduled";
   let badgeText = `\u064a\u064f\u0633\u062a\u062d\u0642: ${item.due}`;
-  if (item.due <= today) { badge = "due"; badgeText = "\u0645\u0633\u062a\u062d\u0642\u0629 \u0627\u0644\u0622\u0646"; }
+  if (isDue) { badge = "due"; badgeText = "\u0645\u0633\u062a\u062d\u0642\u0629 \u0627\u0644\u0622\u0646"; }
   const tempBadge = item.temporary
     ? `<span class="badge temp" title="\u0644\u0627 \u062a\u064f\u062d\u062a\u0633\u0628 \u0636\u0645\u0646 \u0646\u0633\u0628\u0629 \u0627\u0644\u062a\u0642\u062f\u0645">\u0645\u0631\u0627\u062c\u0639\u0629 \u0645\u0624\u0642\u062a\u0629</span>`
     : "";
+  const reviewBtn = isDue ? `<button class="btn btn-review-now">${iconLabel("check", "\u0631\u0627\u062c\u0639\u0647\u0627 \u0627\u0644\u0622\u0646")}</button>` : "";
   div.innerHTML = `
     <span class="ref">\u0622\u064a\u0629 ${item.ayah}</span>
     <span class="snippet">${item.text || ""}</span>
     <span class="badge ${badge}">${badgeText}</span>
     ${tempBadge}
+    ${reviewBtn}
     <button class="icon-btn" title="\u0625\u0632\u0627\u0644\u0629 \u0645\u0646 \u0627\u0644\u062e\u0637\u0629" data-key="${item.surah}:${item.ayah}">\u2715</button>
   `;
   div.querySelector(".icon-btn").addEventListener("click", (e) => {
+    e.stopPropagation();
     const key = e.currentTarget.dataset.key;
     delete state.ayahs[key];
     saveState();
     renderDashboard();
   });
+  if (isDue) {
+    div.addEventListener("click", () => startSingleItemReview(item));
+  }
   return div;
 }
 
@@ -728,7 +817,7 @@ async function loadBrowseSurah(surahNumber) {
     const surahs = await fetchSurahList();
     const meta = surahs.find((s) => s.number === surahNumber);
     selectedBrowseSurahName = meta.name;
-    titleEl.textContent = `معاينة آيات سورة ${meta.name}`;
+    titleEl.textContent = `معاينة آيات ${meta.name}`;
     metaInfo.textContent = `عدد آيات السورة: ${ayahs.length}`;
     renderSurahInfoCaption("browse-surah-info", meta);
 
@@ -746,9 +835,27 @@ async function loadBrowseSurah(surahNumber) {
   }
 }
 
+// The add button's icon/label tells the person what will happen before they
+// click it, instead of both paths looking like a plain "+ أضف": a contiguous
+// ayah joins the memorization plan for real, while a jump ahead only opens a
+// one-off practice round (see handleAddAyahClick / startEphemeralReview).
 function buildAyahRow(surahNumber, surahName, ayahObj, showSurahBadge) {
   const key = `${surahNumber}:${ayahObj.numberInSurah}`;
   const already = !!state.ayahs[key];
+  const contiguous = isContiguousAddition(surahNumber, ayahObj.numberInSurah);
+  let btnClass = "btn ayah-add-btn";
+  let btnHTML, btnTitle;
+  if (already) {
+    btnHTML = iconLabel("checkDone", "أُضيفت");
+    btnTitle = "أُضيفت بالفعل إلى خطتك";
+  } else if (contiguous) {
+    btnHTML = iconLabel("plus", "أضف للخطة");
+    btnTitle = "تُضاف بشكل دائم إلى خطة حفظك";
+  } else {
+    btnClass += " jump";
+    btnHTML = iconLabel("flash", "جرّب الآن");
+    btnTitle = "مراجعة مؤقتة لآية واحدة فقط - لن تُضاف إلى خطتك";
+  }
   const row = document.createElement("div");
   row.className = "ayah-browse-item";
   row.innerHTML = `
@@ -757,12 +864,12 @@ function buildAyahRow(surahNumber, surahName, ayahObj, showSurahBadge) {
         ${showSurahBadge ? `<span class="ayah-browse-surah-badge">${surahName}</span>` : ""}
         <span class="ayah-num-chip">${ayahObj.numberInSurah}</span>
       </span>
-      <button class="btn ayah-add-btn" ${already ? "disabled" : ""}>${already ? "أُضيفت ✓" : "+ أضف"}</button>
+      <button class="${btnClass}" ${already ? "disabled" : ""} title="${btnTitle}">${btnHTML}</button>
     </div>
     <p class="ayah-browse-text">${ayahObj.text}</p>
   `;
   row.querySelector("button").addEventListener("click", (e) => {
-    handleAddAyahClick(surahNumber, surahName, ayahObj, e.target);
+    handleAddAyahClick(surahNumber, surahName, ayahObj, e.currentTarget);
   });
   return row;
 }
@@ -775,7 +882,7 @@ function buildAyahRow(surahNumber, surahName, ayahObj, showSurahBadge) {
 function handleAddAyahClick(surahNumber, surahName, ayahObj, buttonEl) {
   if (isContiguousAddition(surahNumber, ayahObj.numberInSurah)) {
     addAyahDirectlyToSrs(surahNumber, surahName, ayahObj);
-    buttonEl.textContent = "أُضيفت ✓";
+    buttonEl.innerHTML = iconLabel("checkDone", "أُضيفت");
     buttonEl.disabled = true;
     renderDashboard();
   } else {
@@ -798,7 +905,7 @@ function renderBrowsePreview() {
     // which surah an ayah is in before they could find it).
     const asNumber = Number(searchVal);
     matches = ayahs.filter((a) => a.numberInSurah === asNumber);
-    hint.textContent = `آية رقم ${searchVal} من سورة ${selectedBrowseSurahName}`;
+    hint.textContent = `آية رقم ${searchVal} من ${selectedBrowseSurahName}`;
   } else {
     const from = Number(document.getElementById("ayah-from").value) || 1;
     const to = Number(document.getElementById("ayah-to").value) || from;
@@ -1123,8 +1230,7 @@ function getOrCreateLearningItem(surahNumber, surahName, ayahObj) {
 
 async function loadLearnAyah() {
   const pointer = state.learningPointer;
-  document.getElementById("learn-meanings").classList.add("hidden");
-  document.getElementById("learn-meanings").innerHTML = "";
+  closeInfoModal();
 
   let ayahs, surahs, meta;
   try {
@@ -1157,11 +1263,10 @@ async function loadLearnAyah() {
   learnWordIndex = 0;
   learnMistakeThisRound = false;
 
-  document.getElementById("learn-ref").textContent = `سورة ${meta.name} - الآية ${pointer.ayah}`;
+  document.getElementById("learn-ref").textContent = `${meta.name} - الآية ${pointer.ayah}`;
   document.getElementById("learn-round-info").textContent = `الجولة ${(item.roundStreak || 0) + 1} من ${ROUNDS_TO_MASTER}`;
   updateRoundDots(item.roundStreak || 0);
   renderSurahInfoCaption("learn-surah-info", meta);
-  document.getElementById("learn-tafsir").classList.add("hidden");
 
   const audio = document.getElementById("learn-audio");
   audio.src = audioSrcFor(ayahObj.number);
@@ -1322,57 +1427,80 @@ function masterCurrentLearningAyah(item) {
   setTimeout(() => loadLearnAyah(), 1400);
 }
 
-// A single play/pause toggle button per audio player, instead of a play-only
-// button with no way to stop it. Also surfaces a clear message (rather than
-// silently doing nothing) when a specific reciter's file 404s/403s on the
-// CDN, and lets the user recover the current ayah's src after a reciter
-// change without needing to reload the page.
-function setupAudioToggle(buttonId, audioId, playLabel) {
-  const btn = document.getElementById(buttonId);
+// Play/pause resumes from the current position (instead of the old single
+// toggle that reset to 0 on every pause), stop always resets to 0, and
+// repeat loops the ayah - three separate controls instead of overloading
+// one button. Also surfaces a clear message (rather than silently doing
+// nothing) when a specific reciter's file 404s/403s on the CDN, and lets
+// the user recover the current ayah's src after a reciter change without
+// needing to reload the page.
+function setupAudioControls(prefix, audioId) {
   const audio = document.getElementById(audioId);
-  const setLabel = (label) => { btn.textContent = label; };
+  const playBtn = document.getElementById(`${prefix}-playpause`);
+  const stopBtn = document.getElementById(`${prefix}-stop`);
+  const repeatBtn = document.getElementById(`${prefix}-repeat`);
+  playBtn.innerHTML = ICONS.play;
+  stopBtn.innerHTML = ICONS.stop;
+  repeatBtn.innerHTML = ICONS.repeat;
+  stopBtn.setAttribute("aria-label", "إيقاف");
+  repeatBtn.setAttribute("aria-label", "تكرار الآية");
 
-  btn.addEventListener("click", () => {
-    if (audio.paused) {
-      audio.play().catch(() => {});
-    } else {
-      audio.pause();
-      audio.currentTime = 0;
-      setLabel(playLabel);
-    }
+  const setPlayIcon = () => { playBtn.innerHTML = ICONS.play; playBtn.setAttribute("aria-label", "تشغيل"); };
+  const setPauseIcon = () => { playBtn.innerHTML = ICONS.pause; playBtn.setAttribute("aria-label", "إيقاف مؤقت"); };
+
+  playBtn.addEventListener("click", () => {
+    if (audio.paused) audio.play().catch(() => {});
+    else audio.pause();
   });
-  audio.addEventListener("playing", () => setLabel("⏹ إيقاف"));
-  audio.addEventListener("pause", () => setLabel(playLabel));
-  audio.addEventListener("ended", () => setLabel(playLabel));
+  stopBtn.addEventListener("click", () => {
+    audio.pause();
+    audio.currentTime = 0;
+    setPlayIcon();
+  });
+  repeatBtn.addEventListener("click", () => {
+    audio.loop = !audio.loop;
+    repeatBtn.classList.toggle("active", audio.loop);
+  });
+  audio.addEventListener("playing", setPauseIcon);
+  audio.addEventListener("pause", setPlayIcon);
+  audio.addEventListener("ended", () => { if (!audio.loop) setPlayIcon(); });
   audio.addEventListener("error", () => {
-    setLabel(playLabel);
+    setPlayIcon();
     showToast("تعذّر تشغيل هذا القارئ لهذه الآية. جرّب قارئًا آخر من الإعدادات ⚙️", "error");
   });
 }
 
-setupAudioToggle("btn-learn-audio", "learn-audio", "🔊 استماع للآية");
+setupAudioControls("learn-audio-controls", "learn-audio");
+
+// ---------- Info modal (tafsir / word meanings) ----------
+// Shared bottom-sheet used for both, so opening either never pushes the
+// ayah text or the control buttons further down the page.
+
+function openInfoModal(title, bodyHTML) {
+  document.getElementById("info-modal-title").textContent = title;
+  document.getElementById("info-modal-body").innerHTML = bodyHTML;
+  document.getElementById("info-modal-overlay").classList.remove("hidden");
+}
+function closeInfoModal() {
+  document.getElementById("info-modal-overlay").classList.add("hidden");
+}
+document.getElementById("btn-info-close").addEventListener("click", closeInfoModal);
+document.getElementById("info-modal-overlay").addEventListener("click", (e) => {
+  if (e.target.id === "info-modal-overlay") closeInfoModal();
+});
 
 document.getElementById("btn-learn-meanings").addEventListener("click", async () => {
-  const container = document.getElementById("learn-meanings");
-  if (!container.classList.contains("hidden")) {
-    container.classList.add("hidden");
-    return;
-  }
-  container.classList.remove("hidden");
-  container.innerHTML = `<p class="muted">جاري تحميل المعاني...</p>`;
+  openInfoModal("معاني الكلمات", `<p class="muted">جاري تحميل المعاني...</p>`);
   const pointer = state.learningPointer;
   try {
     const meanings = await fetchWordMeanings(pointer.surah, pointer.ayah);
     if (!meanings.length) throw new Error("empty");
-    if (meanings[0].isWholeAyah) {
-      container.innerHTML = `<p class="tafsir-fallback">${meanings[0].meaning}</p>`;
-    } else {
-      container.innerHTML = meanings
-        .map((m) => `<div class="meaning-chip"><span class="mw-ar">${m.text}</span><span>${m.meaning || "—"}</span></div>`)
-        .join("");
-    }
+    const body = meanings[0].isWholeAyah
+      ? `<p>${meanings[0].meaning}</p>`
+      : meanings.map((m) => `<div class="meaning-chip"><span class="mw-ar">${m.text}</span><span>${m.meaning || "—"}</span></div>`).join("");
+    document.getElementById("info-modal-body").innerHTML = body;
   } catch (e) {
-    container.innerHTML = `<p class="muted">تعذّر تحميل معاني الكلمات حاليًا.</p>`;
+    document.getElementById("info-modal-body").innerHTML = `<p class="muted">تعذّر تحميل معاني الكلمات حاليًا.</p>`;
   }
 });
 
@@ -1408,6 +1536,18 @@ function startEphemeralReview(surahNumber, surahName, ayahObj) {
   document.getElementById("review-session").classList.remove("hidden");
   loadReviewItem();
   showToast("🔎 هذه مراجعة مؤقتة لآية واحدة فقط ولن تُضاف إلى خطتك أو تُحسب ضمن تقدّمك.");
+}
+
+// Opening a single due ayah straight from its dashboard row, instead of
+// only being reachable through the full due-queue review session.
+function startSingleItemReview(item) {
+  switchTab("review"); // runs the normal due-queue session first...
+  reviewQueue = [item]; // ...then we narrow it to just this ayah
+  reviewIndex = 0;
+  document.getElementById("challenge-banner").classList.add("hidden");
+  document.getElementById("review-empty").classList.add("hidden");
+  document.getElementById("review-session").classList.remove("hidden");
+  loadReviewItem();
 }
 
 function startDailyChallenge() {
@@ -1462,7 +1602,7 @@ function loadReviewItem() {
   const item = reviewQueue[reviewIndex];
   document.getElementById("review-position").textContent = `${reviewIndex + 1} / ${reviewQueue.length}`;
   document.getElementById("review-progress-fill").style.width = `${((reviewIndex) / reviewQueue.length) * 100}%`;
-  document.getElementById("review-ref").textContent = `سورة ${item.surahName || item.surah} - الآية ${item.ayah}`;
+  document.getElementById("review-ref").textContent = `${item.surahName || `سورة ${item.surah}`} - الآية ${item.ayah}`;
 
   currentWords = stripWaqfTokens(item.text.split(/\s+/));
   maskLevel = 0;
@@ -1473,7 +1613,7 @@ function loadReviewItem() {
 
   document.getElementById("grade-controls").classList.add("hidden");
   document.getElementById("reveal-controls").classList.remove("hidden");
-  document.getElementById("review-tafsir").classList.add("hidden");
+  closeInfoModal();
 }
 
 function renderMaskedText() {
@@ -1505,9 +1645,18 @@ function renderMaskedText() {
   });
 }
 
-setupAudioToggle("btn-play-audio", "review-audio", "🔊 استماع");
+setupAudioControls("review-audio-controls", "review-audio");
+document.getElementById("btn-mask-more").innerHTML = iconLabel("eyeOff", "إخفاء المزيد");
+document.getElementById("btn-mask-reset").innerHTML = iconLabel("eye", "إظهار الكل");
+document.getElementById("btn-review-tafsir").innerHTML = iconLabel("book", "التفسير");
+document.getElementById("btn-review-voice").innerHTML = iconLabel("mic", "اختبر بالنطق");
+document.getElementById("btn-learn-tafsir").innerHTML = iconLabel("book", "التفسير");
+document.getElementById("btn-learn-meanings").innerHTML = iconLabel("bulb", "معاني الكلمات");
+document.getElementById("btn-learn-voice").innerHTML = iconLabel("mic", "اختبر بالنطق");
 
 // ---------- Tafsir (persistent per-ayah button, reuses the whole-ayah fallback API) ----------
+// Shown in the shared info modal instead of an inline panel, so opening it
+// never pushes the ayah text or the control buttons further down the page.
 
 const tafsirTextCache = {};
 async function fetchTafsirText(surah, ayah) {
@@ -1520,30 +1669,25 @@ async function fetchTafsirText(surah, ayah) {
   return text;
 }
 
-function setupTafsirToggle(buttonId, panelId, getRef) {
+function setupTafsirButton(buttonId, getRef) {
   const btn = document.getElementById(buttonId);
-  const panel = document.getElementById(panelId);
-  if (!btn || !panel) return;
+  if (!btn) return;
   btn.addEventListener("click", async () => {
-    if (!panel.classList.contains("hidden")) {
-      panel.classList.add("hidden");
-      return;
-    }
     const ref = getRef();
     if (!ref) return;
-    panel.classList.remove("hidden");
-    panel.textContent = "جاري تحميل التفسير...";
-    panel.textContent = await fetchTafsirText(ref.surah, ref.ayah);
+    openInfoModal("التفسير", `<p class="muted">جاري تحميل التفسير...</p>`);
+    const text = await fetchTafsirText(ref.surah, ref.ayah);
+    document.getElementById("info-modal-body").innerHTML = `<p>${text}</p>`;
   });
 }
 
-setupTafsirToggle("btn-learn-tafsir", "learn-tafsir", () => {
+setupTafsirButton("btn-learn-tafsir", () => {
   if (!learnCurrentKey) return null;
   const [surah, ayah] = learnCurrentKey.split(":").map(Number);
   return { surah, ayah };
 });
 
-setupTafsirToggle("btn-review-tafsir", "review-tafsir", () => {
+setupTafsirButton("btn-review-tafsir", () => {
   const item = reviewQueue[reviewIndex];
   return item ? { surah: item.surah, ayah: item.ayah } : null;
 });
@@ -1720,5 +1864,6 @@ applyTheme();
 applyFontSize();
 initSettingsPanel();
 initWirdCard();
+initMushafCard();
 initBrowseTab();
 renderDashboard();

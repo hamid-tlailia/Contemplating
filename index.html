@@ -118,6 +118,14 @@
       </div>
     </div>
 
+    <div class="panel overall-progress-card">
+      <div class="overall-progress-header">
+        <h2>📈 تقدمك في حفظ القرآن</h2>
+        <span id="overall-progress-text" class="muted">0 / 6236 (0%)</span>
+      </div>
+      <div class="progress-bar"><div id="overall-progress-fill" class="progress-fill"></div></div>
+    </div>
+
     <div class="panel wird-card">
       <div class="wird-header">
         <h2>🌙 ورد اليوم</h2>
@@ -132,6 +140,21 @@
           <span id="wird-count-text">0/5</span>
         </div>
         <div class="wird-week" id="wird-week"></div>
+      </div>
+    </div>
+
+    <div class="panel mushaf-card">
+      <h2>📖 قراءة اليوم من المصحف</h2>
+      <p class="muted">اقرأ من المصحف وسجّل قراءتك ضمن ورد اليوم، بمعزل عن الحفظ والمراجعة.</p>
+      <div class="mushaf-controls">
+        <select id="mushaf-surah-select"></select>
+        <input type="number" id="mushaf-from" min="1" value="1" placeholder="من آية">
+        <input type="number" id="mushaf-to" min="1" value="5" placeholder="إلى آية">
+        <button id="btn-mushaf-load" class="btn primary"></button>
+      </div>
+      <div id="mushaf-reading-area" class="mushaf-reading-area hidden">
+        <p id="mushaf-text" class="ayah-text mushaf-text"></p>
+        <button id="btn-mushaf-mark-read" class="btn primary"></button>
       </div>
     </div>
 
@@ -176,14 +199,16 @@
         <p id="learn-text" class="ayah-text"></p>
       </div>
 
-      <div id="learn-meanings" class="meanings-row hidden"></div>
-      <div id="learn-tafsir" class="tafsir-panel hidden"></div>
+      <div class="audio-controls" id="learn-audio-controls">
+        <button id="learn-audio-controls-playpause" class="audio-btn" aria-label="تشغيل الآية"></button>
+        <button id="learn-audio-controls-stop" class="audio-btn" aria-label="إيقاف"></button>
+        <button id="learn-audio-controls-repeat" class="audio-btn" aria-label="تكرار"></button>
+      </div>
 
       <div class="learn-controls">
-        <button id="btn-learn-audio" class="btn">🔊 استماع للآية</button>
-        <button id="btn-learn-meanings" class="btn">💡 معاني الكلمات</button>
-        <button id="btn-learn-tafsir" class="btn">📖 التفسير</button>
-        <button id="btn-learn-voice" class="btn hidden">🎤 اختبر بالنطق</button>
+        <button id="btn-learn-meanings" class="btn"></button>
+        <button id="btn-learn-tafsir" class="btn"></button>
+        <button id="btn-learn-voice" class="btn hidden"></button>
       </div>
 
       <div id="mcq-options" class="mcq-options"></div>
@@ -260,15 +285,18 @@
 
         <audio id="review-audio"></audio>
 
-        <div class="mode-controls">
-          <button id="btn-play-audio" class="btn">🔊 استماع</button>
-          <button id="btn-mask-more" class="btn">🙈 إخفاء المزيد</button>
-          <button id="btn-mask-reset" class="btn">👁️ إظهار الكل</button>
-          <button id="btn-review-tafsir" class="btn">📖 التفسير</button>
-          <button id="btn-review-voice" class="btn hidden">🎤 اختبر بالنطق</button>
+        <div class="audio-controls" id="review-audio-controls">
+          <button id="review-audio-controls-playpause" class="audio-btn" aria-label="تشغيل الآية"></button>
+          <button id="review-audio-controls-stop" class="audio-btn" aria-label="إيقاف"></button>
+          <button id="review-audio-controls-repeat" class="audio-btn" aria-label="تكرار"></button>
         </div>
 
-        <div id="review-tafsir" class="tafsir-panel hidden"></div>
+        <div class="mode-controls">
+          <button id="btn-mask-more" class="btn"></button>
+          <button id="btn-mask-reset" class="btn"></button>
+          <button id="btn-review-tafsir" class="btn"></button>
+          <button id="btn-review-voice" class="btn hidden"></button>
+        </div>
 
         <div id="grade-controls" class="grade-controls hidden">
           <p class="muted">قيّم مدى تذكرك لهذه الآية:</p>
@@ -292,6 +320,17 @@
 <footer class="app-footer">
   <p class="muted">يعمل باستخدام بيانات القرآن الكريم من alquran.cloud و quran.com — يُحفظ تقدمك محليًا في متصفحك.</p>
 </footer>
+
+<!-- TAFSIR / WORD-MEANINGS MODAL -->
+<div id="info-modal-overlay" class="info-modal-overlay hidden">
+  <div class="info-modal">
+    <div class="info-modal-header">
+      <h2 id="info-modal-title"></h2>
+      <button id="btn-info-close" class="icon-only-btn" aria-label="إغلاق">✕</button>
+    </div>
+    <div id="info-modal-body" class="info-modal-body"></div>
+  </div>
+</div>
 
 <!-- VOICE RECITATION MODAL -->
 <div id="voice-modal-overlay" class="voice-modal-overlay hidden">
