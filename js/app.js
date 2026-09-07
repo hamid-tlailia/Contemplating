@@ -123,6 +123,14 @@ function randomEncouragement() {
 
 // ---------- State ----------
 
+// A day's review load is capped by default. Spaced repetition piles up
+// silently - a fortnight away and 80 ayahs come due at once - and that
+// backlog, not the reviewing itself, is what makes people abandon a review
+// schedule. Whatever doesn't fit today simply stays due and comes back
+// tomorrow, oldest first; the cap is a default, not a cage (0 removes it,
+// and "تابع المراجعة" below carries on past it whenever the person wants).
+const REVIEW_DAILY_CAP_DEFAULT = 20;
+
 function loadState() {
   try {
     const raw = localStorage.getItem(STATE_KEY);
@@ -150,6 +158,8 @@ function loadState() {
       parsed.unlockedFonts = parsed.unlockedFonts || [FONTS[0].id];
       parsed.unlockedBackgrounds = parsed.unlockedBackgrounds || [BACKGROUNDS[0].id];
       parsed.mushafPointer = parsed.mushafPointer || null; // {surah, ayah} - where the Mushaf reader should resume next
+      parsed.reviewDailyCap = parsed.reviewDailyCap == null ? REVIEW_DAILY_CAP_DEFAULT : parsed.reviewDailyCap;
+      parsed.reviewCounts = parsed.reviewCounts || {};
       return parsed;
     }
   } catch (e) {
@@ -175,6 +185,8 @@ function loadState() {
     unlockedFonts: [FONTS[0].id],
     unlockedBackgrounds: [BACKGROUNDS[0].id],
     mushafPointer: null, // {surah, ayah} - where the Mushaf reader should resume next
+    reviewDailyCap: REVIEW_DAILY_CAP_DEFAULT, // 0 = no cap
+    reviewCounts: {}, // "YYYY-MM-DD" -> ayahs graded in a review session that day
   };
 }
 
@@ -269,19 +281,50 @@ function renderPointsDisplay() {
   if (headerEl) headerEl.textContent = state.points;
 }
 
+// Two changes from a plain consecutive-day count, both about the streak
+// serving the person rather than the other way round:
+//
+//   * a day that hasn't been used YET doesn't end the streak. Opening the
+//     app at breakfast used to show 0 after a month of daily work, which
+//     is both false and exactly the message least likely to get someone to
+//     sit down and revise.
+//   * one missed day is forgiven (never two in a row). Losing a long
+//     streak to a single busy day is the point where people stop opening
+//     the app at all; the streak survives, and the week strip still shows
+//     the gap honestly.
 function computeStreak() {
   let streak = 0;
-  let cursor = new Date();
-  while (true) {
+  let forgiven = 0;
+  const cursor = new Date();
+  if (!state.activity[cursor.toISOString().slice(0, 10)]) cursor.setDate(cursor.getDate() - 1);
+  let lastWasGap = false;
+  while (streak < 3650) {
     const key = cursor.toISOString().slice(0, 10);
     if (state.activity[key]) {
       streak++;
-      cursor.setDate(cursor.getDate() - 1);
+      lastWasGap = false;
     } else {
-      break;
+      // one grace day per full week earned, and never two adjacent
+      const allowed = 1 + Math.floor(streak / 7);
+      if (streak === 0 || lastWasGap || forgiven >= allowed) break;
+      forgiven++;
+      lastWasGap = true;
     }
+    cursor.setDate(cursor.getDate() - 1);
   }
   return streak;
+}
+
+// Days actually used out of the last 7 - the honest number behind a
+// forgiven streak, and the one a weekly goal is measured against.
+function activeDaysThisWeek() {
+  let n = 0;
+  const cursor = new Date();
+  for (let i = 0; i < 7; i++) {
+    if (state.activity[cursor.toISOString().slice(0, 10)]) n++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return n;
 }
 
 function shuffleArray(arr) {
@@ -638,11 +681,25 @@ const openPlanGroups = new Set(); // surah numbers currently expanded in the pla
 function renderDashboard() {
   const items = Object.values(state.ayahs);
   const today = todayISO();
-  const dueCount = items.filter((i) => i.learningStage === "srs" && i.due <= today).length;
+  // The stat shows what's actually being asked of today, not the whole
+  // backlog: a four-figure "due" count is a reason to close the app.
+  const totalDue = items.filter((i) => i.learningStage === "srs" && i.due <= today).length;
+  const dueCount = Math.min(totalDue, reviewsLeftToday());
   const learningCount = items.filter((i) => i.learningStage === "learning").length;
   const masteredCount = items.filter((i) => i.learningStage === "srs" && !i.temporary).length;
 
   document.getElementById("stat-due").textContent = dueCount;
+  const deferredEl = document.getElementById("stat-due-deferred");
+  if (deferredEl) {
+    const deferred = totalDue - dueCount;
+    // No "+" and no "/" in these chips: a lone neutral character between a
+    // number and Arabic text gets reordered by the bidi algorithm and lands
+    // on the wrong side ("+25" rendering as "25+").
+    deferredEl.textContent = deferred > 0 ? `${deferred} مؤجلة` : "";
+    deferredEl.classList.toggle("hidden", deferred <= 0);
+  }
+  const weekEl = document.getElementById("stat-week");
+  if (weekEl) weekEl.textContent = `${activeDaysThisWeek()} من 7 أيام`;
   document.getElementById("stat-new").textContent = learningCount;
   document.getElementById("stat-mastered").textContent = masteredCount;
   document.getElementById("stat-streak").textContent = computeStreak();
@@ -2103,17 +2160,31 @@ function scrollIntoViewIfNeeded(selector) {
   }
 }
 
+// A word still to come is drawn as a rule the width of the word it stands
+// for, so the ayah keeps its own rhythm and reads as a page with blanks -
+// the old equal-sized filled tiles turned a long ayah into a wall of grey
+// blocks with no shape at all. Capped so a long word can't outline itself.
+function slotWidth(word) {
+  const letters = word.replace(/[\u064B-\u0652\u0670\u0640]/g, "").length;
+  const n = Math.min(8, Math.max(2, letters));
+  return `${(n * 0.42 + 0.5).toFixed(2)}em`;
+}
+
 function renderLearnRound() {
   scrollIntoViewIfNeeded(".learn-ayah-display");
 
-  const mcqContainer = document.getElementById("mcq-options");
-  const typeContainer = document.getElementById("type-answer");
+  const mcqArea = document.getElementById("mcq-area");
+  const typeArea = document.getElementById("type-area");
   const partialControls = document.getElementById("learn-partial-controls");
   const partialActions = document.getElementById("learn-partial-actions");
-  mcqContainer.classList.toggle("hidden", learnMode !== "mcq");
-  typeContainer.classList.toggle("hidden", learnMode !== "type");
+  const wordProgress = document.getElementById("learn-word-progress");
+  mcqArea.classList.toggle("hidden", learnMode !== "mcq");
+  typeArea.classList.toggle("hidden", learnMode !== "type");
   partialControls.classList.toggle("hidden", learnMode !== "partial");
   partialActions.classList.toggle("hidden", learnMode !== "partial");
+  // Only the sequential modes walk word by word, so only they have a
+  // position within the ayah worth showing.
+  wordProgress.classList.toggle("hidden", learnMode === "partial");
 
   if (learnMode === "partial") {
     renderLearnPartialMask();
@@ -2125,9 +2196,12 @@ function renderLearnRound() {
     .map((w, idx) => {
       if (idx < learnWordIndex) return `<span class="word">${w}</span>`;
       if (idx === learnWordIndex) return `<span class="word blank" id="learn-blank">${w}</span>`;
-      return `<span class="word masked">${w}</span>`;
+      return `<span class="word slot" style="width:${slotWidth(w)}"></span>`;
     })
     .join(" ");
+  wordProgress.firstElementChild.style.width = `${(learnWordIndex / learnWords.length) * 100}%`;
+
+  const mcqContainer = document.getElementById("mcq-options");
 
   mcqContainer.innerHTML = "";
   if (learnMode === "mcq") {
@@ -2231,10 +2305,12 @@ document.getElementById("btn-type-submit").addEventListener("click", submitTyped
 // keyboard has finished animating in covers those too.
 document.getElementById("type-input").addEventListener("focus", () => {
   document.getElementById("type-answer").classList.add("keyboard-active");
+  document.getElementById("type-area").classList.add("pinned");
   setTimeout(() => scrollIntoViewIfNeeded(".learn-ayah-display"), 350);
 });
 document.getElementById("type-input").addEventListener("blur", () => {
   document.getElementById("type-answer").classList.remove("keyboard-active");
+  document.getElementById("type-area").classList.remove("pinned");
 });
 document.getElementById("type-input").addEventListener("keydown", (e) => {
   if (e.key === "Enter") submitTypedAnswer();
@@ -2514,17 +2590,46 @@ function getDueQueue() {
     .sort((a, b) => (a.due || "").localeCompare(b.due || ""));
 }
 
-function startReviewSession() {
+// How many more reviews today's cap still allows. Infinity when the cap is
+// off, so every caller can treat it as a plain number.
+function reviewsLeftToday() {
+  const cap = state.reviewDailyCap;
+  if (!cap) return Infinity;
+  return Math.max(0, cap - (state.reviewCounts[todayISO()] || 0));
+}
+
+// The queue actually offered: due ayahs, oldest first, trimmed to what's
+// left of today's allowance. Oldest-first matters here - a trimmed queue
+// must never leave the same ayahs at the back of the line day after day.
+function getTodaysReviewQueue() {
+  const due = getDueQueue();
+  const left = reviewsLeftToday();
+  return left === Infinity ? due : due.slice(0, left);
+}
+
+function startReviewSession(ignoreDailyCap = false) {
   isChallengeMode = false;
   isEphemeralReview = false;
   isSingleItemReview = false;
   document.getElementById("challenge-banner").classList.add("hidden");
-  reviewQueue = getDueQueue();
+  const due = getDueQueue();
+  reviewQueue = ignoreDailyCap ? due : getTodaysReviewQueue();
   reviewIndex = 0;
   const empty = document.getElementById("review-empty");
   const session = document.getElementById("review-session");
   if (reviewQueue.length === 0) {
-    empty.innerHTML = `<p>🎉 لا توجد آيات تحتاج مراجعة الآن.</p><p class="muted">أضف آيات جديدة من تبويب "ابدأ الحفظ" أو عد لاحقًا حين يحين موعد المراجعة.</p>`;
+    // Nothing left today can mean two very different things, and telling
+    // them apart is the whole point of the cap: an empty schedule, or
+    // today's share finished with a backlog waiting patiently behind it.
+    if (due.length > 0) {
+      empty.innerHTML = `
+        <p>✅ أنهيت حصّة اليوم من المراجعة.</p>
+        <p class="muted">بقيت ${due.length} آية مستحقة، وستأتيك موزّعة على الأيام القادمة بدل أن تتكدّس عليك دفعة واحدة.</p>
+        <button id="btn-review-beyond-cap" class="btn">تابع المراجعة رغم ذلك</button>`;
+      empty.querySelector("#btn-review-beyond-cap").addEventListener("click", () => startReviewSession(true));
+    } else {
+      empty.innerHTML = `<p>🎉 لا توجد آيات تحتاج مراجعة الآن.</p><p class="muted">أضف آيات جديدة من تبويب "ابدأ الحفظ" أو عد لاحقًا حين يحين موعد المراجعة.</p>`;
+    }
     empty.classList.remove("hidden");
     session.classList.add("hidden");
     return;
@@ -2684,6 +2789,8 @@ document.querySelectorAll(".grade-buttons button").forEach((btn) => {
     const key = `${item.surah}:${item.ayah}`;
     if (!isEphemeralReview && state.ayahs[key]) {
       sm2Schedule(state.ayahs[key], quality);
+      const today = todayISO();
+      state.reviewCounts[today] = (state.reviewCounts[today] || 0) + 1;
       saveState();
       markActivityToday();
       if (quality === 5) addPoints(POINTS.reviewEasy);
@@ -2730,7 +2837,14 @@ function finishReviewOrChallenge() {
   } else {
     fireConfetti(false);
     showToast(randomEncouragement(), "success");
-    empty.innerHTML = `<p>👏 أحسنت! أنهيت جلسة المراجعة لهذا اليوم.</p>`;
+    const stillDue = getDueQueue().length;
+    empty.innerHTML = stillDue > 0
+      ? `<p>👏 أحسنت! أنهيت حصّة اليوم من المراجعة.</p>
+         <p class="muted">بقيت ${stillDue} آية مستحقة، ستأتيك موزّعة على الأيام القادمة.</p>
+         <button id="btn-review-beyond-cap" class="btn">تابع المراجعة رغم ذلك</button>`
+      : `<p>👏 أحسنت! أنهيت جلسة المراجعة لهذا اليوم.</p>`;
+    const more = empty.querySelector("#btn-review-beyond-cap");
+    if (more) more.addEventListener("click", () => startReviewSession(true));
   }
   empty.classList.remove("hidden");
   session.classList.add("hidden");
@@ -2876,8 +2990,10 @@ function renderBackgroundGrid() {
 function initSettingsPanel() {
   const overlay = document.getElementById("settings-overlay");
   const fontSizeSelect = document.getElementById("font-size-select");
+  const reviewCapSelect = document.getElementById("review-cap-select");
 
   fontSizeSelect.value = state.fontSize;
+  reviewCapSelect.value = String(state.reviewDailyCap);
   renderReciterGrid();
   renderThemeGrid();
   renderFontGrid();
@@ -2888,6 +3004,12 @@ function initSettingsPanel() {
   document.getElementById("btn-settings-close").addEventListener("click", () => overlay.classList.add("modal-closed"));
   overlay.addEventListener("click", (e) => {
     if (e.target === overlay) overlay.classList.add("modal-closed");
+  });
+
+  reviewCapSelect.addEventListener("change", () => {
+    state.reviewDailyCap = Number(reviewCapSelect.value);
+    saveState();
+    renderDashboard();
   });
 
   fontSizeSelect.addEventListener("change", () => {

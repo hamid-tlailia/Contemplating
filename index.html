@@ -86,6 +86,17 @@
       <div id="background-grid" class="swatch-grid"></div>
     </div>
     <label class="settings-field">
+      سقف المراجعة اليومي
+      <select id="review-cap-select">
+        <option value="10">10 آيات في اليوم</option>
+        <option value="20">20 آية في اليوم</option>
+        <option value="30">30 آية في اليوم</option>
+        <option value="50">50 آية في اليوم</option>
+        <option value="0">بلا سقف</option>
+      </select>
+      <p class="muted">ما يزيد عن السقف لا يُلغى، بل يُؤجَّل ليأتيك في الأيام التالية حتى لا تتكدّس المراجعات دفعة واحدة.</p>
+    </label>
+    <label class="settings-field">
       حجم نص الآيات
       <select id="font-size-select">
         <option value="small">صغير</option>
@@ -128,6 +139,7 @@
       <div class="stat-card">
         <div class="stat-value" id="stat-due">0</div>
         <div class="stat-label">مستحقة اليوم</div>
+        <div class="stat-note hidden" id="stat-due-deferred"></div>
       </div>
       <div class="stat-card">
         <div class="stat-value" id="stat-new">0</div>
@@ -140,6 +152,7 @@
       <div class="stat-card">
         <div class="stat-value" id="stat-streak">0</div>
         <div class="stat-label">🔥 أيام متتالية</div>
+        <div class="stat-note" id="stat-week"></div>
       </div>
     </div>
 
@@ -255,6 +268,20 @@
 
       <div class="ayah-display learn-ayah-display">
         <p id="learn-text" class="ayah-text"></p>
+        <div class="ayah-word-progress" id="learn-word-progress" aria-hidden="true"><span></span></div>
+      </div>
+
+      <div class="answer-area" id="mcq-area">
+        <p class="answer-hint">اختر الكلمة التالية</p>
+        <div id="mcq-options" class="mcq-options"></div>
+      </div>
+
+      <div class="answer-area hidden" id="type-area">
+        <p class="answer-hint">اكتب الكلمة التالية</p>
+        <div id="type-answer" class="type-answer">
+          <input type="text" id="type-input" placeholder="اكتب الكلمة الناقصة هنا..." autocomplete="off" autocorrect="off" spellcheck="false">
+          <button id="btn-type-submit" class="btn primary">تحقق ✓</button>
+        </div>
       </div>
 
       <div class="audio-controls" id="learn-audio-controls">
@@ -267,13 +294,6 @@
         <button id="btn-learn-meanings" class="btn"></button>
         <button id="btn-learn-tafsir" class="btn"></button>
         <button id="btn-learn-voice" class="btn hidden"></button>
-      </div>
-
-      <div id="mcq-options" class="mcq-options"></div>
-
-      <div id="type-answer" class="type-answer hidden">
-        <input type="text" id="type-input" placeholder="اكتب الكلمة الناقصة هنا..." autocomplete="off" autocorrect="off" spellcheck="false">
-        <button id="btn-type-submit" class="btn primary">تحقق ✓</button>
       </div>
 
       <div id="learn-partial-controls" class="mode-controls hidden">
