@@ -716,7 +716,7 @@ async function updateMushafDefaultRange() {
 
 let mushafPages = [];
 let mushafPageIndex = 0;
-let mushafSessionCountedPages = new Set();
+let mushafVisitedPages = new Set(); // pages actually displayed this session - only credited on "نعم، أنهيت"
 let mushafReaderSurahNumber = null;
 
 // Every surah but At-Tawbah (9) has the Quran's Uthmani text carrying
@@ -750,7 +750,7 @@ function groupAyahsIntoMushafPages(ayahs) {
 function openMushafReader(ayahs, surahNumber) {
   mushafPages = groupAyahsIntoMushafPages(ayahs);
   mushafPageIndex = 0;
-  mushafSessionCountedPages = new Set();
+  mushafVisitedPages = new Set();
   mushafReaderSurahNumber = surahNumber;
   document.getElementById("mushaf-reader-overlay").classList.remove("modal-closed");
   renderMushafReaderPage();
@@ -762,6 +762,7 @@ function closeMushafReader() {
 
 function renderMushafReaderPage() {
   const page = mushafPages[mushafPageIndex];
+  mushafVisitedPages.add(page.pageNumber);
   let bismillahHTML = "";
   const bodyHTML = page.ayahs
     .map((a) => {
@@ -796,40 +797,36 @@ function renderMushafReaderPage() {
     : iconLabel("chevronLeft", "الصفحة التالية");
 }
 
-function creditMushafPageToWird(page) {
-  if (mushafSessionCountedPages.has(page.pageNumber)) return;
-  mushafSessionCountedPages.add(page.pageNumber);
-  const today = todayISO();
-  state.dailyCounts[today] = (state.dailyCounts[today] || 0) + page.ayahs.length;
-  state.dailyPageCounts[today] = (state.dailyPageCounts[today] || 0) + 1;
-  saveState();
-  renderWirdCard();
-}
-
 function goToNextMushafPage() {
-  const page = mushafPages[mushafPageIndex];
   if (mushafPageIndex < mushafPages.length - 1) {
-    creditMushafPageToWird(page);
     mushafPageIndex++;
     renderMushafReaderPage();
   } else {
-    // Confirm rather than crediting-and-closing automatically, so reaching
-    // the last page while just browsing doesn't silently end the session.
+    // Nothing is credited to the wird for having merely turned pages -
+    // only an explicit "نعم، أنهيت" here commits the whole session, so
+    // reaching the last page while just browsing (or closing without
+    // confirming) never silently counts as having read it.
     showConfirmModal(
       "إنهاء القراءة",
       "هل أنهيت قراءة اليوم؟ سيُضاف ما قرأته إلى ورد اليوم.",
       "نعم، أنهيت",
-      () => finishMushafReading(page)
+      finishMushafReading
     );
   }
 }
 
-function finishMushafReading(lastPage) {
-  creditMushafPageToWird(lastPage);
+function finishMushafReading() {
+  const visitedPages = mushafPages.filter((p) => mushafVisitedPages.has(p.pageNumber));
+  const totalAyahs = visitedPages.reduce((sum, p) => sum + p.ayahs.length, 0);
+  const today = todayISO();
+  state.dailyCounts[today] = (state.dailyCounts[today] || 0) + totalAyahs;
+  state.dailyPageCounts[today] = (state.dailyPageCounts[today] || 0) + visitedPages.length;
+  saveState();
+  renderWirdCard();
   closeMushafReader();
+
   const type = state.wirdTargetType || "ayahs";
   const counts = type === "pages" ? state.dailyPageCounts : state.dailyCounts;
-  const today = todayISO();
   const target = state.wirdTarget || 5;
   const total = counts[today] || 0;
   if (total > target) {
@@ -1356,6 +1353,7 @@ function openVoiceModal(correctText, onSuccess) {
 }
 
 function closeVoiceModal() {
+  voiceModalStoppedByUser = true; // don't let a pending onend auto-restart after closing
   if (voiceModalRecognition) {
     try { voiceModalRecognition.abort(); } catch (e) { /* already stopped */ }
     voiceModalRecognition = null;
@@ -1364,6 +1362,7 @@ function closeVoiceModal() {
 }
 
 function resetVoiceModal() {
+  voiceModalStoppedByUser = true;
   if (voiceModalRecognition) {
     try { voiceModalRecognition.abort(); } catch (e) { /* already stopped */ }
     voiceModalRecognition = null;
@@ -1379,35 +1378,39 @@ function resetVoiceModal() {
   document.getElementById("voice-modal-actions").classList.add("hidden");
 }
 
+// continuous:true turned out to duplicate words heavily on some Android
+// builds - their continuous-mode engine periodically re-reports audio it
+// already finalized as a "new" final segment, which no amount of reading
+// e.results differently could fix since the duplication is in the data
+// itself. Non-continuous sessions don't have that problem, so a long ayah's
+// natural breathing pauses (which end a non-continuous session on their
+// own) are instead handled by immediately starting a fresh session the
+// instant one ends by itself - only stopping for real once the user taps
+// the mic again themselves.
+let voiceModalStoppedByUser = false;
+let voiceModalFinalTranscript = "";
+const VOICE_FATAL_ERRORS = new Set(["not-allowed", "audio-capture", "service-not-allowed"]);
+
 function startVoiceModalRecording() {
   resetVoiceModal();
+  voiceModalStoppedByUser = false;
+  voiceModalFinalTranscript = "";
+  document.getElementById("btn-voice-mic").classList.add("listening");
+  document.getElementById("voice-status-text").textContent = "🔴 يستمع الآن... اقرأ الآية، ثم اضغط الميكروفون مجددًا لإنهاء التسجيل";
+  beginVoiceRecognitionSession();
+}
+
+function beginVoiceRecognitionSession() {
   const micBtn = document.getElementById("btn-voice-mic");
   const statusText = document.getElementById("voice-status-text");
-  micBtn.classList.add("listening");
-  statusText.textContent = "🔴 يستمع الآن... اقرأ الآية، ثم اضغط الميكروفون مجددًا لإنهاء التسجيل";
-
   const recognition = new SpeechRecognitionImpl();
   voiceModalRecognition = recognition;
   recognition.lang = "ar-SA";
   recognition.interimResults = true;
   recognition.maxAlternatives = 1;
-  // Without this the engine stops on the first short silence - which a long
-  // ayah's natural breathing pauses trigger constantly, cutting recitation
-  // off mid-ayah. continuous keeps it listening until stopped explicitly
-  // (tapping the mic again, handled by the toggle listener below).
-  recognition.continuous = true;
 
-  let finalTranscript = "";
-
+  let sessionFinal = "";
   recognition.onresult = (e) => {
-    // e.resultIndex alone wasn't enough: some Android builds' continuous
-    // mode periodically resets/reindexes e.results in ways that make it
-    // report already-heard segments again under a resultIndex that still
-    // looks "new", which kept duplicating words even after switching to it.
-    // Rebuilding finalTranscript from scratch out of the full results list
-    // on every event - instead of ever appending to it - is idempotent no
-    // matter how many times onresult fires or how the engine renumbers
-    // things, since e.results always reflects the complete current state.
     let combinedFinal = "";
     let interim = "";
     for (let k = 0; k < e.results.length; k++) {
@@ -1415,26 +1418,36 @@ function startVoiceModalRecording() {
       if (r.isFinal) combinedFinal += r[0].transcript + " ";
       else interim += r[0].transcript;
     }
-    finalTranscript = combinedFinal;
+    sessionFinal = combinedFinal;
     if (interim) statusText.textContent = interim;
   };
   recognition.onerror = (e) => {
-    micBtn.classList.remove("listening");
-    statusText.textContent = `تعذّر الاستماع (${e.error}). تأكد من السماح بالوصول للميكروفون وحاول مجددًا.`;
+    if (VOICE_FATAL_ERRORS.has(e.error)) {
+      voiceModalStoppedByUser = true;
+      micBtn.classList.remove("listening");
+      statusText.textContent = `تعذّر الاستماع (${e.error}). تأكد من السماح بالوصول للميكروفون وحاول مجددًا.`;
+    }
+    // other errors (e.g. "no-speech" during a pause) are left to onend below
   };
   recognition.onend = () => {
-    micBtn.classList.remove("listening");
     voiceModalRecognition = null;
-    const transcript = mergeDetachedConjunctions(finalTranscript.trim());
-    if (!transcript) {
-      statusText.textContent = "لم يُسمع شيء، حاول مرة أخرى.";
-      return;
+    if (sessionFinal.trim()) voiceModalFinalTranscript += sessionFinal;
+    if (voiceModalStoppedByUser) {
+      micBtn.classList.remove("listening");
+      const transcript = mergeDetachedConjunctions(voiceModalFinalTranscript.trim());
+      if (!transcript) {
+        statusText.textContent = "لم يُسمع شيء، حاول مرة أخرى.";
+        return;
+      }
+      showVoiceModalWords(transcript);
+    } else {
+      beginVoiceRecognitionSession();
     }
-    showVoiceModalWords(transcript);
   };
   try {
     recognition.start();
   } catch (e) {
+    voiceModalStoppedByUser = true;
     micBtn.classList.remove("listening");
     statusText.textContent = "تعذّر بدء الاستماع.";
   }
@@ -1477,6 +1490,7 @@ function verifyVoiceModal() {
 // needed now that continuous recognition won't stop on its own.
 document.getElementById("btn-voice-mic").addEventListener("click", () => {
   if (voiceModalRecognition) {
+    voiceModalStoppedByUser = true;
     voiceModalRecognition.stop();
   } else {
     startVoiceModalRecording();

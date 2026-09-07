@@ -1267,9 +1267,12 @@ main#app {
   width: 100%;
   overflow-x: auto;
   scroll-behavior: smooth;
-  padding-bottom: 4px;
+  padding: 3px; /* keeps the "today" ring's box-shadow from being clipped at the scroll edges */
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* old Edge */
 }
+.wird-week::-webkit-scrollbar { display: none; }
 .wird-day {
   flex-shrink: 0;
   min-width: 62px;
