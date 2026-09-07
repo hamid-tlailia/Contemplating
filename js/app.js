@@ -1645,7 +1645,7 @@ function resetVoiceModal() {
     try { voiceModalRecognition.abort(); } catch (e) { /* already stopped */ }
     voiceModalRecognition = null;
   }
-  document.getElementById("btn-voice-mic").classList.remove("listening");
+  setVoiceMicRecording(false);
   document.getElementById("voice-status-text").textContent = "اضغط على الميكروفون وابدأ بالتسميع";
   const wordsArea = document.getElementById("voice-words-area");
   wordsArea.innerHTML = "";
@@ -1825,6 +1825,16 @@ function dedupeRepeatedPasses(text) {
     .reduce((acc, pass) => mergeSessionText(acc, pass.join(" ")), "");
 }
 
+// The mic button swaps to a stop square while recording (the glyph swap
+// itself is CSS off this class - see .voice-mic-btn.listening), so its
+// label has to say "stop" then too, or a screen reader still announces it
+// as "start recording" mid-recording.
+function setVoiceMicRecording(recording) {
+  const btn = document.getElementById("btn-voice-mic");
+  btn.classList.toggle("listening", recording);
+  btn.setAttribute("aria-label", recording ? "إيقاف التسجيل" : "ابدأ التسجيل");
+}
+
 function createVoiceRecognitionInstance() {
   const recognition = new SpeechRecognitionImpl();
   recognition.lang = "ar-SA";
@@ -1845,7 +1855,7 @@ function attemptRecognitionStart(recognition, isRetry) {
   } catch (e) {
     if (isRetry) {
       voiceModalShouldContinue = false;
-      document.getElementById("btn-voice-mic").classList.remove("listening");
+      setVoiceMicRecording(false);
       document.getElementById("voice-status-text").textContent = "تعذّر بدء الاستماع.";
       return;
     }
@@ -1862,9 +1872,8 @@ function startVoiceModalRecording() {
   voiceModalBaseText = "";
   voiceModalFinalSegments = [];
   voiceModalLiveTranscript = "";
-  const micBtn = document.getElementById("btn-voice-mic");
   const statusText = document.getElementById("voice-status-text");
-  micBtn.classList.add("listening");
+  setVoiceMicRecording(true);
   statusText.textContent = "🔴 يستمع الآن... اقرأ الآية، ثم اضغط الميكروفون مجددًا لإنهاء التسجيل";
 
   recognition.onresult = (e) => {
@@ -1885,7 +1894,7 @@ function startVoiceModalRecording() {
     if (e.error === "aborted") return; // our own stop()/close() triggers this - not a real error
     if (VOICE_FATAL_ERRORS.has(e.error)) {
       voiceModalShouldContinue = false;
-      micBtn.classList.remove("listening");
+      setVoiceMicRecording(false);
       statusText.textContent = `تعذّر الاستماع (${e.error}). تأكد من السماح بالوصول للميكروفون وحاول مجددًا.`;
     }
     // other errors (e.g. "no-speech" during a pause) are left to onend below
@@ -1915,7 +1924,7 @@ function stopVoiceModalRecording() {
   voiceModalShouldContinue = false;
   const recognition = voiceModalRecognition;
   voiceModalRecognition = null;
-  document.getElementById("btn-voice-mic").classList.remove("listening");
+  setVoiceMicRecording(false);
   if (recognition) {
     recognition.onend = null;
     try { recognition.abort(); } catch (e) { /* already stopped */ }

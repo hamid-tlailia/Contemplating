@@ -1291,6 +1291,13 @@ main#app {
   transition: transform .15s ease;
 }
 .voice-mic-btn svg { width: 30px; height: 30px; position: relative; z-index: 2; }
+/* While recording the button offers "stop", so it shows a stop square
+   rather than still showing a microphone. Both glyphs sit in the button
+   and swap on the same .listening class the recording state already
+   toggles, so there's no second source of truth to keep in sync. */
+.voice-mic-btn .stop-glyph { display: none; }
+.voice-mic-btn.listening .mic-glyph { display: none; }
+.voice-mic-btn.listening .stop-glyph { display: block; }
 .voice-mic-btn:hover { transform: scale(1.04); }
 .voice-mic-btn.listening { background: var(--danger); animation: micBeat 1s ease-in-out infinite; }
 
