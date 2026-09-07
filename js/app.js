@@ -53,6 +53,7 @@ function loadState() {
       parsed.dailyChallenge = parsed.dailyChallenge || { date: null, score: 0, total: 0 };
       parsed.reciter = parsed.reciter || RECITERS[0].id;
       parsed.theme = parsed.theme || THEMES[0].id;
+      parsed.fontSize = parsed.fontSize || "medium";
       return parsed;
     }
   } catch (e) {
@@ -65,6 +66,7 @@ function loadState() {
     dailyChallenge: { date: null, score: 0, total: 0 },
     reciter: RECITERS[0].id,
     theme: THEMES[0].id,
+    fontSize: "medium",
   };
 }
 
@@ -124,8 +126,16 @@ function mergeDetachedConjunctions(text) {
 // Uthmani script (not just the basic harakat range: waqf signs, small-high
 // marks, etc). Quran text also carries wasla alef (\u0671) which a normal
 // keyboard never produces, so it must fold into \u0627 (alef) too.
+//
+// The Uthmani rasm often marks a long vowel with a "dagger alef" (\u0670)
+// floating over a letter instead of writing it as a real \u0627 (e.g. "\u0623\u064F\u0648\u0644\u064E\u0670\u0626\u0650\u0643\u064E"
+// = "ul\u00E2'ika"). Whether a person writes that vowel out as a real alef when
+// typing/reciting varies by word and by habit (most drop it in "\u0627\u0644\u0631\u062d\u0645\u0646", many
+// add it in "\u0623\u0648\u0644\u0626\u0643/\u0623\u0648\u0644\u0627\u0626\u0643"), so normalizeArabic keeps its one canonical form
+// (dagger alef dropped) and normalizeArabicKeepingDaggerAlef offers the other;
+// arabicWordsMatch below accepts either so both conventions read as correct.
 function normalizeArabic(s) {
-  return mergeDetachedConjunctions(s)
+  return (s || "")
     .replace(/\p{Mn}/gu, "")
     .replace(/[\u0625\u0623\u0622\u0671\u0627]/g, "\u0627")
     .replace(/\u0649/g, "\u064A")
@@ -133,13 +143,42 @@ function normalizeArabic(s) {
     .replace(/\u0624/g, "\u0648")
     .replace(/\u0626/g, "\u064A")
     // Classical rasm spells the long vowel before a final \u0629 with \u0648 in a
-    // handful of very common words (\u0627\u0644\u0635\u0644\u0648\u0629, \u0627\u0644\u0632\u0643\u0648\u0629, \u0627\u0644\u062d\u064a\u0648\u0629...). A typed or
+    // handful of very common words (\u0627\u0644\u0635\u0644\u0648\u0629, \u0627\u0644\u0632\u0643\u0648\u0629, \u0627\u0644\u062d\u064A\u0648\u0629...). A typed or
     // spoken answer will use the modern spelling with \u0627, so fold that \u0648 back
     // to \u0627 once it's already sitting right before the (already-folded) \u0647.
     .replace(/\u0648(?=\u0647(?:\s|$))/g, "\u0627")
     .replace(/[^\u0621-\u064A\s]/g, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function normalizeArabicKeepingDaggerAlef(s) {
+  return normalizeArabic((s || "").replace(/\u0670/g, "\u0627"));
+}
+
+// Accept either normalization convention (dagger alef dropped or spelled out)
+// on either side of the comparison, since a typed/spoken answer and the
+// Quran's own text don't reliably agree on which one they used.
+function arabicWordsMatch(a, b) {
+  const mergedA = mergeDetachedConjunctions(a);
+  const mergedB = mergeDetachedConjunctions(b);
+  const variantsA = [normalizeArabic(mergedA), normalizeArabicKeepingDaggerAlef(mergedA)];
+  const variantsB = [normalizeArabic(mergedB), normalizeArabicKeepingDaggerAlef(mergedB)];
+  return variantsA.some((va) => variantsB.includes(va));
+}
+
+// Some Quran text editions attach waqf (pause) annotations - most visibly
+// "صلى" (continuing is preferable) and "قلى" (pausing is preferable) - as
+// their own whitespace-separated token rather than a small superscript mark.
+// Those are typographic guidance, not words to memorize or offer as an MCQ
+// option, so they're dropped from the interactive word arrays. This list is
+// deliberately narrow and exact-match only: several other waqf signs are
+// single letters (ط ج ز م ص ق ...) that are also real standalone ayahs
+// (Quranic "muqatta'at") elsewhere, so guessing at those would risk silently
+// deleting real content instead of just an annotation.
+const WAQF_ANNOTATION_TOKENS = new Set(["صلى", "قلى"]);
+function stripWaqfTokens(words) {
+  return words.filter((w) => !WAQF_ANNOTATION_TOKENS.has(w.replace(/\p{Mn}/gu, "")));
 }
 
 // ---------- SM-2 spaced repetition ----------
@@ -388,7 +427,7 @@ function renderDashboard() {
     [...bySurah.entries()]
       .sort((a, b) => a[0] - b[0])
       .forEach(([surahNum, group]) => {
-        const items2 = [...group.items].sort((a, b) => (a.due || "").localeCompare(b.due || ""));
+        const items2 = [...group.items].sort((a, b) => a.ayah - b.ayah);
         const dueInGroup = items2.filter((i) => i.due <= today).length;
         const details = document.createElement("details");
         details.className = "plan-surah-group";
@@ -613,9 +652,11 @@ function renderBrowsePreview() {
     const row = document.createElement("div");
     row.className = "ayah-browse-item";
     row.innerHTML = `
-      <span class="ayah-num-chip">${a.numberInSurah}</span>
-      <span class="ayah-browse-text">${a.text}</span>
-      <button class="btn ayah-add-btn" ${already ? "disabled" : ""}>${already ? "أُضيفت ✓" : "+ أضف"}</button>
+      <div class="ayah-browse-head">
+        <span class="ayah-num-chip">${a.numberInSurah}</span>
+        <button class="btn ayah-add-btn" ${already ? "disabled" : ""}>${already ? "أُضيفت ✓" : "+ أضف"}</button>
+      </div>
+      <p class="ayah-browse-text">${a.text}</p>
     `;
     row.querySelector("button").addEventListener("click", (e) => {
       addAyahDirectlyToSrs(selectedBrowseSurah, selectedBrowseSurahName, a);
@@ -702,16 +743,15 @@ function voiceSupported() {
 // instead, so a single missed word doesn't cascade into a false failure for
 // the rest of the ayah.
 function diffRecitation(correctText, transcript) {
-  const correctWords = correctText.split(/\s+/);
-  const correctNorm = correctWords.map(normalizeArabic);
-  const saidNorm = normalizeArabic(transcript).split(/\s+/).filter(Boolean);
+  const correctWords = stripWaqfTokens(correctText.split(/\s+/));
+  const saidWords = mergeDetachedConjunctions(transcript).split(/\s+/).filter(Boolean);
 
-  const n = correctNorm.length;
-  const m = saidNorm.length;
+  const n = correctWords.length;
+  const m = saidWords.length;
   const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
   for (let i = n - 1; i >= 0; i--) {
     for (let j = m - 1; j >= 0; j--) {
-      dp[i][j] = correctNorm[i] === saidNorm[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+      dp[i][j] = arabicWordsMatch(correctWords[i], saidWords[j]) ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
     }
   }
 
@@ -719,7 +759,7 @@ function diffRecitation(correctText, transcript) {
   let i = 0;
   let j = 0;
   while (i < n) {
-    if (j < m && correctNorm[i] === saidNorm[j]) {
+    if (j < m && arabicWordsMatch(correctWords[i], saidWords[j])) {
       result.push({ word: correctWords[i], ok: true });
       i++;
       j++;
@@ -736,49 +776,125 @@ function diffRecitation(correctText, transcript) {
   return { result, accuracy };
 }
 
-function runVoiceTest(correctText, resultContainer) {
+// ---------- Voice recitation modal ----------
+// A half-screen modal (not a small inline box easy to scroll past) with a
+// visible mic control, a live "listening" indicator, and - crucially - an
+// editable transcript: speech recognition inevitably mishears a word here
+// and there, so each recognized word is a chip the user can tap and correct
+// by hand before scoring, rather than being stuck with whatever the engine
+// guessed.
+
+let voiceModalRecognition = null;
+let voiceModalCorrectText = "";
+
+function openVoiceModal(correctText) {
   if (!voiceSupported()) return;
-  resultContainer.classList.remove("hidden");
-  resultContainer.classList.add("listening");
-  resultContainer.innerHTML = `<p>🎤 استمع الآن... اقرأ الآية بصوت واضح</p>`;
+  voiceModalCorrectText = correctText;
+  resetVoiceModal();
+  document.getElementById("voice-modal-overlay").classList.remove("hidden");
+}
+
+function closeVoiceModal() {
+  if (voiceModalRecognition) {
+    try { voiceModalRecognition.abort(); } catch (e) { /* already stopped */ }
+    voiceModalRecognition = null;
+  }
+  document.getElementById("voice-modal-overlay").classList.add("hidden");
+}
+
+function resetVoiceModal() {
+  if (voiceModalRecognition) {
+    try { voiceModalRecognition.abort(); } catch (e) { /* already stopped */ }
+    voiceModalRecognition = null;
+  }
+  document.getElementById("btn-voice-mic").classList.remove("listening");
+  document.getElementById("voice-status-text").textContent = "اضغط على الميكروفون وابدأ بالتسميع";
+  const wordsArea = document.getElementById("voice-words-area");
+  wordsArea.innerHTML = "";
+  wordsArea.classList.add("hidden");
+  const scoreArea = document.getElementById("voice-score-area");
+  scoreArea.innerHTML = "";
+  scoreArea.classList.add("hidden");
+  document.getElementById("voice-modal-actions").classList.add("hidden");
+}
+
+function startVoiceModalRecording() {
+  resetVoiceModal();
+  const micBtn = document.getElementById("btn-voice-mic");
+  const statusText = document.getElementById("voice-status-text");
+  micBtn.classList.add("listening");
+  statusText.textContent = "🔴 يستمع الآن... اقرأ الآية بصوت واضح";
 
   const recognition = new SpeechRecognitionImpl();
+  voiceModalRecognition = recognition;
   recognition.lang = "ar-SA";
-  recognition.interimResults = false;
-  recognition.maxAlternatives = 5;
+  recognition.interimResults = true;
+  recognition.maxAlternatives = 1;
+
+  let finalTranscript = "";
 
   recognition.onresult = (e) => {
-    resultContainer.classList.remove("listening");
-    // The engine offers several guesses for what was said - score each one
-    // against the correct text and keep whichever aligns best, instead of
-    // blindly trusting alternative #0.
-    let best = null;
-    for (let k = 0; k < e.results[0].length; k++) {
-      const candidate = diffRecitation(correctText, e.results[0][k].transcript);
-      if (!best || candidate.accuracy > best.accuracy) best = candidate;
+    let interim = "";
+    for (let k = 0; k < e.results.length; k++) {
+      const r = e.results[k];
+      if (r.isFinal) finalTranscript += r[0].transcript + " ";
+      else interim += r[0].transcript;
     }
-    const { result, accuracy } = best;
-    const html = result
-      .map((r) => `<span class="vr-word ${r.ok ? "ok" : "bad"}">${r.word}</span>`)
-      .join(" ");
-    resultContainer.innerHTML = `
-      <p class="vr-text">${html}</p>
-      <p class="vr-score">دقة التسميع: ${accuracy}%</p>
-    `;
-    if (accuracy >= 85) { playSuccessSound(); showToast(randomEncouragement()); }
-    else playErrorSound();
+    if (interim) statusText.textContent = interim;
   };
   recognition.onerror = (e) => {
-    resultContainer.classList.remove("listening");
-    resultContainer.innerHTML = `<p class="muted">تعذّر الاستماع (${e.error}). تأكد من السماح بالوصول للميكروفون وحاول مجددًا.</p>`;
+    micBtn.classList.remove("listening");
+    statusText.textContent = `تعذّر الاستماع (${e.error}). تأكد من السماح بالوصول للميكروفون وحاول مجددًا.`;
   };
-  recognition.onend = () => resultContainer.classList.remove("listening");
+  recognition.onend = () => {
+    micBtn.classList.remove("listening");
+    voiceModalRecognition = null;
+    const transcript = mergeDetachedConjunctions(finalTranscript.trim());
+    if (!transcript) {
+      statusText.textContent = "لم يُسمع شيء، حاول مرة أخرى.";
+      return;
+    }
+    showVoiceModalWords(transcript);
+  };
   try {
     recognition.start();
   } catch (e) {
-    resultContainer.innerHTML = `<p class="muted">تعذّر بدء الاستماع.</p>`;
+    micBtn.classList.remove("listening");
+    statusText.textContent = "تعذّر بدء الاستماع.";
   }
 }
+
+function showVoiceModalWords(transcript) {
+  document.getElementById("voice-status-text").textContent = "عدّل أي كلمة تظنّ أنها لم تُسمع بشكل صحيح، ثم اضغط تحقق:";
+  const wordsArea = document.getElementById("voice-words-area");
+  wordsArea.innerHTML = transcript
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => `<span class="voice-word-chip" contenteditable="true">${w}</span>`)
+    .join(" ");
+  wordsArea.classList.remove("hidden");
+  document.getElementById("voice-modal-actions").classList.remove("hidden");
+}
+
+function verifyVoiceModal() {
+  const chips = [...document.getElementById("voice-words-area").querySelectorAll(".voice-word-chip")];
+  const editedTranscript = chips.map((c) => c.textContent.trim()).filter(Boolean).join(" ");
+  const { result, accuracy } = diffRecitation(voiceModalCorrectText, editedTranscript);
+  const html = result.map((r) => `<span class="vr-word ${r.ok ? "ok" : "bad"}">${r.word}</span>`).join(" ");
+  const scoreArea = document.getElementById("voice-score-area");
+  scoreArea.innerHTML = `<p class="vr-text">${html}</p><p class="vr-score">دقة التسميع: ${accuracy}%</p>`;
+  scoreArea.classList.remove("hidden");
+  if (accuracy >= 85) { playSuccessSound(); showToast(randomEncouragement()); }
+  else playErrorSound();
+}
+
+document.getElementById("btn-voice-mic").addEventListener("click", startVoiceModalRecording);
+document.getElementById("btn-voice-retry").addEventListener("click", startVoiceModalRecording);
+document.getElementById("btn-voice-verify").addEventListener("click", verifyVoiceModal);
+document.getElementById("btn-voice-close").addEventListener("click", closeVoiceModal);
+document.getElementById("voice-modal-overlay").addEventListener("click", (e) => {
+  if (e.target.id === "voice-modal-overlay") closeVoiceModal();
+});
 
 if (!voiceSupported()) {
   document.getElementById("btn-learn-voice").title = "غير مدعوم في هذا المتصفح";
@@ -830,7 +946,6 @@ async function loadLearnAyah() {
   const pointer = state.learningPointer;
   document.getElementById("learn-meanings").classList.add("hidden");
   document.getElementById("learn-meanings").innerHTML = "";
-  document.getElementById("voice-result").classList.add("hidden");
 
   let ayahs, surahs, meta;
   try {
@@ -859,7 +974,7 @@ async function loadLearnAyah() {
 
   const item = getOrCreateLearningItem(pointer.surah, meta.name, ayahObj);
   learnCurrentKey = `${pointer.surah}:${pointer.ayah}`;
-  learnWords = ayahObj.text.split(/\s+/);
+  learnWords = stripWaqfTokens(ayahObj.text.split(/\s+/));
   learnWordIndex = 0;
   learnMistakeThisRound = false;
 
@@ -976,7 +1091,7 @@ document.getElementById("type-input").addEventListener("keydown", (e) => {
 function submitTypedAnswer() {
   const input = document.getElementById("type-input");
   const correctWord = learnWords[learnWordIndex];
-  const isCorrect = normalizeArabic(input.value) === normalizeArabic(correctWord);
+  const isCorrect = arabicWordsMatch(input.value, correctWord);
   input.className = isCorrect ? "correct" : "wrong";
   handleLearnAnswer(isCorrect, null);
   if (!isCorrect) setTimeout(() => { input.value = ""; input.className = ""; }, 500);
@@ -1056,7 +1171,7 @@ document.getElementById("btn-learn-meanings").addEventListener("click", async ()
 document.getElementById("btn-learn-voice").addEventListener("click", () => {
   const item = state.ayahs[learnCurrentKey];
   if (!item) return;
-  runVoiceTest(item.text, document.getElementById("voice-result"));
+  openVoiceModal(item.text);
 });
 
 // ---------- Daily Ta'ahud challenge ----------
@@ -1116,7 +1231,7 @@ function loadReviewItem() {
   document.getElementById("review-progress-fill").style.width = `${((reviewIndex) / reviewQueue.length) * 100}%`;
   document.getElementById("review-ref").textContent = `سورة ${item.surahName || item.surah} - الآية ${item.ayah}`;
 
-  currentWords = item.text.split(/\s+/);
+  currentWords = stripWaqfTokens(item.text.split(/\s+/));
   maskLevel = 0;
   renderMaskedText();
 
@@ -1125,7 +1240,6 @@ function loadReviewItem() {
 
   document.getElementById("grade-controls").classList.add("hidden");
   document.getElementById("reveal-controls").classList.remove("hidden");
-  document.getElementById("review-voice-result").classList.add("hidden");
 }
 
 function renderMaskedText() {
@@ -1174,7 +1288,7 @@ document.getElementById("btn-mask-reset").addEventListener("click", () => {
 document.getElementById("btn-review-voice").addEventListener("click", () => {
   const item = reviewQueue[reviewIndex];
   if (!item) return;
-  runVoiceTest(item.text, document.getElementById("review-voice-result"));
+  openVoiceModal(item.text);
 });
 
 document.getElementById("btn-reveal").addEventListener("click", () => {
@@ -1224,21 +1338,29 @@ function finishReviewOrChallenge() {
   session.classList.add("hidden");
 }
 
-// ---------- Settings (reciter + theme) ----------
+// ---------- Settings (reciter + theme + font size) ----------
+
+const FONT_SIZES = { small: "1.4rem", medium: "1.8rem", large: "2.2rem", xlarge: "2.6rem" };
 
 function applyTheme() {
   document.documentElement.dataset.theme = state.theme;
+}
+
+function applyFontSize() {
+  document.documentElement.style.setProperty("--ayah-font-size", FONT_SIZES[state.fontSize] || FONT_SIZES.medium);
 }
 
 function initSettingsPanel() {
   const overlay = document.getElementById("settings-overlay");
   const reciterSelect = document.getElementById("reciter-select");
   const themeSelect = document.getElementById("theme-select");
+  const fontSizeSelect = document.getElementById("font-size-select");
 
   reciterSelect.innerHTML = RECITERS.map((r) => `<option value="${r.id}">${r.name}</option>`).join("");
   themeSelect.innerHTML = THEMES.map((t) => `<option value="${t.id}">${t.name}</option>`).join("");
   reciterSelect.value = state.reciter;
   themeSelect.value = state.theme;
+  fontSizeSelect.value = state.fontSize;
 
   document.getElementById("btn-settings").addEventListener("click", () => overlay.classList.remove("hidden"));
   document.getElementById("btn-settings-close").addEventListener("click", () => overlay.classList.add("hidden"));
@@ -1256,6 +1378,11 @@ function initSettingsPanel() {
     saveState();
     applyTheme();
   });
+  fontSizeSelect.addEventListener("change", () => {
+    state.fontSize = fontSizeSelect.value;
+    saveState();
+    applyFontSize();
+  });
 }
 
 // ---------- PWA service worker ----------
@@ -1269,6 +1396,7 @@ if ("serviceWorker" in navigator) {
 // ---------- Init ----------
 
 applyTheme();
+applyFontSize();
 initSettingsPanel();
 initBrowseTab();
 renderDashboard();

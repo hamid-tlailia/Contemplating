@@ -64,6 +64,15 @@
       المظهر
       <select id="theme-select"></select>
     </label>
+    <label class="settings-field">
+      حجم نص الآيات
+      <select id="font-size-select">
+        <option value="small">صغير</option>
+        <option value="medium">متوسط</option>
+        <option value="large">كبير</option>
+        <option value="xlarge">كبير جدًا</option>
+      </select>
+    </label>
   </div>
 </div>
 
@@ -156,8 +165,6 @@
         <button id="btn-type-submit" class="btn primary">تحقق ✓</button>
       </div>
 
-      <div id="voice-result" class="voice-result hidden"></div>
-
       <audio id="learn-audio"></audio>
     </div>
   </section>
@@ -231,8 +238,6 @@
           <button id="btn-review-voice" class="btn hidden">🎤 اختبر بالنطق</button>
         </div>
 
-        <div id="review-voice-result" class="voice-result hidden"></div>
-
         <div id="grade-controls" class="grade-controls hidden">
           <p class="muted">قيّم مدى تذكرك لهذه الآية:</p>
           <div class="grade-buttons">
@@ -255,6 +260,33 @@
 <footer class="app-footer">
   <p class="muted">يعمل باستخدام بيانات القرآن الكريم من alquran.cloud و quran.com — يُحفظ تقدمك محليًا في متصفحك.</p>
 </footer>
+
+<!-- VOICE RECITATION MODAL -->
+<div id="voice-modal-overlay" class="voice-modal-overlay hidden">
+  <div class="voice-modal">
+    <div class="voice-modal-header">
+      <h2>🎤 اختبار التسميع</h2>
+      <button id="btn-voice-close" class="icon-only-btn" aria-label="إغلاق">✕</button>
+    </div>
+
+    <div class="voice-mic-area">
+      <button id="btn-voice-mic" class="voice-mic-btn" aria-label="ابدأ التسجيل">
+        <span class="mic-pulse-ring"></span>
+        <span class="mic-pulse-ring delay"></span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v4"/><path d="M8 23h8"/></svg>
+      </button>
+      <p id="voice-status-text" class="voice-status-text">اضغط على الميكروفون وابدأ بالتسميع</p>
+    </div>
+
+    <div id="voice-words-area" class="voice-words-area hidden"></div>
+    <div id="voice-score-area" class="voice-score-area hidden"></div>
+
+    <div id="voice-modal-actions" class="voice-modal-actions hidden">
+      <button id="btn-voice-retry" class="btn">🔁 إعادة التسجيل</button>
+      <button id="btn-voice-verify" class="btn primary">✅ تحقق</button>
+    </div>
+  </div>
+</div>
 
 <script src="js/app.js" defer></script>
 </body>
