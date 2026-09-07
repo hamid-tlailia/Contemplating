@@ -138,6 +138,26 @@ function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function formatArabicDate(iso) {
+  return new Intl.DateTimeFormat("ar", { day: "numeric", month: "long", year: "numeric" }).format(new Date(`${iso}T00:00:00`));
+}
+
+// Days for the first ~2 weeks, weeks up to ~2 months, months beyond that -
+// so a brand-new streak reads "3 أيام" rather than an odd "0 أسابيع", and a
+// years-long one reads in months rather than a triple-digit day count.
+function formatDurationSince(iso) {
+  const start = new Date(`${iso}T00:00:00`);
+  const days = Math.max(0, Math.round((new Date() - start) / 86400000));
+  if (days === 0) return "اليوم";
+  if (days < 14) return `${days} ${days === 1 ? "يوم" : days === 2 ? "يومان" : "أيام"}`;
+  if (days < 60) {
+    const weeks = Math.round(days / 7);
+    return `${weeks} ${weeks === 1 ? "أسبوع" : weeks === 2 ? "أسبوعان" : "أسابيع"}`;
+  }
+  const months = Math.round(days / 30);
+  return `${months} ${months === 1 ? "شهر" : months === 2 ? "شهران" : "أشهر"}`;
+}
+
 function markActivityToday() {
   const today = todayISO();
   state.activity[today] = true;
@@ -170,8 +190,6 @@ function addPoints(amount) {
 function renderPointsDisplay() {
   const el = document.getElementById("points-display");
   if (el) el.textContent = state.points;
-  const dashEl = document.getElementById("stat-points");
-  if (dashEl) dashEl.textContent = state.points;
   const headerEl = document.getElementById("header-points-value");
   if (headerEl) headerEl.textContent = state.points;
 }
@@ -366,9 +384,13 @@ async function fetchWordMeanings(surah, ayah) {
   }
 
   // quran.com's word-by-word Arabic meanings aren't always available and can
-  // silently fall back to English - if that happens, fall back ourselves to
-  // a whole-ayah Arabic explanation so this feature never shows English.
-  const gotArabic = meanings.length > 0 && meanings.some((m) => m.meaning && !looksLatinOnly(m.meaning));
+  // silently fall back to English per word rather than for the whole verse -
+  // requiring every non-empty meaning to be Arabic (not just "at least one",
+  // which one stray Arabic word/number was enough to satisfy while the rest
+  // stayed in English) so a partial mix never reaches the screen; any English
+  // leak at all falls back to a whole-ayah Arabic explanation instead.
+  const nonEmpty = meanings.filter((m) => m.meaning);
+  const gotArabic = nonEmpty.length > 0 && nonEmpty.every((m) => !looksLatinOnly(m.meaning));
   if (!gotArabic) {
     meanings = await fetchAyahTafsirFallback(surah, ayah);
   }
@@ -520,6 +542,12 @@ function renderDashboard() {
   document.getElementById("overall-progress-text").textContent =
     `${masteredCount} / ${TOTAL_QURAN_AYAHS} (${overallPct.toFixed(1)}%)`;
 
+  const sinceEl = document.getElementById("memorization-since-text");
+  const firstAdded = items.reduce((min, i) => (!min || i.added < min ? i.added : min), null);
+  sinceEl.textContent = firstAdded
+    ? `تحفظ منذ ${formatArabicDate(firstAdded)} (${formatDurationSince(firstAdded)})`
+    : "";
+
   document.getElementById("onboarding-panel").classList.toggle("show", items.length === 0);
 
   renderChallengeCard();
@@ -565,7 +593,7 @@ function renderDashboard() {
 // Two-letter abbreviations (matches Intl's own ar-locale "narrow" weekday
 // format) rather than a single letter - single letters like ح/خ/ج look too
 // similar to tell apart at a glance in a small circle.
-const WIRD_DAY_ABBR = ["أح", "إث", "ثل", "أر", "خم", "جم", "سب"]; // Sun..Sat, matches Date#getDay()
+const WIRD_DAY_FULL = ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"]; // Sun..Sat, matches Date#getDay()
 
 function renderWirdCard() {
   const type = state.wirdTargetType || "ayahs";
@@ -581,9 +609,13 @@ function renderWirdCard() {
   const countText = document.getElementById("wird-count-text");
   if (countText) countText.textContent = `${todayCount}/${target}`;
 
+  const todayDateEl = document.getElementById("wird-today-date");
+  if (todayDateEl) todayDateEl.textContent = formatArabicDate(today);
+
   const weekEl = document.getElementById("wird-week");
   if (weekEl) {
     weekEl.innerHTML = "";
+    let todayEl = null;
     for (let i = 6; i >= 0; i--) {
       const d = new Date();
       d.setDate(d.getDate() - i);
@@ -594,9 +626,13 @@ function renderWirdCard() {
       const dayEl = document.createElement("div");
       dayEl.className = `wird-day${met ? " met" : ""}${isToday ? " today" : ""}`;
       dayEl.title = `${iso}: ${count}/${target}`;
-      dayEl.textContent = WIRD_DAY_ABBR[d.getDay()];
+      dayEl.textContent = WIRD_DAY_FULL[d.getDay()];
       weekEl.appendChild(dayEl);
+      if (isToday) todayEl = dayEl;
     }
+    // Full names don't all fit at once, so the strip scrolls - but today
+    // should never be the part that scrolls out of sight by default.
+    if (todayEl) todayEl.scrollIntoView({ behavior: "instant", inline: "center", block: "nearest" });
   }
 }
 
@@ -634,7 +670,7 @@ async function initMushafCard() {
       const ayahs = await fetchSurahAyahs(surahNumber);
       const matches = ayahs.filter((a) => a.numberInSurah >= from && a.numberInSurah <= to);
       if (matches.length === 0) return;
-      openMushafReader(matches);
+      openMushafReader(matches, surahNumber);
     } catch (e) {
       showToast("تعذّر تحميل النص. تحقق من الاتصال بالإنترنت.", "error");
     }
@@ -681,6 +717,21 @@ async function updateMushafDefaultRange() {
 let mushafPages = [];
 let mushafPageIndex = 0;
 let mushafSessionCountedPages = new Set();
+let mushafReaderSurahNumber = null;
+
+// Every surah but At-Tawbah (9) has the Quran's Uthmani text carrying
+// "بسم الله الرحمن الرحيم" glued onto the START of ayah 1's own text - real
+// for real for Al-Fatiha, where it IS ayah 1, but everywhere else it's just
+// the surah's opening formula and not part of ayah 1's wording at all.
+const BISMILLAH_NORMALIZED = normalizeArabic("بسم الله الرحمن الرحيم");
+function splitBismillah(text) {
+  const words = text.split(/\s+/);
+  const first4 = words.slice(0, 4).join(" ");
+  if (normalizeArabic(first4) === BISMILLAH_NORMALIZED) {
+    return { bismillah: first4, rest: words.slice(4).join(" ") };
+  }
+  return { bismillah: null, rest: text };
+}
 
 function groupAyahsIntoMushafPages(ayahs) {
   const pages = [];
@@ -696,10 +747,11 @@ function groupAyahsIntoMushafPages(ayahs) {
   return pages;
 }
 
-function openMushafReader(ayahs) {
+function openMushafReader(ayahs, surahNumber) {
   mushafPages = groupAyahsIntoMushafPages(ayahs);
   mushafPageIndex = 0;
   mushafSessionCountedPages = new Set();
+  mushafReaderSurahNumber = surahNumber;
   document.getElementById("mushaf-reader-overlay").classList.remove("modal-closed");
   renderMushafReaderPage();
 }
@@ -710,16 +762,32 @@ function closeMushafReader() {
 
 function renderMushafReaderPage() {
   const page = mushafPages[mushafPageIndex];
-  document.getElementById("mushaf-reader-text").innerHTML = page.ayahs
-    .map((a) => `${a.text} <span class="ayah-number-badge">${toArabicIndicDigits(a.numberInSurah)}</span>`)
+  let bismillahHTML = "";
+  const bodyHTML = page.ayahs
+    .map((a) => {
+      let text = a.text;
+      if (a.numberInSurah === 1 && mushafReaderSurahNumber !== 1) {
+        const { bismillah, rest } = splitBismillah(text);
+        if (bismillah) {
+          bismillahHTML = `<p class="mushaf-bismillah">${bismillah}</p>`;
+          text = rest;
+        }
+      }
+      return `${text} <span class="ayah-number-badge">${toArabicIndicDigits(a.numberInSurah)}</span>`;
+    })
     .join(" ");
+  document.getElementById("mushaf-reader-text").innerHTML = bismillahHTML + bodyHTML;
   document.getElementById("mushaf-reader-page-label").textContent = `الصفحة ${mushafPageIndex + 1} من ${mushafPages.length}`;
   document.getElementById("mushaf-reader-body").scrollTop = 0;
-  document.getElementById("btn-mushaf-reader-prev").disabled = mushafPageIndex === 0;
+
+  // No point showing a "previous" button that can't go anywhere on the
+  // first page, rather than showing it just disabled.
+  const prevBtn = document.getElementById("btn-mushaf-reader-prev");
+  prevBtn.classList.toggle("hidden", mushafPageIndex === 0);
   // "previous" sits on the right (backward, toward where reading started)
   // and "next" on the left (forward, matching RTL reading direction) - the
   // chevrons point the same way their button sits relative to the other.
-  document.getElementById("btn-mushaf-reader-prev").innerHTML = iconLabel("chevronRight", "الصفحة السابقة");
+  prevBtn.innerHTML = iconLabel("chevronRight", "الصفحة السابقة");
   const isLast = mushafPageIndex === mushafPages.length - 1;
   document.getElementById("btn-mushaf-reader-next").innerHTML = isLast
     ? iconLabel("checkDone", "أنهيت القراءة")
@@ -1330,8 +1398,13 @@ function startVoiceModalRecording() {
   let finalTranscript = "";
 
   recognition.onresult = (e) => {
+    // In continuous mode, e.results keeps growing across every firing of
+    // onresult instead of being replaced - looping from 0 each time was
+    // re-appending results already finalized by an earlier call, so every
+    // word before the latest one got duplicated into finalTranscript over
+    // and over. e.resultIndex marks where the NEW results start each time.
     let interim = "";
-    for (let k = 0; k < e.results.length; k++) {
+    for (let k = e.resultIndex; k < e.results.length; k++) {
       const r = e.results[k];
       if (r.isFinal) finalTranscript += r[0].transcript + " ";
       else interim += r[0].transcript;

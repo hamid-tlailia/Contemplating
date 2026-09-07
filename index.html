@@ -115,10 +115,6 @@
         <div class="stat-value" id="stat-streak">0</div>
         <div class="stat-label">🔥 أيام متتالية</div>
       </div>
-      <div class="stat-card">
-        <div class="stat-value" id="stat-points">0</div>
-        <div class="stat-label">🪙 نقاط</div>
-      </div>
     </div>
 
     <div class="panel overall-progress-card">
@@ -127,6 +123,7 @@
         <span id="overall-progress-text" class="muted">0 / 6236 (0%)</span>
       </div>
       <div class="progress-bar"><div id="overall-progress-fill" class="progress-fill"></div></div>
+      <p id="memorization-since-text" class="muted overall-progress-since"></p>
     </div>
 
     <div class="panel">
@@ -137,7 +134,10 @@
 
     <div class="panel wird-card">
       <div class="wird-header">
-        <h2>🌙 ورد اليوم</h2>
+        <div>
+          <h2>🌙 ورد اليوم</h2>
+          <p id="wird-today-date" class="muted"></p>
+        </div>
         <div class="wird-target-control">
           <div class="wird-type-toggle">
             <button type="button" class="wird-type-btn" data-type="ayahs">آية</button>
