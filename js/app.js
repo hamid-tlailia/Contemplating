@@ -89,7 +89,7 @@ const ICONS = {
   xCircle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/></svg>',
   pencil: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
   optionsList: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="2"/><path d="M11 6h9"/><circle cx="5" cy="12" r="2"/><path d="M11 12h9"/><circle cx="5" cy="18" r="2"/><path d="M11 18h9"/></svg>',
-  coin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9 8.5A2 2 0 0 1 11 7h1.5a2 2 0 0 1 0 4H11.5a2 2 0 0 0 0 4H13a2 2 0 0 0 2-1.5"/><path d="M12 6v1.2M12 16.8V18"/></svg>',
+  coin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/></svg>',
 };
 function iconLabel(iconKey, text) {
   return `<span class="icon-label">${ICONS[iconKey]}<span>${text}</span></span>`;
@@ -804,10 +804,18 @@ async function initMushafCard() {
         showToast("أدخل رقم صفحة صحيح بين 1 و604.", "error");
         return;
       }
+      // A page-number jump should still cover the daily wird plan (e.g. a
+      // 2-page target starting from the requested page), matching what
+      // range mode already does from an ayah - not just the single page
+      // typed in, which read as ignoring the plan entirely.
+      const pageCount = state.wirdTargetType === "pages" ? Math.max(1, state.wirdTarget || 1) : 1;
       try {
-        const res = await fetchWithTimeout(`${API_BASE}/page/${pageNumber}/quran-uthmani`, 8000);
-        const json = await res.json();
-        const ayahs = (json.data.ayahs || []).map((a) => ({ ...a, surahNumberForReader: a.surah.number }));
+        const ayahs = [];
+        for (let p = pageNumber; p < pageNumber + pageCount && p <= 604; p++) {
+          const res = await fetchWithTimeout(`${API_BASE}/page/${p}/quran-uthmani`, 8000);
+          const json = await res.json();
+          (json.data.ayahs || []).forEach((a) => ayahs.push({ ...a, surahNumberForReader: a.surah.number }));
+        }
         if (ayahs.length === 0) return;
         openMushafReader(ayahs);
       } catch (e) {
@@ -1647,6 +1655,33 @@ function mergeVoiceSegments(segments) {
   return acc;
 }
 
+// Some Android continuous-recognition engines occasionally re-transcribe
+// audio they already finalized - usually right after an onend/restart
+// cycle - producing a near-duplicate block of words appended right after
+// the original instead of a genuinely new continuation. mergeVoiceSegments
+// only catches an EXACT repeat of the whole accumulated string; this
+// catches a repeated block anywhere at the end of it, word-boundary aware,
+// by collapsing the longest immediately-repeated trailing block.
+function collapseRepeatedWordBlocks(text) {
+  const words = text.split(/\s+/).filter(Boolean);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const n = words.length;
+    for (let blockLen = Math.floor(n / 2); blockLen >= 2; blockLen--) {
+      const tailStart = n - blockLen;
+      const prevStart = tailStart - blockLen;
+      if (prevStart < 0) continue;
+      if (words.slice(tailStart, n).join(" ") === words.slice(prevStart, tailStart).join(" ")) {
+        words.splice(tailStart, blockLen);
+        changed = true;
+        break;
+      }
+    }
+  }
+  return words.join(" ");
+}
+
 function createVoiceRecognitionInstance() {
   const recognition = new SpeechRecognitionImpl();
   recognition.lang = "ar-SA";
@@ -1698,7 +1733,8 @@ function startVoiceModalRecording() {
       else if (i >= e.resultIndex) interim += transcript;
     }
     const merged = mergeVoiceSegments([...voiceModalFinalSegments.filter(Boolean), interim]);
-    voiceModalLiveTranscript = (voiceModalBaseText + merged).replace(/\s+/g, " ").trimStart();
+    const combined = mergeVoiceSegments([voiceModalBaseText, merged]).replace(/\s+/g, " ").trim();
+    voiceModalLiveTranscript = collapseRepeatedWordBlocks(combined);
     statusText.textContent = voiceModalLiveTranscript || "🔴 يستمع الآن...";
   };
   recognition.onerror = (e) => {
@@ -1716,7 +1752,17 @@ function startVoiceModalRecording() {
     // never lands here. Fold this session's segments into the persistent
     // base text and keep listening on the same instance.
     if (!voiceModalShouldContinue) return;
-    voiceModalBaseText = (voiceModalBaseText + mergeVoiceSegments(voiceModalFinalSegments.filter(Boolean))).replace(/\s+/g, " ") + " ";
+    // This was previously a raw concatenation of the old base text with
+    // this session's segments - which meant a restart that re-transcribed
+    // audio already folded into the base text (a real, if inconsistent,
+    // Android quirk) just kept appending the same phrase again forever.
+    // Routing it back through mergeVoiceSegments (catches an exact repeat
+    // of everything so far) and collapseRepeatedWordBlocks (catches a
+    // repeated block anywhere at the tail) fixes that at the fold point,
+    // not just for display.
+    const sessionMerged = mergeVoiceSegments(voiceModalFinalSegments.filter(Boolean));
+    const folded = mergeVoiceSegments([voiceModalBaseText, sessionMerged]).replace(/\s+/g, " ").trim();
+    voiceModalBaseText = collapseRepeatedWordBlocks(folded) + " ";
     voiceModalFinalSegments = [];
     attemptRecognitionStart(recognition);
   };
