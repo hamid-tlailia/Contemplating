@@ -3,10 +3,29 @@
 // instead of passive re-reading. All progress is stored locally (localStorage).
 
 const API_BASE = "https://api.alquran.cloud/v1";
-const AUDIO_BASE = "https://cdn.islamic.network/quran/audio/128/ar.alafasy"; // {globalAyahNumber}.mp3
+const AUDIO_CDN = "https://cdn.islamic.network/quran/audio/128"; // /{reciterId}/{globalAyahNumber}.mp3
 const WORD_MEANING_API = "https://api.quran.com/api/v4/verses/by_key"; // /{surah}:{ayah}?words=true
 const STATE_KEY = "tadabbur_state_v1";
 const ROUNDS_TO_MASTER = 3;
+
+const RECITERS = [
+  { id: "ar.alafasy", name: "مشاري راشد العفاسي" },
+  { id: "ar.abdulbasitmurattal", name: "عبد الباسط عبد الصمد" },
+  { id: "ar.husary", name: "محمود خليل الحصري" },
+  { id: "ar.minshawi", name: "محمد صديق المنشاوي" },
+  { id: "ar.abdurrahmaansudais", name: "عبد الرحمن السديس" },
+];
+
+const THEMES = [
+  { id: "default", name: "أخضر هادئ (افتراضي)" },
+  { id: "sepia", name: "صحراوي دافئ" },
+  { id: "night", name: "أزرق ليلي" },
+  { id: "forest", name: "أخضر داكن مريح" },
+];
+
+function audioSrcFor(globalAyahNumber) {
+  return `${AUDIO_CDN}/${state.reciter}/${globalAyahNumber}.mp3`;
+}
 
 const ENCOURAGEMENTS = [
   "أحسنت! ثبّت الله ما حفظت 🌿",
@@ -32,16 +51,20 @@ function loadState() {
       parsed.activity = parsed.activity || {};
       parsed.learningPointer = parsed.learningPointer || { surah: 1, ayah: 1 };
       parsed.dailyChallenge = parsed.dailyChallenge || { date: null, score: 0, total: 0 };
+      parsed.reciter = parsed.reciter || RECITERS[0].id;
+      parsed.theme = parsed.theme || THEMES[0].id;
       return parsed;
     }
   } catch (e) {
     console.warn("Failed to load state", e);
   }
   return {
-    ayahs: {}, // key "surah:ayah" -> { surah, ayah, surahName, text, globalNumber, interval, repetition, ef, due, lastReviewed, added, learningStage, roundStreak }
+    ayahs: {}, // key "surah:ayah" -> { surah, ayah, surahName, text, globalNumber, interval, repetition, ef, due, lastReviewed, added, learningStage, roundStreak, temporary }
     activity: {}, // "YYYY-MM-DD" -> true (for streak calculation)
     learningPointer: { surah: 1, ayah: 1 },
     dailyChallenge: { date: null, score: 0, total: 0 },
+    reciter: RECITERS[0].id,
+    theme: THEMES[0].id,
   };
 }
 
@@ -88,19 +111,32 @@ function shuffleArray(arr) {
   return a;
 }
 
+// Quran text always fuses a leading waw/fa conjunction onto the next word
+// ("\u0648\u064e\u064a\u064f\u0642\u0650\u064a\u0645\u0648\u0646\u064e" = "wa-yuqeemoona"), but a keyboard or speech engine
+// often produces it as a separate token ("\u0648 \u064a\u0642\u064a\u0645\u0648\u0646"). Re-join such detached
+// conjunctions before normalizing so this doesn't register as a mismatch.
+function mergeDetachedConjunctions(text) {
+  return (text || "").replace(/(^|\s)([\u0648\u0641])\s+(?=\S)/g, "$1$2");
+}
+
 // Strip tashkeel/waqf marks + normalize letter variants so typed/spoken answers
 // match forgivingly. \p{Mn} catches every Unicode combining mark used in the
 // Uthmani script (not just the basic harakat range: waqf signs, small-high
 // marks, etc). Quran text also carries wasla alef (\u0671) which a normal
 // keyboard never produces, so it must fold into \u0627 (alef) too.
 function normalizeArabic(s) {
-  return (s || "")
+  return mergeDetachedConjunctions(s)
     .replace(/\p{Mn}/gu, "")
     .replace(/[\u0625\u0623\u0622\u0671\u0627]/g, "\u0627")
     .replace(/\u0649/g, "\u064A")
     .replace(/\u0629/g, "\u0647")
     .replace(/\u0624/g, "\u0648")
     .replace(/\u0626/g, "\u064A")
+    // Classical rasm spells the long vowel before a final \u0629 with \u0648 in a
+    // handful of very common words (\u0627\u0644\u0635\u0644\u0648\u0629, \u0627\u0644\u0632\u0643\u0648\u0629, \u0627\u0644\u062d\u064a\u0648\u0629...). A typed or
+    // spoken answer will use the modern spelling with \u0627, so fold that \u0648 back
+    // to \u0627 once it's already sitting right before the (already-folded) \u0647.
+    .replace(/\u0648(?=\u0647(?:\s|$))/g, "\u0627")
     .replace(/[^\u0621-\u064A\s]/g, "")
     .replace(/\s+/g, " ")
     .trim();
@@ -162,17 +198,51 @@ async function fetchSurahAyahs(surahNumber) {
   return surahAyahsCache[surahNumber];
 }
 
+function looksLatinOnly(s) {
+  return /^[A-Za-z0-9\s.,'’()\-]+$/.test((s || "").trim()) && /[A-Za-z]/.test(s);
+}
+
 async function fetchWordMeanings(surah, ayah) {
   const key = `${surah}:${ayah}`;
   if (wordMeaningsCache[key]) return wordMeaningsCache[key];
-  const res = await fetchWithTimeout(`${WORD_MEANING_API}/${key}?words=true&word_fields=text_uthmani&translation_fields=text&word_translation_language=ar`, 6000);
-  const json = await res.json();
-  const words = (json.verse && json.verse.words) || [];
-  const meanings = words
-    .filter((w) => w.char_type_name === "word")
-    .map((w) => ({ text: w.text_uthmani || w.text, meaning: (w.translation && w.translation.text) || "" }));
+
+  let meanings = [];
+  try {
+    const res = await fetchWithTimeout(
+      `${WORD_MEANING_API}/${key}?words=true&word_fields=text_uthmani&translation_fields=text&language=ar&word_translation_language=ar`,
+      6000
+    );
+    const json = await res.json();
+    const words = (json.verse && json.verse.words) || [];
+    meanings = words
+      .filter((w) => w.char_type_name === "word")
+      .map((w) => ({ text: w.text_uthmani || w.text, meaning: (w.translation && w.translation.text) || "" }));
+  } catch (e) {
+    meanings = [];
+  }
+
+  // quran.com's word-by-word Arabic meanings aren't always available and can
+  // silently fall back to English - if that happens, fall back ourselves to
+  // a whole-ayah Arabic explanation so this feature never shows English.
+  const gotArabic = meanings.length > 0 && meanings.some((m) => m.meaning && !looksLatinOnly(m.meaning));
+  if (!gotArabic) {
+    meanings = await fetchAyahTafsirFallback(surah, ayah);
+  }
+
   wordMeaningsCache[key] = meanings;
   return meanings;
+}
+
+async function fetchAyahTafsirFallback(surah, ayah) {
+  try {
+    const res = await fetchWithTimeout(`${API_BASE}/ayah/${surah}:${ayah}/ar.muyassar`, 6000);
+    const json = await res.json();
+    const text = json.data && json.data.text;
+    if (!text) return [];
+    return [{ text: "تفسير الآية", meaning: text, isWholeAyah: true }];
+  } catch (e) {
+    return [];
+  }
 }
 
 // ---------- Toasts ----------
@@ -293,7 +363,7 @@ function renderDashboard() {
   const today = todayISO();
   const dueCount = items.filter((i) => i.learningStage === "srs" && i.due <= today).length;
   const learningCount = items.filter((i) => i.learningStage === "learning").length;
-  const masteredCount = items.filter((i) => i.learningStage === "srs").length;
+  const masteredCount = items.filter((i) => i.learningStage === "srs" && !i.temporary).length;
 
   document.getElementById("stat-due").textContent = dueCount;
   document.getElementById("stat-new").textContent = learningCount;
@@ -322,7 +392,6 @@ function renderDashboard() {
         const dueInGroup = items2.filter((i) => i.due <= today).length;
         const details = document.createElement("details");
         details.className = "plan-surah-group";
-        if (dueInGroup > 0) details.open = true;
         const summary = document.createElement("summary");
         summary.className = "plan-surah-summary";
         summary.innerHTML = `
@@ -348,10 +417,14 @@ function buildPlanItemRow(item, today) {
   let badge = "scheduled";
   let badgeText = `\u064a\u064f\u0633\u062a\u062d\u0642: ${item.due}`;
   if (item.due <= today) { badge = "due"; badgeText = "\u0645\u0633\u062a\u062d\u0642\u0629 \u0627\u0644\u0622\u0646"; }
+  const tempBadge = item.temporary
+    ? `<span class="badge temp" title="\u0644\u0627 \u062a\u064f\u062d\u062a\u0633\u0628 \u0636\u0645\u0646 \u0646\u0633\u0628\u0629 \u0627\u0644\u062a\u0642\u062f\u0645">\u0645\u0631\u0627\u062c\u0639\u0629 \u0645\u0624\u0642\u062a\u0629</span>`
+    : "";
   div.innerHTML = `
     <span class="ref">\u0622\u064a\u0629 ${item.ayah}</span>
     <span class="snippet">${item.text || ""}</span>
     <span class="badge ${badge}">${badgeText}</span>
+    ${tempBadge}
     <button class="icon-btn" title="\u0625\u0632\u0627\u0644\u0629 \u0645\u0646 \u0627\u0644\u062e\u0637\u0629" data-key="${item.surah}:${item.ayah}">\u2715</button>
   `;
   div.querySelector(".icon-btn").addEventListener("click", (e) => {
@@ -397,11 +470,13 @@ async function renderSurahProgress() {
     return;
   }
   const bySurah = {};
-  items.forEach((i) => {
-    bySurah[i.surah] = bySurah[i.surah] || { total: 0, mastered: 0, name: i.surahName };
-    bySurah[i.surah].total++;
-    if (i.learningStage === "srs") bySurah[i.surah].mastered++;
-  });
+  items
+    .filter((i) => !i.temporary)
+    .forEach((i) => {
+      bySurah[i.surah] = bySurah[i.surah] || { total: 0, mastered: 0, name: i.surahName };
+      bySurah[i.surah].total++;
+      if (i.learningStage === "srs") bySurah[i.surah].mastered++;
+    });
 
   let surahs = surahListCache;
   if (!surahs) {
@@ -430,15 +505,57 @@ document.getElementById("btn-start-challenge").addEventListener("click", startDa
 
 // ---------- Browse / Add (manual, advanced) ----------
 
+let selectedBrowseSurah = 1;
+let selectedBrowseSurahName = "";
+
 async function initBrowseTab() {
-  const select = document.getElementById("surah-select");
+  const input = document.getElementById("surah-combo-input");
+  const list = document.getElementById("surah-combo-list");
   try {
     const surahs = await fetchSurahList();
-    select.innerHTML = surahs
-      .map((s) => `<option value="${s.number}">${s.number}. ${s.name} (${s.englishName})</option>`)
-      .join("");
-    select.addEventListener("change", () => loadBrowseSurah(Number(select.value)));
-    loadBrowseSurah(Number(select.value));
+
+    function renderComboList(filterText) {
+      const f = (filterText || "").trim().toLowerCase();
+      const matches = surahs.filter(
+        (s) => !f || String(s.number) === f || s.name.includes(filterText.trim()) || s.englishName.toLowerCase().includes(f)
+      );
+      list.innerHTML =
+        matches
+          .slice(0, 30)
+          .map((s) => `<div class="combo-item" data-number="${s.number}">${s.number}. ${s.name} <span class="muted">(${s.englishName})</span></div>`)
+          .join("") || `<div class="combo-empty muted">لا توجد نتائج</div>`;
+      list.querySelectorAll(".combo-item").forEach((el) => {
+        el.addEventListener("click", () => {
+          const surahNumber = Number(el.dataset.number);
+          const meta = surahs.find((s) => s.number === surahNumber);
+          selectedBrowseSurah = surahNumber;
+          selectedBrowseSurahName = meta.name;
+          input.value = `${meta.number}. ${meta.name}`;
+          list.classList.add("hidden");
+          loadBrowseSurah(surahNumber);
+        });
+      });
+    }
+
+    input.addEventListener("focus", () => {
+      renderComboList(input.dataset.selected ? "" : input.value);
+      list.classList.remove("hidden");
+    });
+    input.addEventListener("input", () => {
+      input.dataset.selected = "";
+      renderComboList(input.value);
+      list.classList.remove("hidden");
+    });
+    document.addEventListener("click", (e) => {
+      if (!document.getElementById("surah-combo").contains(e.target)) list.classList.add("hidden");
+    });
+
+    const first = surahs[0];
+    selectedBrowseSurah = first.number;
+    selectedBrowseSurahName = first.name;
+    input.value = `${first.number}. ${first.name}`;
+    input.dataset.selected = "1";
+    loadBrowseSurah(selectedBrowseSurah);
   } catch (e) {
     document.getElementById("surah-meta-info").textContent = "تعذّر تحميل قائمة السور. تحقق من الاتصال بالإنترنت.";
   }
@@ -447,44 +564,88 @@ async function initBrowseTab() {
 async function loadBrowseSurah(surahNumber) {
   const metaInfo = document.getElementById("surah-meta-info");
   const titleEl = document.getElementById("browse-surah-title");
-  const listEl = document.getElementById("browse-ayahs");
   metaInfo.textContent = "جاري التحميل...";
-  listEl.innerHTML = "";
   try {
     const ayahs = await fetchSurahAyahs(surahNumber);
     const surahs = await fetchSurahList();
     const meta = surahs.find((s) => s.number === surahNumber);
-    titleEl.textContent = `سورة ${meta.name}`;
-    metaInfo.textContent = `عدد الآيات: ${ayahs.length}`;
-    document.getElementById("ayah-from").max = ayahs.length;
-    document.getElementById("ayah-to").max = ayahs.length;
-    document.getElementById("ayah-to").value = ayahs.length >= 1 ? Math.min(5, ayahs.length) : 1;
+    selectedBrowseSurahName = meta.name;
+    titleEl.textContent = `معاينة آيات سورة ${meta.name}`;
+    metaInfo.textContent = `عدد آيات السورة: ${ayahs.length}`;
 
-    ayahs.forEach((a) => {
-      const key = `${surahNumber}:${a.numberInSurah}`;
-      const already = !!state.ayahs[key];
-      const row = document.createElement("div");
-      row.className = "ayah-browse-item";
-      row.innerHTML = `
-        <span class="ayah-num-chip">${a.numberInSurah}</span>
-        <span class="ayah-browse-text">${a.text}</span>
-        <button class="btn ayah-add-btn" ${already ? "disabled" : ""}>${already ? "أُضيفت ✓" : "+ أضف"}</button>
-      `;
-      row.querySelector("button").addEventListener("click", (e) => {
-        addAyahDirectlyToSrs(surahNumber, meta.name, a);
-        e.target.textContent = "أُضيفت ✓";
-        e.target.disabled = true;
-      });
-      listEl.appendChild(row);
-    });
+    const fromInput = document.getElementById("ayah-from");
+    const toInput = document.getElementById("ayah-to");
+    fromInput.max = ayahs.length;
+    toInput.max = ayahs.length;
+    fromInput.value = 1;
+    toInput.value = Math.min(5, ayahs.length);
+    document.getElementById("ayah-search").value = "";
+
+    renderBrowsePreview();
   } catch (e) {
     metaInfo.textContent = "تعذّر تحميل نص السورة. تحقق من الاتصال بالإنترنت.";
   }
 }
 
+function renderBrowsePreview() {
+  const listEl = document.getElementById("browse-ayahs");
+  const hint = document.getElementById("browse-preview-hint");
+  const ayahs = surahAyahsCache[selectedBrowseSurah];
+  if (!ayahs) return;
+
+  const searchVal = document.getElementById("ayah-search").value.trim();
+  let matches;
+  if (searchVal) {
+    const asNumber = Number(searchVal);
+    matches = ayahs.filter((a) => a.numberInSurah === asNumber || a.text.includes(searchVal));
+    hint.textContent = `نتائج البحث عن "${searchVal}": ${matches.length} آية`;
+  } else {
+    const from = Number(document.getElementById("ayah-from").value) || 1;
+    const to = Number(document.getElementById("ayah-to").value) || from;
+    matches = ayahs.filter((a) => a.numberInSurah >= from && a.numberInSurah <= to);
+    hint.textContent = `عرض الآيات من ${from} إلى ${to} (${matches.length} آية) — عدّل النطاق أعلاه أو استخدم البحث لعرض آيات أخرى`;
+  }
+
+  listEl.innerHTML = "";
+  matches.slice(0, 50).forEach((a) => {
+    const key = `${selectedBrowseSurah}:${a.numberInSurah}`;
+    const already = !!state.ayahs[key];
+    const row = document.createElement("div");
+    row.className = "ayah-browse-item";
+    row.innerHTML = `
+      <span class="ayah-num-chip">${a.numberInSurah}</span>
+      <span class="ayah-browse-text">${a.text}</span>
+      <button class="btn ayah-add-btn" ${already ? "disabled" : ""}>${already ? "أُضيفت ✓" : "+ أضف"}</button>
+    `;
+    row.querySelector("button").addEventListener("click", (e) => {
+      addAyahDirectlyToSrs(selectedBrowseSurah, selectedBrowseSurahName, a);
+      e.target.textContent = "أُضيفت ✓";
+      e.target.disabled = true;
+      renderDashboard();
+    });
+    listEl.appendChild(row);
+  });
+}
+
+document.getElementById("ayah-from").addEventListener("input", renderBrowsePreview);
+document.getElementById("ayah-to").addEventListener("input", renderBrowsePreview);
+document.getElementById("ayah-search").addEventListener("input", renderBrowsePreview);
+
+// An ayah only counts toward real sequential progress in a surah if it
+// immediately follows the last non-temporary ayah already memorized there.
+// Anything else (jumping from ayah 6 to ayah 100) is still reviewable, but
+// flagged "temporary" so it never inflates the surah's progress percentage.
+function isContiguousAddition(surahNumber, ayahNumber) {
+  const existingMax = Object.values(state.ayahs)
+    .filter((i) => i.surah === surahNumber && i.learningStage === "srs" && !i.temporary)
+    .reduce((m, i) => Math.max(m, i.ayah), 0);
+  return ayahNumber === existingMax + 1;
+}
+
 function addAyahDirectlyToSrs(surahNumber, surahName, ayahObj) {
   const key = `${surahNumber}:${ayahObj.numberInSurah}`;
   if (state.ayahs[key]) return;
+  const temporary = !isContiguousAddition(surahNumber, ayahObj.numberInSurah);
   state.ayahs[key] = {
     surah: surahNumber,
     surahName,
@@ -499,12 +660,16 @@ function addAyahDirectlyToSrs(surahNumber, surahName, ayahObj) {
     added: todayISO(),
     learningStage: "srs",
     roundStreak: 0,
+    temporary,
   };
   saveState();
+  if (temporary) {
+    showToast("أُضيفت كمراجعة مؤقتة فقط (فيها قفزة عن تسلسل حفظك في هذه السورة) — لن تُحتسب ضمن نسبة التقدم.");
+  }
 }
 
 document.getElementById("btn-add-range").addEventListener("click", async () => {
-  const surahNumber = Number(document.getElementById("surah-select").value);
+  const surahNumber = selectedBrowseSurah;
   const from = Number(document.getElementById("ayah-from").value);
   const to = Number(document.getElementById("ayah-to").value);
   if (!surahNumber || !from || !to || from > to) return;
@@ -515,7 +680,7 @@ document.getElementById("btn-add-range").addEventListener("click", async () => {
     ayahs
       .filter((a) => a.numberInSurah >= from && a.numberInSurah <= to)
       .forEach((a) => addAyahDirectlyToSrs(surahNumber, meta.name, a));
-    loadBrowseSurah(surahNumber);
+    renderBrowsePreview();
     renderDashboard();
     showToast(`تمت إضافة الآيات من ${from} إلى ${to} إلى خطة المراجعة.`, "success");
   } catch (e) {
@@ -703,7 +868,7 @@ async function loadLearnAyah() {
   updateRoundDots(item.roundStreak || 0);
 
   const audio = document.getElementById("learn-audio");
-  audio.src = `${AUDIO_BASE}/${ayahObj.number}.mp3`;
+  audio.src = audioSrcFor(ayahObj.number);
 
   renderLearnRound();
 }
@@ -876,9 +1041,13 @@ document.getElementById("btn-learn-meanings").addEventListener("click", async ()
   try {
     const meanings = await fetchWordMeanings(pointer.surah, pointer.ayah);
     if (!meanings.length) throw new Error("empty");
-    container.innerHTML = meanings
-      .map((m) => `<div class="meaning-chip"><span class="mw-ar">${m.text}</span><span>${m.meaning || "—"}</span></div>`)
-      .join("");
+    if (meanings[0].isWholeAyah) {
+      container.innerHTML = `<p class="tafsir-fallback">${meanings[0].meaning}</p>`;
+    } else {
+      container.innerHTML = meanings
+        .map((m) => `<div class="meaning-chip"><span class="mw-ar">${m.text}</span><span>${m.meaning || "—"}</span></div>`)
+        .join("");
+    }
   } catch (e) {
     container.innerHTML = `<p class="muted">تعذّر تحميل معاني الكلمات حاليًا.</p>`;
   }
@@ -952,7 +1121,7 @@ function loadReviewItem() {
   renderMaskedText();
 
   const audio = document.getElementById("review-audio");
-  audio.src = `${AUDIO_BASE}/${item.globalNumber}.mp3`;
+  audio.src = audioSrcFor(item.globalNumber);
 
   document.getElementById("grade-controls").classList.add("hidden");
   document.getElementById("reveal-controls").classList.remove("hidden");
@@ -1055,6 +1224,40 @@ function finishReviewOrChallenge() {
   session.classList.add("hidden");
 }
 
+// ---------- Settings (reciter + theme) ----------
+
+function applyTheme() {
+  document.documentElement.dataset.theme = state.theme;
+}
+
+function initSettingsPanel() {
+  const overlay = document.getElementById("settings-overlay");
+  const reciterSelect = document.getElementById("reciter-select");
+  const themeSelect = document.getElementById("theme-select");
+
+  reciterSelect.innerHTML = RECITERS.map((r) => `<option value="${r.id}">${r.name}</option>`).join("");
+  themeSelect.innerHTML = THEMES.map((t) => `<option value="${t.id}">${t.name}</option>`).join("");
+  reciterSelect.value = state.reciter;
+  themeSelect.value = state.theme;
+
+  document.getElementById("btn-settings").addEventListener("click", () => overlay.classList.remove("hidden"));
+  document.getElementById("btn-settings-close").addEventListener("click", () => overlay.classList.add("hidden"));
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) overlay.classList.add("hidden");
+  });
+
+  reciterSelect.addEventListener("change", () => {
+    state.reciter = reciterSelect.value;
+    saveState();
+    showToast("تم تغيير القارئ ✓", "success");
+  });
+  themeSelect.addEventListener("change", () => {
+    state.theme = themeSelect.value;
+    saveState();
+    applyTheme();
+  });
+}
+
 // ---------- PWA service worker ----------
 
 if ("serviceWorker" in navigator) {
@@ -1065,5 +1268,7 @@ if ("serviceWorker" in navigator) {
 
 // ---------- Init ----------
 
+applyTheme();
+initSettingsPanel();
 initBrowseTab();
 renderDashboard();

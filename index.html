@@ -28,19 +28,44 @@
   </div>
   <nav class="tabs" role="tablist">
     <button class="tab-btn active" data-tab="dashboard">
-      <span class="tab-icon">🏠</span><span class="tab-label">لوحتي</span>
+      <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9"/></svg></span>
+      <span class="tab-label">لوحتي</span>
     </button>
     <button class="tab-btn" data-tab="learn">
-      <span class="tab-icon">🌱</span><span class="tab-label">ابدأ الحفظ</span>
+      <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21c0-5 3-7 3-11a3 3 0 0 0-6 0c0 4 3 6 3 11Z"/><path d="M9 10c-2.5 0-5-1.5-5-4 3 0 5 1 5 4Z"/><path d="M15 10c2.5 0 5-1.5 5-4-3 0-5 1-5 4Z"/></svg></span>
+      <span class="tab-label">ابدأ الحفظ</span>
     </button>
     <button class="tab-btn" data-tab="browse">
-      <span class="tab-icon">📖</span><span class="tab-label">تصفح وإضافة</span>
+      <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H12v18H6.5A2.5 2.5 0 0 1 4 18.5v-13Z"/><path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H12v18h5.5a2.5 2.5 0 0 0 2.5-2.5v-13Z"/></svg></span>
+      <span class="tab-label">تصفح وإضافة</span>
     </button>
     <button class="tab-btn" data-tab="review">
-      <span class="tab-icon">🔁</span><span class="tab-label">المراجعة</span>
+      <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2 21 6l-4 4"/><path d="M3 12v-1a4 4 0 0 1 4-4h14"/><path d="M7 22 3 18l4-4"/><path d="M21 12v1a4 4 0 0 1-4 4H3"/></svg></span>
+      <span class="tab-label">المراجعة</span>
     </button>
   </nav>
+  <button id="btn-settings" class="icon-only-btn" title="الإعدادات" aria-label="الإعدادات">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+  </button>
 </header>
+
+<!-- SETTINGS PANEL -->
+<div id="settings-overlay" class="settings-overlay hidden">
+  <div class="settings-panel">
+    <div class="settings-header">
+      <h2>⚙️ الإعدادات</h2>
+      <button id="btn-settings-close" class="icon-only-btn" aria-label="إغلاق">✕</button>
+    </div>
+    <label class="settings-field">
+      القارئ
+      <select id="reciter-select"></select>
+    </label>
+    <label class="settings-field">
+      المظهر
+      <select id="theme-select"></select>
+    </label>
+  </div>
+</div>
 
 <main id="app">
 
@@ -84,7 +109,7 @@
 
     <div class="panel">
       <h2>خطة المراجعة الحالية</h2>
-      <p class="muted">مرتبة حسب أقرب موعد مراجعة (التكرار المتباعد الذكي)</p>
+      <p class="muted">مرتبة حسب أقرب موعد مراجعة (التكرار المتباعد الذكي) — اضغط على اسم السورة لعرض آياتها</p>
       <div id="plan-list" class="plan-list"></div>
     </div>
 
@@ -141,12 +166,14 @@
   <section id="tab-browse" class="tab-panel">
     <div class="panel">
       <h2>إضافة آيات إلى خطة المراجعة مباشرة</h2>
-      <p class="muted">للمتقدمين: أضف آيات مباشرة إلى جدول المراجعة بدون المرور بجلسة "ابدأ الحفظ" التدريجية.</p>
+      <p class="muted">للمتقدمين: أضف آيات مباشرة دون المرور برحلة "ابدأ الحفظ" التدريجية. إن كانت الآية المختارة تمثل قفزة عن تسلسل حفظك الحالي في هذه السورة، ستُضاف كـ"مراجعة مؤقتة" فقط ولن تُحتسب ضمن نسبة تقدّمك.</p>
+
       <div class="add-form">
-        <label>
-          السورة
-          <select id="surah-select"></select>
-        </label>
+        <div class="combo" id="surah-combo">
+          <label for="surah-combo-input">السورة</label>
+          <input type="text" id="surah-combo-input" placeholder="ابحث عن سورة بالاسم أو الرقم..." autocomplete="off">
+          <div class="combo-list hidden" id="surah-combo-list"></div>
+        </div>
         <label>
           من آية
           <input type="number" id="ayah-from" min="1" value="1">
@@ -155,13 +182,20 @@
           إلى آية
           <input type="number" id="ayah-to" min="1" value="1">
         </label>
-        <button id="btn-add-range" class="btn primary">إضافة إلى الخطة</button>
+      </div>
+      <div class="add-form">
+        <label class="grow">
+          🔍 أو ابحث عن آية برقمها أو بكلمة منها
+          <input type="text" id="ayah-search" placeholder="مثال: 255 أو الرحمن">
+        </label>
+        <button id="btn-add-range" class="btn primary">إضافة النطاق إلى الخطة</button>
       </div>
       <p class="muted" id="surah-meta-info"></p>
     </div>
 
     <div class="panel">
-      <h2 id="browse-surah-title">نص السورة</h2>
+      <h2 id="browse-surah-title">معاينة الآيات</h2>
+      <p class="muted" id="browse-preview-hint"></p>
       <div id="browse-ayahs" class="ayah-browse-list"></div>
     </div>
   </section>
