@@ -161,6 +161,7 @@ function loadState() {
       parsed.reviewDailyCap = parsed.reviewDailyCap == null ? REVIEW_DAILY_CAP_DEFAULT : parsed.reviewDailyCap;
       parsed.reviewCounts = parsed.reviewCounts || {};
       parsed.wirdPlan = parsed.wirdPlan || null;
+      parsed.autoVaryModes = parsed.autoVaryModes !== false;
       return parsed;
     }
   } catch (e) {
@@ -189,6 +190,7 @@ function loadState() {
     reviewDailyCap: REVIEW_DAILY_CAP_DEFAULT, // 0 = no cap
     reviewCounts: {}, // "YYYY-MM-DD" -> ayahs graded in a review session that day
     wirdPlan: null, // {anchor, time:"HH:MM", place} - the when/where commitment
+    autoVaryModes: true, // rotate the test mode across an ayah's three rounds
   };
 }
 
@@ -2264,10 +2266,44 @@ document.getElementById("mode-btn-partial").innerHTML = iconLabel("eyeOff", "ا�
 document.getElementById("mode-btn-mcq").innerHTML = iconLabel("optionsList", "اختيار");
 document.getElementById("mode-btn-type").innerHTML = iconLabel("pencil", "كتابة");
 
+// Round 1 recognizes the word among four, round 2 recalls it with the rest
+// of the ayah in front of you, round 3 produces it from nothing: the
+// support fades across the three rounds instead of the same task being
+// drilled three times over. Each mode also tests something the others
+// don't - recognition is not recall, and recall is not production - and
+// three identical rounds is the shortest road to boredom.
+const MODE_ROTATION = ["mcq", "partial", "type"];
+const MODE_ROUND_LABEL = { mcq: "تعرُّف", partial: "تذكُّر", type: "كتابة" };
+
+// A mode picked by hand holds for the ayah being worked on, then rotation
+// resumes - it steers the current round without silently switching the
+// whole feature off.
+let learnModeManualOverride = false;
+
+function setLearnMode(mode, { manual = false } = {}) {
+  learnMode = mode;
+  if (manual) learnModeManualOverride = true;
+  document.querySelectorAll(".mode-btn").forEach((b) => b.classList.toggle("active", b.dataset.mode === mode));
+  renderLearnRoundInfo();
+}
+
+// The mode name sits next to the round number, so a mode that changed by
+// itself reads as the plan rather than as the app losing the setting - and
+// disappears once the person picks a mode themselves, since then it is not
+// the rotation's doing.
+function renderLearnRoundInfo() {
+  const el = document.getElementById("learn-round-info");
+  if (!el) return;
+  const item = state.ayahs[learnCurrentKey];
+  if (!item) return;
+  const round = item.roundStreak || 0;
+  const rotating = state.autoVaryModes && !learnModeManualOverride;
+  el.textContent = `الجولة ${round + 1} من ${ROUNDS_TO_MASTER}${rotating ? ` · ${MODE_ROUND_LABEL[learnMode]}` : ""}`;
+}
+
 document.querySelectorAll(".mode-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
-    learnMode = btn.dataset.mode;
-    document.querySelectorAll(".mode-btn").forEach((b) => b.classList.toggle("active", b === btn));
+    setLearnMode(btn.dataset.mode, { manual: true });
     renderLearnRound();
   });
 });
@@ -2334,8 +2370,13 @@ async function loadLearnAyah() {
   // explicit opt-out for someone who really does want to see it all.
   learnMaskLevel = 1;
 
+  const round = item.roundStreak || 0;
+  if (state.autoVaryModes && !learnModeManualOverride) {
+    setLearnMode(MODE_ROTATION[round % MODE_ROTATION.length]);
+  }
+
   document.getElementById("learn-ref").textContent = `${meta.name} - الآية ${pointer.ayah}`;
-  document.getElementById("learn-round-info").textContent = `الجولة ${(item.roundStreak || 0) + 1} من ${ROUNDS_TO_MASTER}`;
+  renderLearnRoundInfo();
   updateRoundDots(item.roundStreak || 0);
   renderSurahInfoCaption("learn-surah-info", meta);
 
@@ -2673,6 +2714,9 @@ function masterCurrentLearningAyah(item) {
   playMasterySound();
   showToast(`🌟 أتقنت آية ${item.surahName} : ${item.ayah}! +${POINTS.masterAyah} نقطة 🪙 ${randomEncouragement()}`, "success");
 
+  // A hand-picked mode was for that ayah; the next one starts the ramp again.
+  learnModeManualOverride = false;
+
   // advance the sequential learning pointer to the next ayah
   const nextAyah = item.ayah + 1;
   state.learningPointer = { surah: item.surah, ayah: nextAyah };
@@ -2918,13 +2962,54 @@ function getTodaysReviewQueue() {
   return left === Infinity ? due : due.slice(0, left);
 }
 
+// Ayahs from one surah arrive in one block when the queue is sorted by due
+// date, and a block is the easy case: the previous ayah has just primed the
+// next, so recall gets credit it hasn't earned, and the session is
+// monotonous besides. Interleaving surahs fixes both.
+//
+// It interleaves in runs of three rather than one at a time, because what's
+// being memorized here is a sequence: ayah 5 following ayah 4 is part of
+// what has to be known, and alternating every single ayah would take that
+// practice away to buy discrimination the Quran doesn't need. With only one
+// surah due - the ordinary case early on - this returns the queue
+// untouched.
+const REVIEW_INTERLEAVE_RUN = 3;
+function interleaveBySurah(items) {
+  const bySurah = new Map();
+  items.forEach((i) => {
+    if (!bySurah.has(i.surah)) bySurah.set(i.surah, []);
+    bySurah.get(i.surah).push(i);
+  });
+  if (bySurah.size < 2) return items;
+
+  // Within a surah the run is put back into ayah order (the queue arrives
+  // sorted by due date), so that a run of three is three ayahs that
+  // actually follow one another - which is the point of keeping runs at
+  // all. Only which surah comes next varies.
+  const buckets = shuffleArray([...bySurah.values()].map((g) => [...g].sort((a, b) => a.ayah - b.ayah)));
+  const out = [];
+  while (out.length < items.length) {
+    let placed = false;
+    for (const b of buckets) {
+      for (let n = 0; n < REVIEW_INTERLEAVE_RUN && b.length; n++) {
+        out.push(b.shift());
+        placed = true;
+      }
+    }
+    if (!placed) break;
+  }
+  return out;
+}
+
 function startReviewSession(ignoreDailyCap = false) {
   isChallengeMode = false;
   isEphemeralReview = false;
   isSingleItemReview = false;
   document.getElementById("challenge-banner").classList.add("hidden");
   const due = getDueQueue();
-  reviewQueue = ignoreDailyCap ? due : getTodaysReviewQueue();
+  // Selection stays oldest-first (see getTodaysReviewQueue); only the order
+  // they are presented in is interleaved.
+  reviewQueue = interleaveBySurah(ignoreDailyCap ? due : getTodaysReviewQueue());
   reviewIndex = 0;
   const empty = document.getElementById("review-empty");
   const session = document.getElementById("review-session");
@@ -3317,9 +3402,11 @@ function initSettingsPanel() {
   const overlay = document.getElementById("settings-overlay");
   const fontSizeSelect = document.getElementById("font-size-select");
   const reviewCapSelect = document.getElementById("review-cap-select");
+  const autoVaryInput = document.getElementById("auto-vary-modes");
 
   fontSizeSelect.value = state.fontSize;
   reviewCapSelect.value = String(state.reviewDailyCap);
+  autoVaryInput.checked = state.autoVaryModes !== false;
   renderReciterGrid();
   renderThemeGrid();
   renderFontGrid();
@@ -3330,6 +3417,13 @@ function initSettingsPanel() {
   document.getElementById("btn-settings-close").addEventListener("click", () => overlay.classList.add("modal-closed"));
   overlay.addEventListener("click", (e) => {
     if (e.target === overlay) overlay.classList.add("modal-closed");
+  });
+
+  autoVaryInput.addEventListener("change", () => {
+    state.autoVaryModes = autoVaryInput.checked;
+    learnModeManualOverride = false;
+    saveState();
+    if (document.getElementById("tab-learn").classList.contains("active")) loadLearnAyah();
   });
 
   reviewCapSelect.addEventListener("change", () => {

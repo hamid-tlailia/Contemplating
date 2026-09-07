@@ -770,6 +770,23 @@ main#app {
   color: var(--muted);
   margin-bottom: 14px;
 }
+/* A settings row whose control is a checkbox rather than a select: label on
+   one side, switch on the other. */
+.settings-toggle {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  cursor: pointer;
+}
+.settings-toggle > span { flex: 1; }
+.settings-toggle small { display: block; margin-top: 4px; font-size: 0.75rem; line-height: 1.6; }
+.settings-toggle input[type="checkbox"] {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  accent-color: var(--primary);
+}
 .settings-field select {
   font-family: inherit;
   padding: 9px 12px;
