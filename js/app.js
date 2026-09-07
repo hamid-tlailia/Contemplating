@@ -769,7 +769,9 @@ function renderMushafReaderPage() {
       if (a.numberInSurah === 1 && mushafReaderSurahNumber !== 1) {
         const { bismillah, rest } = splitBismillah(text);
         if (bismillah) {
-          bismillahHTML = `<p class="mushaf-bismillah">${bismillah}</p>`;
+          // A span (not a <p>, which browsers won't let nest inside the
+          // outer #mushaf-reader-text <p> without auto-correcting the DOM)
+          bismillahHTML = `<span class="mushaf-bismillah">${bismillah}</span>`;
           text = rest;
         }
       }
@@ -1398,17 +1400,22 @@ function startVoiceModalRecording() {
   let finalTranscript = "";
 
   recognition.onresult = (e) => {
-    // In continuous mode, e.results keeps growing across every firing of
-    // onresult instead of being replaced - looping from 0 each time was
-    // re-appending results already finalized by an earlier call, so every
-    // word before the latest one got duplicated into finalTranscript over
-    // and over. e.resultIndex marks where the NEW results start each time.
+    // e.resultIndex alone wasn't enough: some Android builds' continuous
+    // mode periodically resets/reindexes e.results in ways that make it
+    // report already-heard segments again under a resultIndex that still
+    // looks "new", which kept duplicating words even after switching to it.
+    // Rebuilding finalTranscript from scratch out of the full results list
+    // on every event - instead of ever appending to it - is idempotent no
+    // matter how many times onresult fires or how the engine renumbers
+    // things, since e.results always reflects the complete current state.
+    let combinedFinal = "";
     let interim = "";
-    for (let k = e.resultIndex; k < e.results.length; k++) {
+    for (let k = 0; k < e.results.length; k++) {
       const r = e.results[k];
-      if (r.isFinal) finalTranscript += r[0].transcript + " ";
+      if (r.isFinal) combinedFinal += r[0].transcript + " ";
       else interim += r[0].transcript;
     }
+    finalTranscript = combinedFinal;
     if (interim) statusText.textContent = interim;
   };
   recognition.onerror = (e) => {

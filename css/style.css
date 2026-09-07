@@ -944,12 +944,16 @@ main#app {
   flex: 1;
   overflow-y: auto;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
   padding: 24px;
   touch-action: pan-y;
 }
-.mushaf-reader-body .mushaf-text { font-size: 1.7rem; text-align: center; }
+/* Centering the overflowing text with align-items:center (rather than an
+   auto margin on the item itself) makes the part of it above the visual
+   center permanently unreachable by scrolling in most browsers - a well
+   known flexbox pitfall. margin:auto still centers short pages but doesn't
+   trap the top of a long one. */
+.mushaf-reader-body .mushaf-text { font-size: 1.7rem; text-align: center; margin: auto 0; }
 .mushaf-bismillah {
   display: block;
   font-size: 0.85em;
@@ -1230,10 +1234,9 @@ main#app {
 .wird-type-btn.active { background: var(--primary); color: #fff; }
 .wird-progress {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 24px;
-  flex-wrap: wrap;
+  gap: 16px;
   margin-top: 12px;
 }
 .wird-ring {
@@ -1261,9 +1264,7 @@ main#app {
 .wird-week {
   display: flex;
   gap: 6px;
-  flex: 1;
-  min-width: 0;
-  max-width: 100%;
+  width: 100%;
   overflow-x: auto;
   scroll-behavior: smooth;
   padding-bottom: 4px;
