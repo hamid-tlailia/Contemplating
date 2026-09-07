@@ -1638,19 +1638,18 @@ let voiceModalFinalSegments = []; // this session's final results, indexed by re
 let voiceModalLiveTranscript = ""; // the full merged transcript so far, kept live so stopping needs no extra step
 const VOICE_FATAL_ERRORS = new Set(["not-allowed", "audio-capture", "service-not-allowed"]);
 
-// Merges transcript segments into one deduped string: an exact repeat or a
-// segment that's already a suffix of what's accumulated is dropped, a
-// segment that's a longer/updated version of the accumulated text replaces
-// it, and anything else is genuinely new content and gets appended.
+// Merges this session's result segments into one deduped string. Folds each
+// segment in through mergeSessionText rather than appending it outright:
+// after a pause, some Android engines re-report an earlier phrase under a
+// NEW result index in the same session, which an exact-match-only merge
+// (what this used to do) reads as fresh content and appends - the exact
+// "duplicates only once I stop and carry on reading" case.
 function mergeVoiceSegments(segments) {
   let acc = "";
   for (const seg of segments) {
     const s = String(seg || "").replace(/\s+/g, " ").trim();
     if (!s) continue;
-    if (!acc) { acc = s; continue; }
-    if (s === acc || acc.endsWith(s)) continue;
-    if (s.startsWith(acc)) { acc = s; continue; }
-    acc += " " + s;
+    acc = mergeSessionText(acc, s);
   }
   return acc;
 }
@@ -1661,17 +1660,22 @@ function mergeVoiceSegments(segments) {
 // isn't byte-identical (a few substituted words from re-recognition
 // variance). Inputs here are at most a couple dozen words, so plain DP is
 // fine.
-function wordLCSLength(a, b) {
+// Returns lcs[k] = LCS length of a's first k words against all of b, for
+// every k - one DP pass gives every prefix at once, which is what locating
+// the end of a re-heard run needs (see mergeSessionText).
+function prefixLCSLengths(a, b) {
   const m = a.length, n = b.length;
+  const lcs = new Array(m + 1).fill(0);
   let prev = new Array(n + 1).fill(0);
   for (let i = 1; i <= m; i++) {
     const cur = new Array(n + 1).fill(0);
     for (let j = 1; j <= n; j++) {
       cur[j] = a[i - 1] === b[j - 1] ? prev[j - 1] + 1 : Math.max(prev[j], cur[j - 1]);
     }
+    lcs[i] = cur[n];
     prev = cur;
   }
-  return prev[n];
+  return lcs;
 }
 
 // Folds a just-finished (or still-live) recognition session's text into the
@@ -1684,13 +1688,16 @@ function wordLCSLength(a, b) {
 //      drop it and keep only whatever comes after it.
 //   2) otherwise, if the whole session still strongly resembles the tail
 //      of the base text (LCS ratio) even without a clean boundary match,
-//      it's the same re-hear with enough substituted words to break exact
-//      matching - drop the whole session rather than append a near-dupe.
+//      it's the same re-hear with a few substituted words breaking the
+//      exact match - find how much of its START is that re-hear and drop
+//      only that, so a re-hear that then carries on into new words (the
+//      usual shape after a pause) still keeps the new words.
 //   3) anything left over is genuinely new content and gets appended.
 function mergeSessionText(baseText, sessionText) {
   const baseWords = baseText.trim().split(/\s+/).filter(Boolean);
   const sessionWords = sessionText.trim().split(/\s+/).filter(Boolean);
   if (sessionWords.length === 0) return baseWords.join(" ");
+  if (baseWords.length === 0) return sessionWords.join(" ");
   const normBase = baseWords.map(normalizeArabic);
   const normSession = sessionWords.map(normalizeArabic);
 
@@ -1703,10 +1710,28 @@ function mergeSessionText(baseText, sessionText) {
   }
   let newWords = sessionWords.slice(overlap);
 
-  if (overlap === 0 && baseWords.length > 0) {
+  // No clean boundary: locate where a re-heard run ENDS instead. The last
+  // word that adds to the match is the end of the re-hear; everything past
+  // it stopped matching, so it's the new content. Cutting at the longest
+  // run that merely passes the ratio would swallow those new words too
+  // (a long re-hear can carry several unmatched words and still score
+  // above the threshold). Runs under 3 words aren't considered - a match
+  // that small says nothing, and the Quran does repeat short phrases.
+  // Known trade-off: an ayah that genuinely repeats a 3+ word phrase back
+  // to back ("كلا سوف تعلمون * ثم كلا سوف تعلمون") loses the second copy
+  // here. That's deliberate - one dropped repeat inside a single ayah's
+  // recitation is mild (the LCS-based scoring tolerates it), while the
+  // duplication this prevents made the whole transcript unusable.
+  if (overlap === 0) {
     const tailWindow = normBase.slice(-Math.max(normSession.length, 4));
-    const lcs = wordLCSLength(normSession, tailWindow);
-    if (lcs / normSession.length >= 0.6) newWords = [];
+    const lcs = prefixLCSLengths(normSession, tailWindow);
+    let lastMatchK = 0;
+    for (let k = 1; k < lcs.length; k++) {
+      if (lcs[k] > lcs[k - 1]) lastMatchK = k;
+    }
+    if (lastMatchK >= 3 && lcs[lastMatchK] / lastMatchK >= 0.6) {
+      newWords = sessionWords.slice(lastMatchK);
+    }
   }
 
   return [...baseWords, ...newWords].join(" ");
@@ -2027,8 +2052,14 @@ function renderLearnRound() {
 // (tap to reveal one), instead of the sequential mcq/type modes' full hide
 // of everything past the current word - a lighter drill for someone who's
 // already partway through memorizing this ayah rather than starting fresh.
+// Seeded per round, so each round of the same ayah hides a DIFFERENT
+// subset of words. Without this every round re-hid exactly the same words,
+// which both made the round look like it hadn't advanced at all and let
+// someone pass three rounds having only ever recalled the same gaps.
 function renderLearnPartialMask() {
-  renderMaskedWordsInto(document.getElementById("learn-text"), learnWords, learnMaskLevel);
+  const item = state.ayahs[learnCurrentKey];
+  const round = item ? (item.roundStreak || 0) : 0;
+  renderMaskedWordsInto(document.getElementById("learn-text"), learnWords, learnMaskLevel, round + 1);
 }
 
 function finishPartialRound(recalledCorrectly) {
@@ -2385,13 +2416,13 @@ function loadReviewItem() {
 // Picks which word indices to hide for a given mask level (0 = none, higher
 // = more), using a seeded shuffle so the same level always hides the same
 // words for a given ayah length instead of jumping around on every render.
-function computeHiddenIndices(n, maskLevel) {
+function computeHiddenIndices(n, maskLevel, seedOffset = 0) {
   const hiddenIndices = new Set();
   if (maskLevel > 0) {
     const fractionToHide = Math.min(maskLevel * 0.34, 1);
     const countToHide = Math.round(n * fractionToHide);
     const indices = [...Array(n).keys()];
-    let seed = maskLevel * 9973;
+    let seed = maskLevel * 9973 + seedOffset * 104729;
     for (let i = indices.length - 1; i > 0; i--) {
       seed = (seed * 16807) % 2147483647;
       const j = seed % (i + 1);
@@ -2402,8 +2433,8 @@ function computeHiddenIndices(n, maskLevel) {
   return hiddenIndices;
 }
 
-function renderMaskedWordsInto(container, words, maskLevel) {
-  const hiddenIndices = computeHiddenIndices(words.length, maskLevel);
+function renderMaskedWordsInto(container, words, maskLevel, seedOffset = 0) {
+  const hiddenIndices = computeHiddenIndices(words.length, maskLevel, seedOffset);
   container.innerHTML = words
     .map((w, idx) => {
       if (hiddenIndices.has(idx)) return `<span class="word masked" data-idx="${idx}">${w}</span>`;
