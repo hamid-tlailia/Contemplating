@@ -1067,6 +1067,17 @@ main#app {
 #learn-audio-controls-playpause svg, #review-audio-controls-playpause svg { width: 22px; height: 22px; }
 .audio-btn.active { background: var(--accent); color: #201e17; border-color: var(--accent); }
 
+/* Waiting for the recitation to buffer: the play button itself spins, so
+   the wait is shown where the tap happened instead of somewhere else on
+   the page. */
+.audio-btn.loading { cursor: progress; }
+.audio-btn.loading svg { animation: audioSpin .85s linear infinite; }
+@keyframes audioSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .audio-btn.loading svg { animation-duration: 2.4s; }
+}
+@media (hover: hover) { .audio-btn.loading:hover { transform: none; } }
+
 /* Short single-word chips instead of one-per-row blocks, so more options fit
    per row and the ayah text above doesn't scroll out of view as far to
    reach them (mirrors the wrapping control-button rows above/below). */

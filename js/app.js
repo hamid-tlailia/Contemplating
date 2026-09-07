@@ -77,6 +77,7 @@ const ICONS = {
   pause: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>',
   stop: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>',
   repeat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2 21 6l-4 4"/><path d="M3 12v-1a4 4 0 0 1 4-4h14"/><path d="M7 22 3 18l4-4"/><path d="M21 12v1a4 4 0 0 1-4 4H3"/></svg>',
+  spinner: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9" opacity=".28"/><path d="M21 12a9 9 0 0 0-9-9"/></svg>',
   bulb: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.2 1 2.05V17h6v-.25c0-.85.4-1.55 1-2.05A7 7 0 0 0 12 2Z"/></svg>',
   mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v4"/><path d="M8 23h8"/></svg>',
   plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>',
@@ -2304,14 +2305,44 @@ function setupAudioControls(prefix, audioId) {
   const playBtn = document.getElementById(`${prefix}-playpause`);
   const stopBtn = document.getElementById(`${prefix}-stop`);
   const repeatBtn = document.getElementById(`${prefix}-repeat`);
-  playBtn.innerHTML = ICONS.play;
   stopBtn.innerHTML = ICONS.stop;
   repeatBtn.innerHTML = ICONS.repeat;
   stopBtn.setAttribute("aria-label", "إيقاف");
   repeatBtn.setAttribute("aria-label", "تكرار الآية");
 
-  const setPlayIcon = () => { playBtn.innerHTML = ICONS.play; playBtn.setAttribute("aria-label", "تشغيل"); };
-  const setPauseIcon = () => { playBtn.innerHTML = ICONS.pause; playBtn.setAttribute("aria-label", "إيقاف مؤقت"); };
+  // The recitation is fetched from a CDN, so the first play of an ayah on a
+  // slow connection sits silent for a moment with the button still showing
+  // "play" - looking like the tap was missed. The button carries the wait
+  // itself: a spinner from the moment playback is requested until there is
+  // enough audio to actually hear (a cached ayah never buffers, so the
+  // spinner simply never appears).
+  let loading = false;
+  const render = () => {
+    if (loading) {
+      playBtn.innerHTML = ICONS.spinner;
+      playBtn.classList.add("loading");
+      playBtn.setAttribute("aria-label", "جارٍ تحميل الصوت");
+      playBtn.setAttribute("aria-busy", "true");
+      return;
+    }
+    playBtn.classList.remove("loading");
+    playBtn.removeAttribute("aria-busy");
+    if (audio.paused) {
+      playBtn.innerHTML = ICONS.play;
+      playBtn.setAttribute("aria-label", "تشغيل");
+    } else {
+      playBtn.innerHTML = ICONS.pause;
+      playBtn.setAttribute("aria-label", "إيقاف مؤقت");
+    }
+  };
+  // Guarded so re-rendering doesn't restart the spinner's spin on every
+  // buffering event.
+  const setLoading = (on) => {
+    if (loading === on) return;
+    loading = on;
+    render();
+  };
+  render();
 
   playBtn.addEventListener("click", () => {
     if (audio.paused) audio.play().catch(() => {});
@@ -2320,17 +2351,26 @@ function setupAudioControls(prefix, audioId) {
   stopBtn.addEventListener("click", () => {
     audio.pause();
     audio.currentTime = 0;
-    setPlayIcon();
+    setLoading(false);
   });
   repeatBtn.addEventListener("click", () => {
     audio.loop = !audio.loop;
     repeatBtn.classList.toggle("active", audio.loop);
   });
-  audio.addEventListener("playing", setPauseIcon);
-  audio.addEventListener("pause", setPlayIcon);
-  audio.addEventListener("ended", () => { if (!audio.loop) setPlayIcon(); });
+  // Driven by the element's own events rather than a separate flag, so a
+  // play started elsewhere (a reciter change resuming playback) shows the
+  // same waiting state. HAVE_FUTURE_DATA means playback can start now.
+  audio.addEventListener("play", () => { setLoading(audio.readyState < 3); render(); });
+  audio.addEventListener("waiting", () => setLoading(true));
+  audio.addEventListener("canplay", () => { if (!audio.paused) setLoading(false); });
+  audio.addEventListener("playing", () => { setLoading(false); render(); });
+  audio.addEventListener("pause", () => { setLoading(false); render(); });
+  audio.addEventListener("ended", () => { if (!audio.loop) render(); });
+  // A new src (next ayah, reciter change) drops any pending wait for the old one.
+  audio.addEventListener("emptied", () => { setLoading(false); render(); });
   audio.addEventListener("error", () => {
-    setPlayIcon();
+    setLoading(false);
+    render();
     showToast("تعذّر تشغيل هذا القارئ لهذه الآية. جرّب قارئًا آخر من الإعدادات ⚙️", "error");
   });
 }
