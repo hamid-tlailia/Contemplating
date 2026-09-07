@@ -21,12 +21,25 @@ const RECITERS = [
   { id: "ar.abdurrahmaansudais", name: "عبد الرحمن السديس", bitrate: 64 },
 ];
 
+// Themes double as a motivational unlock: default is always free, the rest
+// open up as the points system below awards points for real memorization
+// work (mastering an ayah, reviewing, the daily challenge) - nothing that
+// affects actual memorization is ever gated, only this cosmetic reward.
 const THEMES = [
-  { id: "default", name: "أخضر هادئ (افتراضي)" },
-  { id: "sepia", name: "صحراوي دافئ" },
-  { id: "night", name: "أزرق ليلي" },
-  { id: "forest", name: "أخضر داكن مريح" },
+  { id: "default", name: "أخضر هادئ", points: 0 },
+  { id: "sepia", name: "صحراوي دافئ", points: 50 },
+  { id: "night", name: "أزرق ليلي", points: 150 },
+  { id: "forest", name: "أخضر داكن مريح", points: 300 },
 ];
+
+const POINTS = {
+  masterAyah: 10,
+  reviewEasy: 3,
+  reviewGood: 3,
+  reviewHard: 1,
+  reviewAgain: 0,
+  dailyChallenge: 20,
+};
 
 function audioSrcFor(globalAyahNumber) {
   const reciter = RECITERS.find((r) => r.id === state.reciter) || RECITERS[0];
@@ -60,6 +73,9 @@ function loadState() {
       parsed.reciter = parsed.reciter || RECITERS[0].id;
       parsed.theme = parsed.theme || THEMES[0].id;
       parsed.fontSize = parsed.fontSize || "medium";
+      parsed.points = parsed.points || 0;
+      parsed.wirdTarget = parsed.wirdTarget || 5;
+      parsed.dailyCounts = parsed.dailyCounts || {};
       return parsed;
     }
   } catch (e) {
@@ -73,6 +89,9 @@ function loadState() {
     reciter: RECITERS[0].id,
     theme: THEMES[0].id,
     fontSize: "medium",
+    points: 0,
+    wirdTarget: 5,
+    dailyCounts: {}, // "YYYY-MM-DD" -> number of ayahs mastered/reviewed that day
   };
 }
 
@@ -91,8 +110,39 @@ function todayISO() {
 }
 
 function markActivityToday() {
-  state.activity[todayISO()] = true;
+  const today = todayISO();
+  state.activity[today] = true;
+  state.dailyCounts[today] = (state.dailyCounts[today] || 0) + 1;
   saveState();
+}
+
+// Points are a pure motivational layer - they never gate any actual
+// memorization feature, only the cosmetic themes above. Awarding them here
+// (rather than scattering literal numbers at each call site) keeps the
+// "what earns points" list in one place and lets this also drive the
+// "you just unlocked a theme" celebration when a threshold is crossed.
+function addPoints(amount) {
+  if (!amount) return;
+  const before = state.points;
+  state.points += amount;
+  saveState();
+  renderPointsDisplay();
+  let unlockedNew = false;
+  THEMES.forEach((t) => {
+    if (before < t.points && state.points >= t.points) {
+      unlockedNew = true;
+      fireConfetti(true);
+      showToast(`🔓 فتحت مظهرًا جديدًا: "${t.name}"! غيّره من الإعدادات ⚙️`, "success");
+    }
+  });
+  if (unlockedNew && document.getElementById("theme-grid")) renderThemeGrid();
+}
+
+function renderPointsDisplay() {
+  const el = document.getElementById("points-display");
+  if (el) el.textContent = state.points;
+  const dashEl = document.getElementById("stat-points");
+  if (dashEl) dashEl.textContent = state.points;
 }
 
 function computeStreak() {
@@ -254,6 +304,17 @@ function looksLatinOnly(s) {
   return /^[A-Za-z0-9\s.,'’()\-]+$/.test((s || "").trim()) && /[A-Za-z]/.test(s);
 }
 
+// Quick-facts strip (revelation place, ayah count, English name) - all of it
+// already sits in the surah list response we fetch anyway, so this is a
+// pure formatting helper rather than a new API call.
+function renderSurahInfoCaption(elementId, meta) {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  if (!meta) { el.textContent = ""; return; }
+  const place = meta.revelationType === "Meccan" ? "مكية" : meta.revelationType === "Medinan" ? "مدنية" : meta.revelationType;
+  el.textContent = `${place} · ${meta.numberOfAyahs} آية · ${meta.englishName} (${meta.englishNameTranslation})`;
+}
+
 async function fetchWordMeanings(surah, ayah) {
   const key = `${surah}:${ayah}`;
   if (wordMeaningsCache[key]) return wordMeaningsCache[key];
@@ -404,7 +465,7 @@ function switchTab(tab) {
   document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
   document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === `tab-${tab}`));
   if (tab === "dashboard") renderDashboard();
-  if (tab === "review" && !isChallengeMode) startReviewSession();
+  if (tab === "review" && !isChallengeMode && !isEphemeralReview) startReviewSession();
   if (tab === "learn") loadLearnAyah();
 }
 
@@ -639,6 +700,43 @@ async function loadBrowseSurah(surahNumber) {
   }
 }
 
+function buildAyahRow(surahNumber, surahName, ayahObj, showSurahBadge) {
+  const key = `${surahNumber}:${ayahObj.numberInSurah}`;
+  const already = !!state.ayahs[key];
+  const row = document.createElement("div");
+  row.className = "ayah-browse-item";
+  row.innerHTML = `
+    <div class="ayah-browse-head">
+      <span class="ayah-browse-head-left">
+        ${showSurahBadge ? `<span class="ayah-browse-surah-badge">${surahName}</span>` : ""}
+        <span class="ayah-num-chip">${ayahObj.numberInSurah}</span>
+      </span>
+      <button class="btn ayah-add-btn" ${already ? "disabled" : ""}>${already ? "أُضيفت ✓" : "+ أضف"}</button>
+    </div>
+    <p class="ayah-browse-text">${ayahObj.text}</p>
+  `;
+  row.querySelector("button").addEventListener("click", (e) => {
+    handleAddAyahClick(surahNumber, surahName, ayahObj, e.target);
+  });
+  return row;
+}
+
+// A single ayah reaches the review queue in one of two ways: it's the next
+// one in this surah's memorization sequence (added for real), or it's a
+// jump the person found through search/browsing - in which case it opens as
+// a one-off practice round and is never written to state.ayahs at all,
+// so it can never clutter the dashboard no matter how many times it's used.
+function handleAddAyahClick(surahNumber, surahName, ayahObj, buttonEl) {
+  if (isContiguousAddition(surahNumber, ayahObj.numberInSurah)) {
+    addAyahDirectlyToSrs(surahNumber, surahName, ayahObj);
+    buttonEl.textContent = "أُضيفت ✓";
+    buttonEl.disabled = true;
+    renderDashboard();
+  } else {
+    startEphemeralReview(surahNumber, surahName, ayahObj);
+  }
+}
+
 function renderBrowsePreview() {
   const listEl = document.getElementById("browse-ayahs");
   const hint = document.getElementById("browse-preview-hint");
@@ -648,13 +746,13 @@ function renderBrowsePreview() {
   const searchVal = document.getElementById("ayah-search").value.trim();
   let matches;
   if (searchVal) {
+    // A plain number jumps within the currently open surah instantly; any
+    // other text is handled by performGlobalAyahSearch instead (searching
+    // only the pre-selected surah would force the person to already know
+    // which surah an ayah is in before they could find it).
     const asNumber = Number(searchVal);
-    // The Uthmani text is fully diacritized, so a plain typed word almost
-    // never appears as a literal substring of it - normalize both sides
-    // (strips tashkeel, folds letter variants) before comparing.
-    const searchNorm = normalizeArabic(searchVal);
-    matches = ayahs.filter((a) => a.numberInSurah === asNumber || normalizeArabic(a.text).includes(searchNorm));
-    hint.textContent = `نتائج البحث عن "${searchVal}": ${matches.length} آية`;
+    matches = ayahs.filter((a) => a.numberInSurah === asNumber);
+    hint.textContent = `آية رقم ${searchVal} من سورة ${selectedBrowseSurahName}`;
   } else {
     const from = Number(document.getElementById("ayah-from").value) || 1;
     const to = Number(document.getElementById("ayah-to").value) || from;
@@ -663,31 +761,49 @@ function renderBrowsePreview() {
   }
 
   listEl.innerHTML = "";
-  matches.slice(0, 50).forEach((a) => {
-    const key = `${selectedBrowseSurah}:${a.numberInSurah}`;
-    const already = !!state.ayahs[key];
-    const row = document.createElement("div");
-    row.className = "ayah-browse-item";
-    row.innerHTML = `
-      <div class="ayah-browse-head">
-        <span class="ayah-num-chip">${a.numberInSurah}</span>
-        <button class="btn ayah-add-btn" ${already ? "disabled" : ""}>${already ? "أُضيفت ✓" : "+ أضف"}</button>
-      </div>
-      <p class="ayah-browse-text">${a.text}</p>
-    `;
-    row.querySelector("button").addEventListener("click", (e) => {
-      addAyahDirectlyToSrs(selectedBrowseSurah, selectedBrowseSurahName, a);
-      e.target.textContent = "أُضيفت ✓";
-      e.target.disabled = true;
-      renderDashboard();
-    });
-    listEl.appendChild(row);
-  });
+  matches.slice(0, 50).forEach((a) => listEl.appendChild(buildAyahRow(selectedBrowseSurah, selectedBrowseSurahName, a, false)));
 }
 
+// Searches the whole Quran (not just the pre-selected surah) via
+// alquran.cloud's own search endpoint, so a person can find an ayah by a
+// phrase they remember without first having to know - or guess - which
+// surah it's in.
+async function performGlobalAyahSearch(query) {
+  const hint = document.getElementById("browse-preview-hint");
+  const listEl = document.getElementById("browse-ayahs");
+  hint.textContent = `جاري البحث عن "${query}" في القرآن الكريم كاملاً...`;
+  listEl.innerHTML = "";
+  try {
+    const res = await fetchWithTimeout(`${API_BASE}/search/${encodeURIComponent(query)}/all/quran-uthmani`, 8000);
+    const json = await res.json();
+    const matches = (json.data && json.data.matches) || [];
+    hint.textContent = `نتائج البحث عن "${query}" في كل القرآن: ${matches.length} آية`;
+    listEl.innerHTML = "";
+    if (matches.length === 0) {
+      listEl.innerHTML = `<p class="muted">لم يُعثر على هذه العبارة في القرآن الكريم.</p>`;
+      return;
+    }
+    matches.slice(0, 30).forEach((m) => {
+      const ayahObj = { numberInSurah: m.numberInSurah, number: m.number, text: m.text };
+      listEl.appendChild(buildAyahRow(m.surah.number, m.surah.name, ayahObj, true));
+    });
+  } catch (e) {
+    hint.textContent = "تعذّر البحث في القرآن الكريم. تحقق من الاتصال بالإنترنت.";
+  }
+}
+
+let browseSearchDebounceTimer = null;
 document.getElementById("ayah-from").addEventListener("input", renderBrowsePreview);
 document.getElementById("ayah-to").addEventListener("input", renderBrowsePreview);
-document.getElementById("ayah-search").addEventListener("input", renderBrowsePreview);
+document.getElementById("ayah-search").addEventListener("input", () => {
+  clearTimeout(browseSearchDebounceTimer);
+  const val = document.getElementById("ayah-search").value.trim();
+  if (!val || /^\d+$/.test(val)) {
+    renderBrowsePreview();
+    return;
+  }
+  browseSearchDebounceTimer = setTimeout(() => performGlobalAyahSearch(val), 450);
+});
 
 // An ayah only counts toward real sequential progress in a surah if it
 // immediately follows the last non-temporary ayah already memorized there.
@@ -1145,10 +1261,11 @@ function masterCurrentLearningAyah(item) {
   item.learningStage = "srs";
   sm2Schedule(item, 4);
   markActivityToday();
+  addPoints(POINTS.masterAyah);
   saveState();
   fireConfetti(true);
   playMasterySound();
-  showToast(`🌟 أتقنت آية ${item.surahName} : ${item.ayah}! ${randomEncouragement()}`, "success");
+  showToast(`🌟 أتقنت آية ${item.surahName} : ${item.ayah}! +${POINTS.masterAyah} نقطة 🪙 ${randomEncouragement()}`, "success");
 
   // advance the sequential learning pointer to the next ayah
   const nextAyah = item.ayah + 1;
@@ -1220,6 +1337,30 @@ document.getElementById("btn-learn-voice").addEventListener("click", () => {
 // ---------- Daily Ta'ahud challenge ----------
 
 let isChallengeMode = false;
+let isEphemeralReview = false;
+
+// A jump-ahead ayah found via search/browsing opens as a single one-off
+// practice round instead of being written to state.ayahs - so it never
+// persists, never counts toward progress, and can be reviewed as many times
+// as the person likes without ever showing up in the dashboard.
+function startEphemeralReview(surahNumber, surahName, ayahObj) {
+  reviewQueue = [{
+    surah: surahNumber,
+    surahName,
+    ayah: ayahObj.numberInSurah,
+    globalNumber: ayahObj.number,
+    text: ayahObj.text,
+  }];
+  reviewIndex = 0;
+  isChallengeMode = false;
+  isEphemeralReview = true;
+  switchTab("review");
+  document.getElementById("challenge-banner").classList.add("hidden");
+  document.getElementById("review-empty").classList.add("hidden");
+  document.getElementById("review-session").classList.remove("hidden");
+  loadReviewItem();
+  showToast("🔎 هذه مراجعة مؤقتة لآية واحدة فقط ولن تُضاف إلى خطتك أو تُحسب ضمن تقدّمك.");
+}
 
 function startDailyChallenge() {
   const mastered = Object.values(state.ayahs).filter((i) => i.learningStage === "srs");
@@ -1252,6 +1393,7 @@ function getDueQueue() {
 
 function startReviewSession() {
   isChallengeMode = false;
+  isEphemeralReview = false;
   document.getElementById("challenge-banner").classList.add("hidden");
   reviewQueue = getDueQueue();
   reviewIndex = 0;
@@ -1344,9 +1486,14 @@ document.querySelectorAll(".grade-buttons button").forEach((btn) => {
     const quality = Number(btn.dataset.quality);
     const item = reviewQueue[reviewIndex];
     const key = `${item.surah}:${item.ayah}`;
-    sm2Schedule(state.ayahs[key], quality);
-    saveState();
-    markActivityToday();
+    if (!isEphemeralReview && state.ayahs[key]) {
+      sm2Schedule(state.ayahs[key], quality);
+      saveState();
+      markActivityToday();
+      if (quality === 5) addPoints(POINTS.reviewEasy);
+      else if (quality === 4) addPoints(POINTS.reviewGood);
+      else if (quality === 3) addPoints(POINTS.reviewHard);
+    }
     if (quality >= 4) challengeCorrectCount++;
 
     reviewIndex++;
@@ -1365,11 +1512,15 @@ function finishReviewOrChallenge() {
   if (isChallengeMode) {
     state.dailyChallenge = { date: todayISO(), score: challengeCorrectCount, total: reviewQueue.length };
     saveState();
+    addPoints(POINTS.dailyChallenge);
     fireConfetti(true);
     playMasterySound();
-    empty.innerHTML = `<p>⚡ انتهى تحدي تعاهد اليوم!</p><p class="muted">نتيجتك: ${challengeCorrectCount} من ${reviewQueue.length} — ${randomEncouragement()}</p>`;
+    empty.innerHTML = `<p>⚡ انتهى تحدي تعاهد اليوم!</p><p class="muted">نتيجتك: ${challengeCorrectCount} من ${reviewQueue.length} (+${POINTS.dailyChallenge} نقطة 🪙) — ${randomEncouragement()}</p>`;
     isChallengeMode = false;
     document.getElementById("challenge-banner").classList.add("hidden");
+  } else if (isEphemeralReview) {
+    isEphemeralReview = false;
+    empty.innerHTML = `<p>✅ انتهت المراجعة المؤقتة.</p><p class="muted">لم تُضَف هذه الآية إلى خطتك ولا إلى تقدّمك — يمكنك البحث عنها ومراجعتها في أي وقت من "تصفح وإضافة".</p>`;
   } else {
     fireConfetti(false);
     showToast(randomEncouragement(), "success");
@@ -1412,17 +1563,39 @@ function refreshCurrentAudioSrc() {
   }
 }
 
+function renderThemeGrid() {
+  const grid = document.getElementById("theme-grid");
+  grid.innerHTML = THEMES.map((t) => {
+    const unlocked = state.points >= t.points;
+    const active = state.theme === t.id;
+    const sub = t.points === 0 ? "مجاني" : unlocked ? "مفتوح ✓" : `🔒 ${t.points} نقطة`;
+    return `
+      <button class="theme-swatch theme-${t.id} ${active ? "active" : ""} ${unlocked ? "" : "locked"}" data-theme-id="${t.id}" ${unlocked ? "" : "disabled"}>
+        <span class="theme-swatch-name">${t.name}</span>
+        <span class="theme-swatch-sub">${sub}</span>
+      </button>
+    `;
+  }).join("");
+  grid.querySelectorAll(".theme-swatch").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.theme = btn.dataset.themeId;
+      saveState();
+      applyTheme();
+      renderThemeGrid();
+    });
+  });
+}
+
 function initSettingsPanel() {
   const overlay = document.getElementById("settings-overlay");
   const reciterSelect = document.getElementById("reciter-select");
-  const themeSelect = document.getElementById("theme-select");
   const fontSizeSelect = document.getElementById("font-size-select");
 
   reciterSelect.innerHTML = RECITERS.map((r) => `<option value="${r.id}">${r.name}</option>`).join("");
-  themeSelect.innerHTML = THEMES.map((t) => `<option value="${t.id}">${t.name}</option>`).join("");
   reciterSelect.value = state.reciter;
-  themeSelect.value = state.theme;
   fontSizeSelect.value = state.fontSize;
+  renderThemeGrid();
+  renderPointsDisplay();
 
   document.getElementById("btn-settings").addEventListener("click", () => overlay.classList.remove("hidden"));
   document.getElementById("btn-settings-close").addEventListener("click", () => overlay.classList.add("hidden"));
@@ -1435,11 +1608,6 @@ function initSettingsPanel() {
     saveState();
     refreshCurrentAudioSrc();
     showToast("تم تغيير القارئ ✓", "success");
-  });
-  themeSelect.addEventListener("change", () => {
-    state.theme = themeSelect.value;
-    saveState();
-    applyTheme();
   });
   fontSizeSelect.addEventListener("change", () => {
     state.fontSize = fontSizeSelect.value;

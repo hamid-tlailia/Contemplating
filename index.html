@@ -56,14 +56,18 @@
       <h2>⚙️ الإعدادات</h2>
       <button id="btn-settings-close" class="icon-only-btn" aria-label="إغلاق">✕</button>
     </div>
+    <div class="points-display-row">
+      <span>🪙 نقاطك</span>
+      <strong id="points-display">0</strong>
+    </div>
     <label class="settings-field">
       القارئ
       <select id="reciter-select"></select>
     </label>
-    <label class="settings-field">
-      المظهر
-      <select id="theme-select"></select>
-    </label>
+    <div class="settings-field">
+      المظهر (افتح المزيد بجمع النقاط)
+      <div id="theme-grid" class="theme-grid"></div>
+    </div>
     <label class="settings-field">
       حجم نص الآيات
       <select id="font-size-select">
@@ -108,6 +112,27 @@
         <div class="stat-value" id="stat-streak">0</div>
         <div class="stat-label">🔥 أيام متتالية</div>
       </div>
+      <div class="stat-card">
+        <div class="stat-value" id="stat-points">0</div>
+        <div class="stat-label">🪙 نقاط</div>
+      </div>
+    </div>
+
+    <div class="panel wird-card">
+      <div class="wird-header">
+        <h2>🌙 ورد اليوم</h2>
+        <label class="wird-target-control">
+          الهدف:
+          <input type="number" id="wird-target-input" min="1" max="100" value="5">
+          آية/يوم
+        </label>
+      </div>
+      <div class="wird-progress">
+        <div class="wird-ring" id="wird-ring">
+          <span id="wird-count-text">0/5</span>
+        </div>
+        <div class="wird-week" id="wird-week"></div>
+      </div>
     </div>
 
     <div class="panel" id="onboarding-panel">
@@ -135,6 +160,7 @@
         <div>
           <h2 id="learn-ref">سورة الفاتحة - الآية 1</h2>
           <p class="muted" id="learn-round-info">الجولة 1 من 3</p>
+          <p class="surah-info-caption" id="learn-surah-info"></p>
         </div>
         <div class="round-dots" id="round-dots">
           <span class="dot"></span><span class="dot"></span><span class="dot"></span>
@@ -151,10 +177,12 @@
       </div>
 
       <div id="learn-meanings" class="meanings-row hidden"></div>
+      <div id="learn-tafsir" class="tafsir-panel hidden"></div>
 
       <div class="learn-controls">
         <button id="btn-learn-audio" class="btn">🔊 استماع للآية</button>
         <button id="btn-learn-meanings" class="btn">💡 معاني الكلمات</button>
+        <button id="btn-learn-tafsir" class="btn">📖 التفسير</button>
         <button id="btn-learn-voice" class="btn hidden">🎤 اختبر بالنطق</button>
       </div>
 
@@ -202,6 +230,7 @@
 
     <div class="panel">
       <h2 id="browse-surah-title">معاينة الآيات</h2>
+      <p class="surah-info-caption" id="browse-surah-info"></p>
       <p class="muted" id="browse-preview-hint"></p>
       <div id="browse-ayahs" class="ayah-browse-list"></div>
     </div>
@@ -235,8 +264,11 @@
           <button id="btn-play-audio" class="btn">🔊 استماع</button>
           <button id="btn-mask-more" class="btn">🙈 إخفاء المزيد</button>
           <button id="btn-mask-reset" class="btn">👁️ إظهار الكل</button>
+          <button id="btn-review-tafsir" class="btn">📖 التفسير</button>
           <button id="btn-review-voice" class="btn hidden">🎤 اختبر بالنطق</button>
         </div>
+
+        <div id="review-tafsir" class="tafsir-panel hidden"></div>
 
         <div id="grade-controls" class="grade-controls hidden">
           <p class="muted">قيّم مدى تذكرك لهذه الآية:</p>
