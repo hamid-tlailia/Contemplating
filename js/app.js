@@ -3250,6 +3250,205 @@ function startDailyChallenge() {
 // back into it without a server, an account, or anything leaving the phone
 // unless its owner sends it.
 
+// The app's own address, and a QR of it. The matrix is baked in rather than
+// generated at runtime: the URL never changes, and a QR library would be a
+// dependency this app can't fetch when it is offline - which is most of the
+// time, by design. 29x29, version 3, error correction level M; verified to
+// decode back to APP_URL.
+const APP_URL = "https://tadabbur-quran-phi.vercel.app";
+const APP_QR = {
+  size: 29,
+  bits:
+    "1111111011010101111010111111110000010001011100001101000001101110100111000111111010111011011101010011001001100101110110111010110011111000001011101100000101010111010110010000011111111010101010101010111111100000000100000011100000000000100010111101111001011111110011101110101011011111000111111110000010010001111100011000001010011000010110001010101010111001111100000101010101000001011010101110101110110001111111010111110010000111001111011010100110001000011011011000001110011010111101110111010000010100000010110000111100111110110000101011010111001010100010100011100010001010100001100011111100100011110001011111110010000000011100111100010001000111111110101100010011101011101100000100100101011011000100011011101011000110010111111101010111010010100011010110000001101110100101011111111000011111000001000110000111011110101111111110110011001101101110010",
+};
+
+// Rounded rectangle - Path2D#roundRect isn't in every Android WebView yet.
+function cardRoundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+// Wraps on words, right-to-left, and returns the y it finished at so the
+// caller can lay out what comes next without guessing the height.
+function cardWrappedText(ctx, text, cx, y, maxWidth, lineHeight) {
+  const words = text.split(" ");
+  let line = "";
+  for (const word of words) {
+    const attempt = line ? `${line} ${word}` : word;
+    if (ctx.measureText(attempt).width > maxWidth && line) {
+      ctx.fillText(line, cx, y);
+      y += lineHeight;
+      line = word;
+    } else {
+      line = attempt;
+    }
+  }
+  if (line) {
+    ctx.fillText(line, cx, y);
+    y += lineHeight;
+  }
+  return y;
+}
+
+// The progress card as a picture: a page from the app's own world (its
+// colours, its frame, its ornament) rather than a paragraph of text, with
+// the app's address and a QR at the foot so whoever receives it can follow
+// it back. Colours come from the live theme, so the card looks like the app
+// the sender is actually using.
+function drawShareCard() {
+  const W = 1080;
+  const H = 1500;
+  const canvas = document.createElement("canvas");
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  const css = getComputedStyle(document.documentElement);
+  const v = (name, fallback) => (css.getPropertyValue(name) || "").trim() || fallback;
+  const bg = v("--bg", "#f7f5f0");
+  const surface = v("--surface", "#ffffff");
+  const text = v("--text", "#2b2620");
+  const muted = v("--muted", "#7a7364");
+  const primary = v("--primary", "#1f6f5c");
+  const accent = v("--accent", "#b98b2a");
+  const border = v("--border", "#e5e0d5");
+  const ayahFont = v("--ayah-font-family", "'Amiri', serif");
+
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // The app's own frame: double rule, and brackets on the two corners it
+  // marks (top-right, bottom-left).
+  const M = 52;
+  ctx.strokeStyle = border;
+  ctx.lineWidth = 4;
+  cardRoundRect(ctx, M, M, W - M * 2, H - M * 2, 34);
+  ctx.stroke();
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 2;
+  cardRoundRect(ctx, M + 14, M + 14, W - (M + 14) * 2, H - (M + 14) * 2, 24);
+  ctx.stroke();
+  ctx.lineWidth = 9;
+  const B = 74;
+  const k = M + 42;
+  ctx.beginPath();
+  ctx.moveTo(W - k - B, k); ctx.lineTo(W - k, k); ctx.lineTo(W - k, k + B);
+  ctx.moveTo(k + B, H - k); ctx.lineTo(k, H - k); ctx.lineTo(k, H - k - B);
+  ctx.stroke();
+
+  ctx.direction = "rtl";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "alphabetic";
+  const cx = W / 2;
+
+  ctx.fillStyle = primary;
+  ctx.font = `700 92px ${ayahFont}`;
+  ctx.fillText("✨ تدبر", cx, 250);
+
+  ctx.fillStyle = muted;
+  ctx.font = "500 40px 'Tajawal', sans-serif";
+  ctx.fillText("رحلتي مع حفظ القرآن", cx, 318);
+
+  ctx.fillStyle = accent;
+  ctx.font = "44px 'Amiri', serif";
+  ctx.fillText("۞", cx, 388);
+
+  // The numbers, big enough to be the first thing seen.
+  const items = Object.values(state.ayahs);
+  const mastered = items.filter((i) => i.learningStage === "srs" && !i.temporary).length;
+  const streak = computeStreak();
+  const meta = (surahListCache || []).find((x) => x.number === (state.learningPointer || {}).surah);
+  const rows = [];
+  if (mastered) rows.push([String(mastered), "آية محفوظة"]);
+  if (streak) rows.push([String(streak), streak === 1 ? "يوم متتالٍ" : streak === 2 ? "يومان متتاليان" : "أيام متتالية"]);
+  let y = 480;
+  rows.forEach(([num, label]) => {
+    ctx.fillStyle = primary;
+    ctx.font = "700 96px 'Tajawal', sans-serif";
+    ctx.fillText(num, cx, y);
+    ctx.fillStyle = text;
+    ctx.font = "500 38px 'Tajawal', sans-serif";
+    ctx.fillText(label, cx, y + 54);
+    y += 158;
+  });
+  if (meta) {
+    ctx.fillStyle = muted;
+    ctx.font = "500 32px 'Tajawal', sans-serif";
+    ctx.fillText("أحفظ الآن", cx, y);
+    ctx.fillStyle = text;
+    ctx.font = `50px ${ayahFont}`;
+    ctx.fillText(meta.name, cx, y + 62);
+    y += 116;
+  }
+
+  // The commitment, in a quiet card of its own.
+  if (state.wirdPlan) {
+    const boxW = W - 260;
+    const boxX = (W - boxW) / 2;
+    ctx.fillStyle = surface;
+    ctx.strokeStyle = border;
+    ctx.lineWidth = 2;
+    cardRoundRect(ctx, boxX, y, boxW, 146, 20);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = muted;
+    ctx.font = "500 30px 'Tajawal', sans-serif";
+    ctx.fillText("عهدي اليومي", cx, y + 52);
+    ctx.fillStyle = text;
+    ctx.font = "500 34px 'Tajawal', sans-serif";
+    cardWrappedText(ctx, wirdPlanSentence(state.wirdPlan), cx, y + 104, boxW - 70, 44);
+    y += 166;
+  }
+
+  ctx.fillStyle = primary;
+  ctx.font = `50px ${ayahFont}`;
+  // Sits below whatever the card ended up holding, but never higher than
+  // this - so a sparse card doesn't leave it floating in the middle.
+  ctx.fillText("ادعُ لي بالثبات 🤲", cx, Math.max(y + 58, 1080));
+
+  // The way back: the address, and a QR of it. QR on the left, the words to
+  // its right, the way the rest of the card reads.
+  const qrPx = 7;
+  const qrSide = APP_QR.size * qrPx;
+  const padQ = 18;
+  const boxSide = qrSide + padQ * 2;
+  // Clear of the bottom-left bracket (which reaches x = M + 42 + 74).
+  const qx = M + 130;
+  const qy = H - M - 56 - boxSide;
+  ctx.fillStyle = "#ffffff";
+  cardRoundRect(ctx, qx, qy, boxSide, boxSide, 14);
+  ctx.fill();
+  ctx.fillStyle = "#000000";
+  for (let r = 0; r < APP_QR.size; r++) {
+    for (let c = 0; c < APP_QR.size; c++) {
+      if (APP_QR.bits[r * APP_QR.size + c] === "1") {
+        ctx.fillRect(qx + padQ + c * qrPx, qy + padQ + r * qrPx, qrPx, qrPx);
+      }
+    }
+  }
+
+  ctx.textAlign = "right";
+  const tx = W - M - 56;
+  const twMax = tx - (qx + boxSide + 44);
+  ctx.fillStyle = primary;
+  ctx.font = "700 46px 'Tajawal', sans-serif";
+  ctx.fillText("تدبر", tx, qy + 56);
+  ctx.fillStyle = text;
+  ctx.font = "500 29px 'Tajawal', sans-serif";
+  cardWrappedText(ctx, "حفظ القرآن بالتكرار المتباعد — يعمل دون إنترنت، بلا حساب ولا إعلانات.", tx, qy + 108, twMax, 40);
+  ctx.fillStyle = muted;
+  ctx.font = "500 27px 'Tajawal', sans-serif";
+  ctx.direction = "ltr";
+  ctx.fillText(APP_URL.replace("https://", ""), tx, qy + boxSide - 6);
+  ctx.direction = "rtl";
+
+  return canvas;
+}
+
 function shareProgressText() {
   const items = Object.values(state.ayahs);
   const mastered = items.filter((i) => i.learningStage === "srs" && !i.temporary).length;
@@ -3259,25 +3458,59 @@ function shareProgressText() {
   if (streak) lines.push(`• ${streak} ${streak === 1 ? "يوم" : streak === 2 ? "يومان" : "أيام"} متتالية`);
   const pointer = state.learningPointer;
   const meta = (surahListCache || []).find((x) => x.number === (pointer && pointer.surah));
-  if (meta) lines.push(`• أحفظ الآن في ${meta.name}`);
+  if (meta) lines.push(`• أحفظ الآن: ${meta.name}`);
   if (state.wirdPlan) lines.push(`• عهدي: ${wirdPlanSentence(state.wirdPlan)}`);
   lines.push("");
   lines.push("ادعُ لي بالثبات 🤲");
   return lines.join("\n");
 }
 
-// Web Share where the phone has it (the ordinary way to send anything on
-// Android), the clipboard where it doesn't. Nothing is uploaded either way:
-// the text is built here and handed to whatever the person picks.
+// The picture first, since that is what actually gets looked at in a chat,
+// with the text alongside it for anything that shows text instead. Then the
+// ladder down: a file share, a plain text share, the clipboard. Nothing is
+// uploaded at any rung - the card is drawn on this device and handed to
+// whatever the person picks from their own share sheet.
 async function shareProgress() {
   const text = shareProgressText();
+  let file = null;
+  try {
+    // The card uses the app's own fonts; drawing before they load would
+    // silently fall back to the system serif.
+    if (document.fonts && document.fonts.ready) await document.fonts.ready;
+    const canvas = drawShareCard();
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+    if (blob) file = new File([blob], "tadabbur.png", { type: "image/png" });
+  } catch (e) {
+    file = null; // fall through to the text-only paths
+  }
+
+  if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], text });
+      return;
+    } catch (e) {
+      if (e && e.name === "AbortError") return; // they changed their mind
+    }
+  }
   if (navigator.share) {
     try {
       await navigator.share({ title: "تدبر", text });
       return;
     } catch (e) {
-      if (e && e.name === "AbortError") return; // they changed their mind
+      if (e && e.name === "AbortError") return;
     }
+  }
+  if (file) {
+    const url = URL.createObjectURL(file);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "tadabbur.png";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast("🖼️ حُفظت بطاقة تقدّمك — أرسلها لمن تشاء.", "success");
+    return;
   }
   try {
     await navigator.clipboard.writeText(text);
