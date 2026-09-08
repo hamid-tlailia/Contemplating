@@ -915,6 +915,7 @@ function renderDashboard() {
   }
   const weekEl = document.getElementById("stat-week");
   if (weekEl) weekEl.textContent = `${activeDaysThisWeek()} من 7 أيام`;
+  renderReviewBadge();
 
   const balanceEl = document.getElementById("balance-note");
   if (balanceEl) {
@@ -2994,10 +2995,13 @@ function advanceLearnWord() {
 
 function completeLearnRound() {
   const item = state.ayahs[learnCurrentKey];
+  // A slip repeats the round it happened in; it doesn't send you back to
+  // round one. Losing three rounds' work to one mistyped word punishes the
+  // person for the very thing the round exists to surface, and the fix for
+  // a shaky word is to do that round again, not to redo the two that
+  // already went well.
   if (!learnMistakeThisRound) {
     item.roundStreak = (item.roundStreak || 0) + 1;
-  } else {
-    item.roundStreak = 0;
   }
   saveState();
 
@@ -3207,6 +3211,8 @@ function startEphemeralReview(surahNumber, surahName, ayahObj) {
   switchTab("review");
   document.getElementById("challenge-banner").classList.add("hidden");
   document.getElementById("review-empty").classList.add("hidden");
+  hideReviewSurahList();
+  hideReviewSurahBanner();
   document.getElementById("review-session").classList.remove("hidden");
   loadReviewItem();
   showToast("🔎 هذه مراجعة مؤقتة لآية واحدة فقط ولن تُضاف إلى خطتك أو تُحسب ضمن تقدّمك.");
@@ -3223,6 +3229,8 @@ function startSingleItemReview(item) {
   reviewIndex = 0;
   document.getElementById("challenge-banner").classList.add("hidden");
   document.getElementById("review-empty").classList.add("hidden");
+  hideReviewSurahList();
+  hideReviewSurahBanner();
   document.getElementById("review-session").classList.remove("hidden");
   loadReviewItem();
 }
@@ -3238,6 +3246,8 @@ function startDailyChallenge() {
   switchTab("review");
   document.getElementById("challenge-banner").classList.remove("hidden");
   document.getElementById("review-empty").classList.add("hidden");
+  hideReviewSurahList();
+  hideReviewSurahBanner();
   document.getElementById("review-session").classList.remove("hidden");
   loadReviewItem();
 }
@@ -3528,8 +3538,14 @@ let tasmeeQueue = [];
 let tasmeeIndex = 0;
 let tasmeeTally = { good: 0, hesitant: 0, wrong: 0 };
 
+// The entry point only appears when there is actually something to recite.
+function renderTasmeeEntry() {
+  const entry = document.getElementById("tasmee-entry");
+  if (entry) entry.classList.toggle("hidden", getTodaysReviewQueue().length === 0);
+}
+
 function openTasmeeSession() {
-  tasmeeQueue = interleaveBySurah(getTodaysReviewQueue());
+  tasmeeQueue = getDueBySurah().flatMap((g) => g.items);
   if (!tasmeeQueue.length) {
     showToast("لا توجد آيات مستحقة للتسميع الآن.", "error");
     return;
@@ -3631,83 +3647,139 @@ function getTodaysReviewQueue() {
   return left === Infinity ? due : due.slice(0, left);
 }
 
-// Ayahs from one surah arrive in one block when the queue is sorted by due
-// date, and a block is the easy case: the previous ayah has just primed the
-// next, so recall gets credit it hasn't earned, and the session is
-// monotonous besides. Interleaving surahs fixes both.
-//
-// It interleaves in runs of three rather than one at a time, because what's
-// being memorized here is a sequence: ayah 5 following ayah 4 is part of
-// what has to be known, and alternating every single ayah would take that
-// practice away to buy discrimination the Quran doesn't need. With only one
-// surah due - the ordinary case early on - this returns the queue
-// untouched.
-const REVIEW_INTERLEAVE_RUN = 3;
-function interleaveBySurah(items) {
+// Due ayahs, grouped by surah and each group in ayah order. What is being
+// memorized is a sequence - ayah 5 following ayah 4 is part of what has to
+// be known - so a surah is reviewed as a surah, start to finish, and only
+// then does the next one begin. The daily cap still decides how many are
+// offered; this decides the order they come in.
+function getDueBySurah(ignoreDailyCap = false) {
+  const pool = ignoreDailyCap ? getDueQueue() : getTodaysReviewQueue();
   const bySurah = new Map();
-  items.forEach((i) => {
-    if (!bySurah.has(i.surah)) bySurah.set(i.surah, []);
-    bySurah.get(i.surah).push(i);
+  pool.forEach((i) => {
+    if (!bySurah.has(i.surah)) bySurah.set(i.surah, { surah: i.surah, name: i.surahName || `سورة ${i.surah}`, items: [] });
+    bySurah.get(i.surah).items.push(i);
   });
-  if (bySurah.size < 2) return items;
-
-  // Within a surah the run is put back into ayah order (the queue arrives
-  // sorted by due date), so that a run of three is three ayahs that
-  // actually follow one another - which is the point of keeping runs at
-  // all. Only which surah comes next varies.
-  const buckets = shuffleArray([...bySurah.values()].map((g) => [...g].sort((a, b) => a.ayah - b.ayah)));
-  const out = [];
-  while (out.length < items.length) {
-    let placed = false;
-    for (const b of buckets) {
-      for (let n = 0; n < REVIEW_INTERLEAVE_RUN && b.length; n++) {
-        out.push(b.shift());
-        placed = true;
-      }
-    }
-    if (!placed) break;
-  }
-  return out;
+  return [...bySurah.values()]
+    .map((g) => ({ ...g, items: g.items.sort((a, b) => a.ayah - b.ayah) }))
+    .sort((a, b) => a.surah - b.surah);
 }
 
+// The count the bottom nav carries, so a due queue is noticed without
+// opening the tab to look.
+function renderReviewBadge() {
+  const badge = document.getElementById("review-tab-badge");
+  if (!badge) return;
+  const n = getTodaysReviewQueue().length;
+  badge.textContent = n > 99 ? "99+" : String(n);
+  badge.classList.toggle("hidden", n === 0);
+}
+
+function renderReviewSurahList(ignoreDailyCap = false) {
+  const wrap = document.getElementById("review-surah-list");
+  const cards = document.getElementById("review-surah-cards");
+  if (!wrap || !cards) return 0;
+  const groups = getDueBySurah(ignoreDailyCap);
+  cards.innerHTML = "";
+  groups.forEach((g) => {
+    const row = document.createElement("div");
+    row.className = "review-surah-card";
+    row.innerHTML = `
+      <div class="review-surah-card-text">
+        <span class="review-surah-card-name">${g.name}</span>
+        <span class="review-surah-card-count">${g.items.length} آية مستحقة</span>
+      </div>
+      <button class="btn primary">مراجعة</button>`;
+    row.querySelector("button").addEventListener("click", () => startSurahReview(g.surah, ignoreDailyCap));
+    cards.appendChild(row);
+  });
+  wrap.classList.toggle("hidden", groups.length === 0);
+  return groups.length;
+}
+
+let reviewSurahNumber = null;
+let reviewIgnoreCap = false;
+
+function hideReviewSurahList() {
+  const wrap = document.getElementById("review-surah-list");
+  if (wrap) wrap.classList.add("hidden");
+}
+
+// The banner names the surah being worked through; the one-off flows
+// (a single ayah, an ephemeral practice, the challenge) aren't one.
+function hideReviewSurahBanner() {
+  const banner = document.getElementById("review-surah-banner");
+  if (banner) banner.classList.add("hidden");
+}
+
+// Opening the tab lands on the list of surahs, not straight into a queue -
+// so the person can see what is waiting and in which surah before starting.
 function startReviewSession(ignoreDailyCap = false) {
   isChallengeMode = false;
   isEphemeralReview = false;
   isSingleItemReview = false;
+  reviewIgnoreCap = ignoreDailyCap;
   document.getElementById("challenge-banner").classList.add("hidden");
-  const due = getDueQueue();
-  // Selection stays oldest-first (see getTodaysReviewQueue); only the order
-  // they are presented in is interleaved.
-  reviewQueue = interleaveBySurah(ignoreDailyCap ? due : getTodaysReviewQueue());
-  reviewIndex = 0;
   renderTasmeeEntry();
+  renderReviewBadge();
+
   const empty = document.getElementById("review-empty");
   const session = document.getElementById("review-session");
-  if (reviewQueue.length === 0) {
-    // Nothing left today can mean two very different things, and telling
-    // them apart is the whole point of the cap: an empty schedule, or
-    // today's share finished with a backlog waiting patiently behind it.
-    if (due.length > 0) {
-      empty.innerHTML = `
-        <p>✅ أنهيت حصّة اليوم من المراجعة.</p>
-        <p class="muted">بقيت ${due.length} آية مستحقة، وستأتيك موزّعة على الأيام القادمة بدل أن تتكدّس عليك دفعة واحدة.</p>
-        <button id="btn-review-beyond-cap" class="btn">تابع المراجعة رغم ذلك</button>`;
-      empty.querySelector("#btn-review-beyond-cap").addEventListener("click", () => startReviewSession(true));
-    } else {
-      empty.innerHTML = `<p>🎉 لا توجد آيات تحتاج مراجعة الآن.</p><p class="muted">أضف آيات جديدة من تبويب "ابدأ الحفظ" أو عد لاحقًا حين يحين موعد المراجعة.</p>`;
-    }
-    empty.classList.remove("hidden");
-    session.classList.add("hidden");
+  session.classList.add("hidden");
+  const groups = renderReviewSurahList(ignoreDailyCap);
+  if (groups > 0) {
+    empty.classList.add("hidden");
     return;
   }
-  empty.classList.add("hidden");
-  session.classList.remove("hidden");
+
+  // Nothing left today can mean two very different things, and telling them
+  // apart is the whole point of the cap: an empty schedule, or today's
+  // share finished with a backlog waiting patiently behind it.
+  const due = getDueQueue();
+  if (due.length > 0) {
+    empty.innerHTML = `
+      <p>✅ أنهيت حصّة اليوم من المراجعة.</p>
+      <p class="muted">بقيت ${due.length} آية مستحقة، وستأتيك موزّعة على الأيام القادمة بدل أن تتكدّس عليك دفعة واحدة.</p>
+      <button id="btn-review-beyond-cap" class="btn">تابع المراجعة رغم ذلك</button>`;
+    empty.querySelector("#btn-review-beyond-cap").addEventListener("click", () => startReviewSession(true));
+  } else {
+    empty.innerHTML = `<p>🎉 لا توجد آيات تحتاج مراجعة الآن.</p><p class="muted">أضف آيات جديدة من تبويب "ابدأ الحفظ" أو عد لاحقًا حين يحين موعد المراجعة.</p>`;
+  }
+  empty.classList.remove("hidden");
+}
+
+function startSurahReview(surahNumber, ignoreDailyCap = reviewIgnoreCap) {
+  const group = getDueBySurah(ignoreDailyCap).find((g) => g.surah === surahNumber);
+  if (!group) {
+    startReviewSession(ignoreDailyCap);
+    return;
+  }
+  isChallengeMode = false;
+  isEphemeralReview = false;
+  isSingleItemReview = false;
+  reviewIgnoreCap = ignoreDailyCap;
+  reviewSurahNumber = surahNumber;
+  reviewQueue = group.items;
+  reviewIndex = 0;
+  hideReviewSurahList();
+  document.getElementById("review-empty").classList.add("hidden");
+  document.getElementById("review-session").classList.remove("hidden");
+  const banner = document.getElementById("review-surah-banner");
+  if (banner) {
+    banner.textContent = `📖 ${group.name} — ${group.items.length} آية`;
+    banner.classList.remove("hidden");
+  }
   loadReviewItem();
 }
 
-function renderTasmeeEntry() {
-  const entry = document.getElementById("tasmee-entry");
-  if (entry) entry.classList.toggle("hidden", getTodaysReviewQueue().length === 0);
+// After a surah is finished, the next one starts on its own - the person
+// asked for a pass over everything due, not for a decision after each surah.
+function continueToNextSurah() {
+  const groups = getDueBySurah(reviewIgnoreCap);
+  const next = groups.find((g) => g.surah !== reviewSurahNumber) || groups[0];
+  if (!next) return false;
+  showToast(`📖 ننتقل إلى ${next.name}`, "success", `${next.items.length} آية مستحقة`);
+  startSurahReview(next.surah, reviewIgnoreCap);
+  return true;
 }
 
 function loadReviewItem() {
@@ -3954,6 +4026,9 @@ function finishReviewOrChallenge() {
     switchTab("dashboard");
     return;
   } else {
+    renderReviewBadge();
+    // One surah done: carry straight on to the next one that has ayahs due.
+    if (continueToNextSurah()) return;
     fireConfetti(false);
     showToast(randomEncouragement(), "success");
     const stillDue = getDueQueue().length;
@@ -3964,6 +4039,7 @@ function finishReviewOrChallenge() {
       : `<p>👏 أحسنت! أنهيت جلسة المراجعة لهذا اليوم.</p>`;
     const more = empty.querySelector("#btn-review-beyond-cap");
     if (more) more.addEventListener("click", () => startReviewSession(true));
+    hideReviewSurahList();
   }
   empty.classList.remove("hidden");
   session.classList.add("hidden");

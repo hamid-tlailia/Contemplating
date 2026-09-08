@@ -40,7 +40,7 @@
       <span class="tab-label">تصفح وإضافة</span>
     </button>
     <button class="tab-btn" data-tab="review">
-      <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2 21 6l-4 4"/><path d="M3 12v-1a4 4 0 0 1 4-4h14"/><path d="M7 22 3 18l4-4"/><path d="M21 12v1a4 4 0 0 1-4 4H3"/></svg></span>
+      <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2 21 6l-4 4"/><path d="M3 12v-1a4 4 0 0 1 4-4h14"/><path d="M7 22 3 18l4-4"/><path d="M21 12v1a4 4 0 0 1-4 4H3"/></svg><span class="tab-badge hidden" id="review-tab-badge">0</span></span>
       <span class="tab-label">المراجعة</span>
     </button>
   </nav>
@@ -479,12 +479,20 @@
         <button class="btn" id="btn-open-tasmee">📿 سمّع لشخص أمامك</button>
       </div>
 
+      <div id="review-surah-list" class="review-surah-list hidden">
+        <h2>السور المستحقة اليوم</h2>
+        <p class="muted">تُراجَع سورةً بعد سورة، وآياتُ كل سورة بترتيبها — فما يتلو بعضه بعضًا يُراجَع معًا.</p>
+        <div id="review-surah-cards"></div>
+      </div>
+
       <div id="review-empty" class="empty-state">
         <p>🎉 لا توجد آيات تحتاج مراجعة الآن.</p>
         <p class="muted">أضف آيات جديدة من تبويب "ابدأ الحفظ" أو عد لاحقًا حين يحين موعد المراجعة.</p>
       </div>
 
       <div id="review-session" class="review-session hidden">
+        <div class="review-surah-banner" id="review-surah-banner"></div>
+
         <div class="review-progress">
           <span id="review-position">1 / 1</span>
           <div class="progress-bar"><div id="review-progress-fill" class="progress-fill"></div></div>
