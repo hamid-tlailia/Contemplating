@@ -2721,17 +2721,22 @@ function fitAyahPanel(scrollId, tabId) {
 function fitLearnAyahHeight() { fitAyahPanel("learn-ayah-scroll", "tab-learn"); }
 function fitReviewAyahHeight() { fitAyahPanel("review-ayah-scroll", "tab-review"); }
 
+// Scrolls one word into the visible part of a capped ayah panel, moving
+// only the panel (scrollIntoView would drag every ancestor, the page
+// included). 34px at the bottom is the fade zone - stopping short of it
+// keeps the word fully legible rather than half-faded.
+function scrollWordIntoPanel(box, word) {
+  if (!box || !word) return;
+  const cr = box.getBoundingClientRect();
+  const wr = word.getBoundingClientRect();
+  if (wr.top < cr.top + 8) box.scrollTop += wr.top - cr.top - 8;
+  else if (wr.bottom > cr.bottom - 34) box.scrollTop += wr.bottom - cr.bottom + 34;
+  updateAyahScrollState(box);
+}
+
 function keepLearnBlankInView() {
   const box = document.getElementById("learn-ayah-scroll");
-  const blank = document.getElementById("learn-blank");
-  if (box && blank) {
-    const cr = box.getBoundingClientRect();
-    const br = blank.getBoundingClientRect();
-    // 34px at the bottom is the fade zone - stopping short of it keeps the
-    // active word fully legible rather than half-faded.
-    if (br.top < cr.top + 8) box.scrollTop += br.top - cr.top - 8;
-    else if (br.bottom > cr.bottom - 34) box.scrollTop += br.bottom - cr.bottom + 34;
-  }
+  scrollWordIntoPanel(box, document.getElementById("learn-blank"));
   updateAyahScrollState(box);
 }
 
@@ -2840,31 +2845,50 @@ function renderLearnRound() {
 // subset of words. Without this every round re-hid exactly the same words,
 // which both made the round look like it hadn't advanced at all and let
 // someone pass three rounds having only ever recalled the same gaps.
+// Grading is offered only once every hidden word has actually been
+// uncovered. Rating a recall you never checked is guesswork, and it is
+// guesswork the SM-2 schedule then acts on - so the check happens before
+// the rating, not instead of it. Uncovering also walks the panel down to
+// whatever is still hidden, so a long ayah doesn't leave words waiting
+// below the fold with nothing to say they are there.
+function makeRevealGate({ scrollId, actionsId, hintId, fit }) {
+  return (stillHidden, revealed) => {
+    const done = stillHidden === 0;
+    const actions = document.getElementById(actionsId);
+    const hint = document.getElementById(hintId);
+    if (!actions || !hint) return;
+    actions.classList.toggle("hidden", !done);
+    hint.classList.toggle("hidden", done);
+    hint.textContent = stillHidden === 1
+      ? "بقيت كلمة واحدة مخفية - اضغط عليها لكشفها."
+      : `استرجعها في نفسك، ثم اضغط على كل كلمة مخفية لكشفها (بقي ${stillHidden}).`;
+    fit();
+    // Only chase the next one after an actual tap - not on the first render,
+    // which would jump straight past the opening of the ayah.
+    const box = document.getElementById(scrollId);
+    if (revealed && box) {
+      const next = box.querySelector(".word.masked");
+      if (next) scrollWordIntoPanel(box, next);
+      else scrollWordIntoPanel(box, revealed);
+    }
+    scheduleAnswerDockUpdate();
+  };
+}
+
 function renderLearnPartialMask() {
   const item = state.ayahs[learnCurrentKey];
   const round = item ? (item.roundStreak || 0) : 0;
-  // Grading is offered only once every hidden word has actually been
-  // uncovered. Rating a recall you never checked is guesswork, and it is
-  // guesswork the SM-2 schedule then acts on - so the check has to happen
-  // before the rating, not instead of it.
   renderMaskedWordsInto(
     document.getElementById("learn-text"),
     learnWords,
     learnMaskLevel,
     round + 1,
-    (stillHidden) => {
-      const done = stillHidden === 0;
-      const actions = document.getElementById("learn-partial-actions");
-      const hint = document.getElementById("learn-partial-hint");
-      if (!actions || !hint) return;
-      actions.classList.toggle("hidden", !done);
-      hint.classList.toggle("hidden", done);
-      hint.textContent = stillHidden === 1
-        ? "بقيت كلمة واحدة مخفية - اضغط عليها لكشفها."
-        : `استرجعها في نفسك، ثم اضغط على كل كلمة مخفية لكشفها (بقي ${stillHidden}).`;
-      fitLearnAyahHeight();
-      scheduleAnswerDockUpdate();
-    }
+    makeRevealGate({
+      scrollId: "learn-ayah-scroll",
+      actionsId: "learn-partial-actions",
+      hintId: "learn-partial-hint",
+      fit: fitLearnAyahHeight,
+    })
   );
   fitLearnAyahHeight();
   scheduleAnswerDockUpdate();
@@ -3330,14 +3354,18 @@ function loadReviewItem() {
   document.getElementById("review-ref").textContent = `${item.surahName || `سورة ${item.surah}`} - الآية ${item.ayah}`;
 
   currentWords = quranWords(item.text);
-  maskLevel = 0;
+  // Opens masked: showing the whole ayah and then asking "how well did you
+  // remember it?" was asking about a recall that never happened.
+  maskLevel = 1;
+  // A suggestion belongs to the recitation it was measured from, so it must
+  // not survive into the next ayah - which is uncovered by hand and has no
+  // measurement behind it.
+  clearGradeSuggestion();
   renderMaskedText();
 
   const audio = document.getElementById("review-audio");
   audio.src = audioSrcFor(item.globalNumber);
 
-  document.getElementById("grade-controls").classList.add("hidden");
-  document.getElementById("reveal-controls").classList.remove("hidden");
   fitReviewAyahHeight();
   scheduleAnswerDockUpdate();
   closeInfoModal();
@@ -3374,21 +3402,31 @@ function renderMaskedWordsInto(container, words, maskLevel, seedOffset = 0, onRe
   container.querySelectorAll(".word.masked").forEach((el) => {
     el.addEventListener("click", () => {
       el.classList.remove("masked");
-      if (onReveal) onReveal(container.querySelectorAll(".word.masked").length);
+      if (onReveal) onReveal(container.querySelectorAll(".word.masked").length, el);
     });
   });
-  if (onReveal) onReveal(hiddenIndices.size);
+  if (onReveal) onReveal(hiddenIndices.size, null);
 }
 
 function renderMaskedText() {
-  renderMaskedWordsInto(document.getElementById("review-text"), currentWords, maskLevel);
+  renderMaskedWordsInto(
+    document.getElementById("review-text"),
+    currentWords,
+    maskLevel,
+    0,
+    makeRevealGate({
+      scrollId: "review-ayah-scroll",
+      actionsId: "grade-controls",
+      hintId: "review-reveal-hint",
+      fit: fitReviewAyahHeight,
+    })
+  );
   fitReviewAyahHeight();
   scheduleAnswerDockUpdate();
 }
 
 setupAudioControls("review-audio-controls", "review-audio");
 document.getElementById("btn-mask-more").innerHTML = iconLabel("eyeOff", "إخفاء المزيد");
-document.getElementById("btn-mask-reset").innerHTML = iconLabel("eye", "إظهار الكل");
 document.getElementById("btn-review-tafsir").innerHTML = iconLabel("book", "التفسير");
 document.getElementById("btn-review-voice").innerHTML = iconLabel("mic", "اختبر بالنطق");
 document.getElementById("btn-learn-tafsir").innerHTML = iconLabel("book", "التفسير");
@@ -3441,11 +3479,6 @@ document.getElementById("btn-mask-more").addEventListener("click", () => {
   renderMaskedText();
 });
 
-document.getElementById("btn-mask-reset").addEventListener("click", () => {
-  maskLevel = 0;
-  renderMaskedText();
-});
-
 document.getElementById("btn-learn-mask-more").addEventListener("click", () => {
   learnMaskLevel = Math.min(learnMaskLevel + 1, 3);
   renderLearnPartialMask();
@@ -3473,22 +3506,28 @@ function suggestedQualityFor(accuracy) {
   return 0;
 }
 
+// The one path that opens grading without tapping every word: reciting the
+// ayah aloud IS the check, and a stricter one than uncovering it.
+function clearGradeSuggestion() {
+  document.querySelectorAll(".grade-buttons button").forEach((b) => b.classList.remove("suggested"));
+  const hint = document.getElementById("grade-suggestion");
+  if (hint) hint.classList.add("hidden");
+}
+
 function revealForGrading(accuracy) {
   maskLevel = 0;
   renderMaskedText();
   document.getElementById("grade-controls").classList.remove("hidden");
-  document.getElementById("reveal-controls").classList.add("hidden");
+  document.getElementById("review-reveal-hint").classList.add("hidden");
 
   const hint = document.getElementById("grade-suggestion");
-  document.querySelectorAll(".grade-buttons button").forEach((b) => b.classList.remove("suggested"));
+  clearGradeSuggestion();
   if (typeof accuracy === "number") {
     const quality = suggestedQualityFor(accuracy);
     const btn = document.querySelector(`.grade-buttons button[data-quality="${quality}"]`);
     if (btn) btn.classList.add("suggested");
     hint.textContent = `دقة تسميعك ${accuracy}% — المقترح: ${btn ? btn.textContent : ""} (والقرار لك)`;
     hint.classList.remove("hidden");
-  } else {
-    hint.classList.add("hidden");
   }
   // The grading row is taller than the single reveal button it replaces, so
   // the ayah has to give that height back - measured after the swap, not
@@ -3496,7 +3535,6 @@ function revealForGrading(accuracy) {
   fitReviewAyahHeight();
   scheduleAnswerDockUpdate();
 }
-document.getElementById("btn-reveal").addEventListener("click", () => revealForGrading());
 
 document.querySelectorAll(".grade-buttons button").forEach((btn) => {
   btn.addEventListener("click", () => {
