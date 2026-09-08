@@ -451,8 +451,9 @@ function normalizeArabic(s) {
 // on. Small set, cached: this runs inside the recitation diff's DP, which
 // calls it O(n*m) times per ayah.
 const arabicVariantCache = new Map();
-function arabicWordVariants(word) {
-  const cached = arabicVariantCache.get(word);
+function arabicWordVariants(word, spokenElision = false) {
+  const key = (spokenElision ? "s\u0000" : "w\u0000") + word;
+  const cached = arabicVariantCache.get(key);
   if (cached) return cached;
   const merged = mergeDetachedConjunctions(word);
   // Three places where the two orthographies can each be read two ways.
@@ -477,19 +478,27 @@ function arabicWordVariants(word) {
     // dropping it would fold أمر into مر.
     (w) => [w, w.replace(/(\S)[\u0623\u0625]/g, "$1").replace(/(\S)[\u0623\u0625]/g, "$1")],
   ];
+  // Heard, not written: واو الجماعة with its silent alef (تَكْتُمُوا۟) is
+  // joined to what follows it in recitation, its vowel is not a syllable of
+  // its own, and speech engines return تكتم. That is a fact about listening,
+  // so it is allowed only when comparing a recitation - typing تكتم for
+  // تَكْتُمُوا۟ is still a missing letter, and still wrong.
+  if (spokenElision) {
+    axes.push((w) => [w, w.replace(/\u0648[\u064B-\u065F\u0670]*\u0627(?=[\u064B-\u065F\u0670\u06D6-\u06ED]*$)/g, "")]);
+  }
   let forms = [merged];
   for (const axis of axes) forms = forms.flatMap(axis);
   const variants = new Set(forms.map(normalizeArabic));
   variants.delete("");
   const list = [...variants];
   if (arabicVariantCache.size > 8000) arabicVariantCache.clear();
-  arabicVariantCache.set(word, list);
+  arabicVariantCache.set(key, list);
   return list;
 }
 
-function arabicWordsMatch(a, b) {
-  const variantsA = arabicWordVariants(a);
-  const variantsB = arabicWordVariants(b);
+function arabicWordsMatch(a, b, { spokenElision = false } = {}) {
+  const variantsA = arabicWordVariants(a, spokenElision);
+  const variantsB = arabicWordVariants(b, spokenElision);
   return variantsA.some((va) => variantsB.includes(va));
 }
 
@@ -2129,6 +2138,7 @@ function voiceSupported() {
 // thinking about it. Neither is part of the ayah, so both would count as
 // words that don't belong - unless the ayah IS the basmala, as it is in
 // Al-Fatiha.
+const HEARD = { spokenElision: true };
 const RECITATION_PREAMBLES = [
   "اعوذ بالله من الشيطان الرجيم",
   "اعوذ بالله السميع العليم من الشيطان الرجيم",
@@ -2141,8 +2151,8 @@ function stripRecitationPreamble(transcript, correctWords) {
       const p = preamble.split(" ");
       if (words.length <= p.length) continue;
       // Never strip what the ayah itself opens with.
-      if (p.every((w, k) => correctWords[k] && arabicWordsMatch(correctWords[k], w))) continue;
-      if (p.every((w, k) => arabicWordsMatch(words[k], w))) {
+      if (p.every((w, k) => correctWords[k] && arabicWordsMatch(correctWords[k], w, HEARD))) continue;
+      if (p.every((w, k) => arabicWordsMatch(words[k], w, HEARD))) {
         words = words.slice(p.length);
         break;
       }
@@ -2161,7 +2171,9 @@ function diffRecitation(correctText, transcript) {
   const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
   for (let i = n - 1; i >= 0; i--) {
     for (let j = m - 1; j >= 0; j--) {
-      dp[i][j] = arabicWordsMatch(correctWords[i], saidWords[j]) ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+      dp[i][j] = arabicWordsMatch(correctWords[i], saidWords[j], HEARD)
+        ? dp[i + 1][j + 1] + 1
+        : Math.max(dp[i + 1][j], dp[i][j + 1]);
     }
   }
 
@@ -2169,7 +2181,7 @@ function diffRecitation(correctText, transcript) {
   let i = 0;
   let j = 0;
   while (i < n) {
-    if (j < m && arabicWordsMatch(correctWords[i], saidWords[j])) {
+    if (j < m && arabicWordsMatch(correctWords[i], saidWords[j], HEARD)) {
       result.push({ word: correctWords[i], ok: true });
       i++;
       j++;
