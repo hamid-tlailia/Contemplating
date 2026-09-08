@@ -3242,6 +3242,130 @@ function startDailyChallenge() {
   loadReviewItem();
 }
 
+// ---------- Sharing, and reciting to a person ----------
+//
+// Everything else in this app is one person alone with their phone, but
+// memorization has never been a solitary craft: a حلقة, a شيخ to recite to,
+// someone who notices when you stop coming. Both of these bring a person
+// back into it without a server, an account, or anything leaving the phone
+// unless its owner sends it.
+
+function shareProgressText() {
+  const items = Object.values(state.ayahs);
+  const mastered = items.filter((i) => i.learningStage === "srs" && !i.temporary).length;
+  const streak = computeStreak();
+  const lines = [`🌿 رحلتي مع حفظ القرآن`];
+  if (mastered) lines.push(`• ${mastered} آية محفوظة`);
+  if (streak) lines.push(`• ${streak} ${streak === 1 ? "يوم" : streak === 2 ? "يومان" : "أيام"} متتالية`);
+  const pointer = state.learningPointer;
+  const meta = (surahListCache || []).find((x) => x.number === (pointer && pointer.surah));
+  if (meta) lines.push(`• أحفظ الآن في ${meta.name}`);
+  if (state.wirdPlan) lines.push(`• عهدي: ${wirdPlanSentence(state.wirdPlan)}`);
+  lines.push("");
+  lines.push("ادعُ لي بالثبات 🤲");
+  return lines.join("\n");
+}
+
+// Web Share where the phone has it (the ordinary way to send anything on
+// Android), the clipboard where it doesn't. Nothing is uploaded either way:
+// the text is built here and handed to whatever the person picks.
+async function shareProgress() {
+  const text = shareProgressText();
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: "تدبر", text });
+      return;
+    } catch (e) {
+      if (e && e.name === "AbortError") return; // they changed their mind
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast("📋 نُسخ تقدّمك — الصقه لمن تشاء.", "success");
+  } catch (e) {
+    showToast("تعذّرت المشاركة على هذا الجهاز.", "error");
+  }
+}
+
+// The listener holds the phone and reads along; the reciter recites from
+// memory and never sees the screen. The grade therefore comes from a second
+// person instead of from self-rating - which is the weakest input the
+// schedule has, and the one thing a حلقة has always fixed.
+let tasmeeQueue = [];
+let tasmeeIndex = 0;
+let tasmeeTally = { good: 0, hesitant: 0, wrong: 0 };
+
+function openTasmeeSession() {
+  tasmeeQueue = interleaveBySurah(getTodaysReviewQueue());
+  if (!tasmeeQueue.length) {
+    showToast("لا توجد آيات مستحقة للتسميع الآن.", "error");
+    return;
+  }
+  tasmeeIndex = 0;
+  tasmeeTally = { good: 0, hesitant: 0, wrong: 0 };
+  document.getElementById("tasmee-overlay").classList.remove("modal-closed");
+  renderTasmeeItem();
+}
+
+function closeTasmeeSession() {
+  document.getElementById("tasmee-overlay").classList.add("modal-closed");
+  const done = tasmeeTally.good + tasmeeTally.hesitant + tasmeeTally.wrong;
+  if (done) {
+    showToast(
+      `📿 سمّعت ${done} آية`,
+      "success",
+      `تامّ ${tasmeeTally.good} · تردّد ${tasmeeTally.hesitant} · خطأ ${tasmeeTally.wrong}`
+    );
+  }
+  renderDashboard();
+  if (document.getElementById("tab-review").classList.contains("active")) startReviewSession();
+}
+
+function renderTasmeeItem() {
+  const item = tasmeeQueue[tasmeeIndex];
+  if (!item) {
+    closeTasmeeSession();
+    return;
+  }
+  document.getElementById("tasmee-position").textContent = `${tasmeeIndex + 1} / ${tasmeeQueue.length}`;
+  document.getElementById("tasmee-ref").textContent = `${item.surahName || `سورة ${item.surah}`} - الآية ${item.ayah}`;
+  // Shown in full and unmasked: it is the listener's copy to follow, not a
+  // test for them.
+  document.getElementById("tasmee-text").textContent = cleanAyahText(item.text);
+  const box = document.getElementById("tasmee-ayah-scroll");
+  if (box) box.scrollTop = 0;
+}
+
+function gradeTasmeeItem(quality) {
+  const item = tasmeeQueue[tasmeeIndex];
+  if (!item) return;
+  const key = `${item.surah}:${item.ayah}`;
+  if (state.ayahs[key]) {
+    sm2Schedule(state.ayahs[key], quality);
+    const today = todayISO();
+    state.reviewCounts[today] = (state.reviewCounts[today] || 0) + 1;
+    saveState();
+    markActivityToday();
+    if (quality === 5) addPoints(POINTS.reviewEasy);
+    else if (quality === 3) addPoints(POINTS.reviewHard);
+  }
+  if (quality === 5) tasmeeTally.good++;
+  else if (quality === 3) tasmeeTally.hesitant++;
+  else tasmeeTally.wrong++;
+
+  tasmeeIndex++;
+  if (tasmeeIndex >= tasmeeQueue.length) closeTasmeeSession();
+  else renderTasmeeItem();
+}
+
+document.getElementById("btn-share-progress").addEventListener("click", shareProgress);
+document.getElementById("btn-open-tasmee").addEventListener("click", openTasmeeSession);
+document.getElementById("btn-tasmee-close").addEventListener("click", closeTasmeeSession);
+["btn-tasmee-wrong", "btn-tasmee-hesitant", "btn-tasmee-good"].forEach((id) => {
+  const btn = document.getElementById(id);
+  btn.addEventListener("click", () => gradeTasmeeItem(Number(btn.dataset.quality)));
+});
+
 // ---------- Review session (spaced-repetition due queue) ----------
 
 let reviewQueue = [];
@@ -3323,6 +3447,7 @@ function startReviewSession(ignoreDailyCap = false) {
   // they are presented in is interleaved.
   reviewQueue = interleaveBySurah(ignoreDailyCap ? due : getTodaysReviewQueue());
   reviewIndex = 0;
+  renderTasmeeEntry();
   const empty = document.getElementById("review-empty");
   const session = document.getElementById("review-session");
   if (reviewQueue.length === 0) {
@@ -3345,6 +3470,11 @@ function startReviewSession(ignoreDailyCap = false) {
   empty.classList.add("hidden");
   session.classList.remove("hidden");
   loadReviewItem();
+}
+
+function renderTasmeeEntry() {
+  const entry = document.getElementById("tasmee-entry");
+  if (entry) entry.classList.toggle("hidden", getTodaysReviewQueue().length === 0);
 }
 
 function loadReviewItem() {

@@ -130,6 +130,31 @@
   </div>
 </div>
 
+<!-- TASMEE': the phone is handed to a listener, who grades what they hear -->
+<div id="tasmee-overlay" class="tasmee-overlay modal-closed">
+  <div class="tasmee-header">
+    <button id="btn-tasmee-close" class="icon-only-btn" aria-label="إنهاء التسميع">✕</button>
+    <span id="tasmee-position">1 / 1</span>
+  </div>
+  <div class="tasmee-body">
+    <p class="tasmee-listener-note">📿 أعطِ الجهاز لمن يسمع لك — النص أمامه، وأنت تسمّع عن ظهر قلب.</p>
+    <div class="ayah-ref" id="tasmee-ref"></div>
+    <div class="ayah-display tasmee-display">
+      <div class="ayah-scroll" id="tasmee-ayah-scroll">
+        <p id="tasmee-text" class="ayah-text"></p>
+      </div>
+    </div>
+  </div>
+  <div class="tasmee-actions">
+    <p class="muted">كيف سمّع؟</p>
+    <div class="tasmee-buttons">
+      <button class="btn grade-again" id="btn-tasmee-wrong" data-quality="0">أخطأ</button>
+      <button class="btn grade-hard" id="btn-tasmee-hesitant" data-quality="3">تردّد</button>
+      <button class="btn grade-good" id="btn-tasmee-good" data-quality="5">تامّ</button>
+    </div>
+  </div>
+</div>
+
 <main id="app">
 
   <!-- DASHBOARD -->
@@ -170,6 +195,10 @@
     </div>
 
     <p class="balance-note hidden" id="balance-note"></p>
+
+    <div class="share-row">
+      <button class="btn" id="btn-share-progress">🌿 شارك تقدّمي</button>
+    </div>
 
     <div class="panel overall-progress-card">
       <div class="overall-progress-header">
@@ -445,6 +474,10 @@
   <section id="tab-review" class="tab-panel">
     <div class="panel" id="review-panel">
       <div id="challenge-banner" class="challenge-banner hidden">⚡ أنت الآن في تحدي تعاهد اليوم المفاجئ!</div>
+
+      <div class="tasmee-entry hidden" id="tasmee-entry">
+        <button class="btn" id="btn-open-tasmee">📿 سمّع لشخص أمامك</button>
+      </div>
 
       <div id="review-empty" class="empty-state">
         <p>🎉 لا توجد آيات تحتاج مراجعة الآن.</p>
