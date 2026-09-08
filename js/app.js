@@ -63,6 +63,10 @@ const POINTS = {
   reviewHard: 1,
   reviewAgain: 0,
   dailyChallenge: 10,
+  // Paid for turning up and finishing the day's wird, whatever its size.
+  // Rewarding effort rather than output is the one shape of reward that
+  // doesn't erode the motivation it's meant to support.
+  wirdComplete: 4,
 };
 
 // Small inline icon set matching the bottom-nav's stroke style, used instead
@@ -163,6 +167,7 @@ function loadState() {
       parsed.wirdPlan = parsed.wirdPlan || null;
       parsed.autoVaryModes = parsed.autoVaryModes !== false;
       parsed.ageMode = parsed.ageMode || "adult";
+      parsed.wirdRewardedDate = parsed.wirdRewardedDate || null;
       return parsed;
     }
   } catch (e) {
@@ -193,6 +198,7 @@ function loadState() {
     wirdPlan: null, // {anchor, time:"HH:MM", place} - the when/where commitment
     autoVaryModes: true, // rotate the test mode across an ayah's three rounds
     ageMode: "adult", // which age profile's defaults are in force
+    wirdRewardedDate: null, // the day the wird-completion reward was last paid
   };
 }
 
@@ -235,6 +241,44 @@ function markActivityToday() {
   state.activity[today] = true;
   state.dailyCounts[today] = (state.dailyCounts[today] || 0) + 1;
   saveState();
+  checkWirdCompletionReward();
+}
+
+function intervalText(days) {
+  if (!days || days <= 1) return "غدًا";
+  if (days === 2) return "بعد يومين";
+  if (days <= 10) return `بعد ${days} أيام`;
+  return `بعد ${days} يومًا`;
+}
+
+// Where this ayah sits in its surah - the thing a person actually wants to
+// know after mastering one, and something a points total can never say.
+function surahMasteredProgress(surahNumber) {
+  const done = Object.values(state.ayahs).filter(
+    (i) => i.surah === surahNumber && i.learningStage === "srs" && !i.temporary
+  ).length;
+  const meta = (surahListCache || []).find((s) => s.number === surahNumber);
+  return meta ? `${done} من ${meta.numberOfAyahs} في السورة` : `${done} آية من السورة`;
+}
+
+// Paid once a day, for finishing the day's wird - not for how much was in
+// it. Two ayahs on a hard day earns exactly what ten earns on an easy one,
+// because what is being encouraged is coming back, not output.
+function checkWirdCompletionReward() {
+  const today = todayISO();
+  if (state.wirdRewardedDate === today) return;
+  const type = state.wirdTargetType || "ayahs";
+  const counts = type === "pages" ? state.dailyPageCounts : state.dailyCounts;
+  const target = state.wirdTarget || 5;
+  if ((counts[today] || 0) < target) return;
+  state.wirdRewardedDate = today;
+  saveState();
+  addPoints(POINTS.wirdComplete);
+  showToast(
+    state.wirdPlan ? "🤝 وفّيت بعهد اليوم" : "🌙 أتممت ورد اليوم",
+    "success",
+    `${activeDaysThisWeek()} من 7 أيام هذا الأسبوع · +${POINTS.wirdComplete}`
+  );
 }
 
 // Points are a pure motivational layer - they never gate any actual
@@ -679,11 +723,22 @@ async function fetchAyahTafsirFallback(surah, ayah) {
 
 // ---------- Toasts ----------
 
-function showToast(message, type) {
+// `note` is the secondary line: what was learned, when it comes back, and
+// the points last and smallest. The headline is the accomplishment - the
+// number is a footnote to it, not the message itself.
+function showToast(message, type, note) {
   const container = document.getElementById("toast-container");
   const el = document.createElement("div");
   el.className = "toast" + (type ? ` toast-${type}` : "");
-  el.textContent = message;
+  const main = document.createElement("div");
+  main.textContent = message;
+  el.appendChild(main);
+  if (note) {
+    const sub = document.createElement("div");
+    sub.className = "toast-note";
+    sub.textContent = note;
+    el.appendChild(sub);
+  }
   container.appendChild(el);
   requestAnimationFrame(() => el.classList.add("show"));
   setTimeout(() => {
@@ -910,6 +965,7 @@ function renderDashboard() {
   renderSurahProgress();
   renderWirdCard();
   renderWirdPlanCard();
+  renderMeaningOfTheDay();
 }
 
 // Two-letter abbreviations (matches Intl's own ar-locale "narrow" weekday
@@ -1077,6 +1133,43 @@ document.getElementById("btn-wird-plan-edit").addEventListener("click", openWird
 document.getElementById("btn-wird-plan-cancel").addEventListener("click", renderWirdPlanCard);
 document.getElementById("btn-wird-plan-ics").addEventListener("click", downloadWirdPlanICS);
 document.getElementById("btn-wird-plan-start").addEventListener("click", () => openTodaysWirdReading());
+
+// One word from the ayah being learned, with its meaning, on the dashboard.
+// The point is what the visible daily "reward" is: the app's own answer to
+// "what did I get out of today" should be something understood, not a
+// number of coins. Same word all day (seeded by the date) so it reads as a
+// thing to learn rather than a slot machine, and the card simply stays
+// hidden when the meanings can't be fetched.
+let meaningOfTheDayKey = null;
+async function renderMeaningOfTheDay() {
+  const card = document.getElementById("meaning-day-card");
+  if (!card) return;
+  const pointer = state.learningPointer;
+  if (!pointer) return;
+  const key = `${todayISO()}|${pointer.surah}:${pointer.ayah}`;
+  if (key === meaningOfTheDayKey) return; // already showing this one
+  meaningOfTheDayKey = key;
+
+  let meanings = [];
+  try {
+    meanings = await fetchWordMeanings(pointer.surah, pointer.ayah);
+  } catch (e) {
+    meanings = [];
+  }
+  const usable = (meanings || []).filter((m) => m.text && m.meaning);
+  if (!usable.length) {
+    card.classList.add("hidden");
+    return;
+  }
+  const seed = todayISO().split("-").reduce((n, part) => n + Number(part), pointer.ayah);
+  const pick = usable[seed % usable.length];
+  document.getElementById("meaning-day-word").textContent = pick.text;
+  document.getElementById("meaning-day-meaning").textContent = pick.meaning;
+  const meta = (surahListCache || []).find((x) => x.number === pointer.surah);
+  document.getElementById("meaning-day-ref").textContent =
+    `من ${meta ? meta.name : `سورة ${pointer.surah}`} - الآية ${pointer.ayah}`;
+  card.classList.remove("hidden");
+}
 
 function renderWirdCard() {
   const type = state.wirdTargetType || "ayahs";
@@ -1419,6 +1512,7 @@ async function finishMushafReading() {
   saveState();
   renderWirdCard();
   closeMushafReader();
+  checkWirdCompletionReward();
 
   const type = state.wirdTargetType || "ayahs";
   const counts = type === "pages" ? state.dailyPageCounts : state.dailyCounts;
@@ -1431,7 +1525,7 @@ async function finishMushafReading() {
     // A long-lived toast (see .toast timing) that layers above the modal
     // stack (toast-container's z-index), so it stays visible even though
     // the person was mid-modal when this fired, not just after closing it.
-    showToast(`🎉 تجاوزت هدف اليوم بـ ${surplus} ${type === "pages" ? "صفحة" : "آية"}! مكافأة: +${bonus} نقطة 🪙`, "success");
+    showToast(`🎉 تجاوزت هدف اليوم بـ ${surplus} ${type === "pages" ? "صفحة" : "آية"}`, "success", `+${bonus}`);
   } else {
     showToast("🌙 أُضيفت قراءتك ضمن ورد اليوم.", "success");
   }
@@ -2837,7 +2931,11 @@ function masterCurrentLearningAyah(item) {
   saveState();
   fireConfetti(true);
   playMasterySound();
-  showToast(`🌟 أتقنت آية ${item.surahName} : ${item.ayah}! +${POINTS.masterAyah} نقطة 🪙 ${randomEncouragement()}`, "success");
+  showToast(
+    `🌟 أتقنت ${item.surahName} : ${item.ayah} — ${randomEncouragement()}`,
+    "success",
+    `تعود إليك للمراجعة ${intervalText(item.interval)} · ${surahMasteredProgress(item.surah)} · +${POINTS.masterAyah}`
+  );
 
   // A hand-picked mode was for that ayah; the next one starts the ramp again.
   learnModeManualOverride = false;
@@ -3346,7 +3444,9 @@ function finishReviewOrChallenge() {
     addPoints(POINTS.dailyChallenge);
     fireConfetti(true);
     playMasterySound();
-    empty.innerHTML = `<p>⚡ انتهى تحدي تعاهد اليوم!</p><p class="muted">نتيجتك: ${challengeCorrectCount} من ${reviewQueue.length} (+${POINTS.dailyChallenge} نقطة 🪙) — ${randomEncouragement()}</p>`;
+    empty.innerHTML = `<p>⚡ تعاهدت ${challengeCorrectCount} من ${reviewQueue.length} آية اليوم</p>
+      <p class="muted">${randomEncouragement()}</p>
+      <p class="reward-note">+${POINTS.dailyChallenge}</p>`;
     isChallengeMode = false;
     document.getElementById("challenge-banner").classList.add("hidden");
   } else if (isEphemeralReview) {
