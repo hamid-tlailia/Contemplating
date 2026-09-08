@@ -169,6 +169,7 @@ function loadState() {
       parsed.ageMode = parsed.ageMode || "adult";
       parsed.wirdRewardedDate = parsed.wirdRewardedDate || null;
       parsed.masteredCounts = parsed.masteredCounts || {};
+      parsed.colorScheme = parsed.colorScheme || "system";
       return parsed;
     }
   } catch (e) {
@@ -184,6 +185,7 @@ function loadState() {
     font: FONTS[0].id,
     background: BACKGROUNDS[0].id,
     fontSize: "medium",
+    colorScheme: "system", // "system" | "light" | "dark" - only the default theme follows it
     points: 0,
     wirdTarget: 5,
     wirdTargetType: "ayahs", // "ayahs" | "pages" - which unit wirdTarget is measured in
@@ -4203,7 +4205,33 @@ function finishReviewOrChallenge() {
 const FONT_SIZES = { small: "1.4rem", medium: "1.8rem", large: "2.2rem", xlarge: "2.6rem" };
 
 function applyTheme() {
-  document.documentElement.dataset.theme = state.theme;
+  const root = document.documentElement;
+  root.dataset.theme = state.theme;
+  // The default theme tracks the phone's light/dark setting; "light"/"dark"
+  // pin it instead. The named themes are explicit choices, so they ignore it.
+  if (state.colorScheme && state.colorScheme !== "system") {
+    root.dataset.scheme = state.colorScheme;
+  } else {
+    delete root.dataset.scheme;
+  }
+  syncThemeColorMeta();
+}
+
+// The Android status bar is painted from <meta name="theme-color">, so it has
+// to follow the palette that actually ended up applied - otherwise it stays
+// green over a dark app.
+function syncThemeColorMeta() {
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (!meta) return;
+  const surface = getComputedStyle(document.documentElement).getPropertyValue("--surface").trim();
+  if (surface) meta.setAttribute("content", surface);
+}
+
+if (window.matchMedia) {
+  const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+  const onSchemeChange = () => { if (!state.colorScheme || state.colorScheme === "system") syncThemeColorMeta(); };
+  if (darkQuery.addEventListener) darkQuery.addEventListener("change", onSchemeChange);
+  else if (darkQuery.addListener) darkQuery.addListener(onSchemeChange);
 }
 
 function applyFontSize() {
@@ -4346,7 +4374,9 @@ function initSettingsPanel() {
   const fontSizeSelect = document.getElementById("font-size-select");
   const reviewCapSelect = document.getElementById("review-cap-select");
   const autoVaryInput = document.getElementById("auto-vary-modes");
+  const colorSchemeSelect = document.getElementById("color-scheme-select");
 
+  colorSchemeSelect.value = state.colorScheme || "system";
   fontSizeSelect.value = state.fontSize;
   reviewCapSelect.value = String(state.reviewDailyCap);
   autoVaryInput.checked = state.autoVaryModes !== false;
@@ -4380,6 +4410,12 @@ function initSettingsPanel() {
     state.fontSize = fontSizeSelect.value;
     saveState();
     applyFontSize();
+  });
+
+  colorSchemeSelect.addEventListener("change", () => {
+    state.colorScheme = colorSchemeSelect.value;
+    saveState();
+    applyTheme();
   });
 
   document.getElementById("btn-settings-floating").addEventListener("click", () => overlay.classList.remove("modal-closed"));

@@ -15,8 +15,12 @@
   --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
 }
 
+/* The default theme follows the phone's own light/dark setting, which is why
+   a fresh install can open dark. A reader who prefers otherwise pins it from
+   the settings, and that choice arrives as data-scheme on <html>. */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme]), :root[data-theme="default"] {
+  :root:not([data-theme]):not([data-scheme="light"]),
+  :root[data-theme="default"]:not([data-scheme="light"]) {
     --bg: #16150f;
     --surface: #201e17;
     --border: #35311f;
@@ -28,6 +32,20 @@
     --accent-light: #e8c78a;
     --shadow: 0 1px 3px rgba(0,0,0,0.4);
   }
+}
+
+:root:not([data-theme])[data-scheme="dark"],
+:root[data-theme="default"][data-scheme="dark"] {
+  --bg: #16150f;
+  --surface: #201e17;
+  --border: #35311f;
+  --text: #ece7d9;
+  --muted: #9a917c;
+  --primary: #3fae91;
+  --primary-dark: #2f8a72;
+  --accent: #d6ab5c;
+  --accent-light: #e8c78a;
+  --shadow: 0 1px 3px rgba(0,0,0,0.4);
 }
 
 /* Explicit calming themes - chosen deliberately, so they hold regardless of
