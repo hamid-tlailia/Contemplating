@@ -2255,6 +2255,7 @@ function handleAddAyahClick(surahNumber, surahName, ayahObj, buttonEl) {
     buttonEl.innerHTML = iconLabel("checkDone", "أُضيفت");
     buttonEl.disabled = true;
     renderDashboard();
+    updateAddRangeButton(); // the range may be fully in the plan now
   } else if (state.points >= JUMP_REVIEW_COST) {
     showConfirmModal(
       "قفزة عن تسلسل حفظك",
@@ -2301,14 +2302,39 @@ function renderBrowsePreview() {
     return;
   }
 
-  const from = Number(document.getElementById("ayah-from").value) || 1;
-  const to = Number(document.getElementById("ayah-to").value) || from;
-  const matches = ayahs.filter((a) => a.numberInSurah >= from && a.numberInSurah <= to);
+  const { ayahs: matches, from, to } = browseRangeAyahs();
   showBrowseResults("range");
-  document.getElementById("browse-range-summary").textContent = `عرض الآيات من ${from} إلى ${to} (${matches.length} آية)`;
+  document.getElementById("browse-range-summary").textContent = `عرض الآيات من ${from} إلى ${to} (${ayahCountLabel(matches.length)})`;
   const listEl = document.getElementById("browse-ayahs-range");
   listEl.innerHTML = "";
   matches.slice(0, 50).forEach((a) => listEl.appendChild(buildAyahRow(selectedBrowseSurah, selectedBrowseSurahName, a, false)));
+  updateAddRangeButton();
+}
+
+// The button says what pressing it would actually do - how many ayahs are
+// really left to add, and what the jumps among them cost - and steps aside
+// when the range is already in the plan, which is most of the time once a
+// surah has been added.
+function updateAddRangeButton() {
+  const btn = document.getElementById("btn-add-range");
+  if (!btn) return;
+  const { ayahs: list } = browseRangeAyahs();
+  if (!list.length) {
+    btn.disabled = true;
+    btn.textContent = "لا توجد آيات في هذا النطاق";
+    return;
+  }
+  const plan = planRangeAddition(selectedBrowseSurah, list);
+  const toAdd = plan.contiguous.length + plan.jumps.length;
+  if (!toAdd) {
+    btn.disabled = true;
+    btn.textContent = list.length === 1 ? "هذه الآية في خطتك بالفعل" : "كل آيات هذا النطاق في خطتك";
+    return;
+  }
+  btn.disabled = false;
+  btn.textContent = plan.cost
+    ? `إضافة ${ayahCountLabel(toAdd)} إلى الخطة — ${plan.cost} 🪙`
+    : `إضافة ${ayahCountLabel(toAdd)} إلى الخطة`;
 }
 
 // Searches the whole Quran (not just the pre-selected surah) via
@@ -2343,6 +2369,19 @@ async function performGlobalAyahSearch(query) {
 let browseSearchDebounceTimer = null;
 document.getElementById("ayah-from").addEventListener("input", renderBrowsePreview);
 document.getElementById("ayah-to").addEventListener("input", renderBrowsePreview);
+// Written back once the field is left rather than on every keystroke, so
+// typing "12" in a surah of 20 isn't cut to "1" halfway through - but a
+// number the surah doesn't have never survives being looked at.
+["ayah-from", "ayah-to"].forEach((id) => {
+  document.getElementById(id).addEventListener("change", () => {
+    const ayahs = surahAyahsCache[selectedBrowseSurah];
+    if (!ayahs) return;
+    const { from, to } = browseRangeBounds(ayahs.length);
+    document.getElementById("ayah-from").value = from;
+    document.getElementById("ayah-to").value = to;
+    renderBrowsePreview();
+  });
+});
 document.getElementById("ayah-search").addEventListener("input", () => {
   clearTimeout(browseSearchDebounceTimer);
   const val = document.getElementById("ayah-search").value.trim();
@@ -2364,7 +2403,60 @@ function isContiguousAddition(surahNumber, ayahNumber) {
   return ayahNumber === existingMax + 1;
 }
 
-function addAyahDirectlyToSrs(surahNumber, surahName, ayahObj) {
+// Arabic counts a pair, and a few, differently from a lot.
+function ayahCountLabel(n) {
+  if (n === 1) return "آية واحدة";
+  if (n === 2) return "آيتان";
+  if (n <= 10) return `${n} آيات`;
+  return `${n} آية`;
+}
+
+// The range inputs are what the person typed, which can be anything - the
+// surah's own length is the truth. Both ends are pulled back into it, and
+// "from" is never past "to".
+function browseRangeBounds(ayahCount) {
+  const clamp = (v, fallback) => {
+    const n = Math.floor(Number(v));
+    if (!n || n < 1) return fallback;
+    return Math.min(n, ayahCount);
+  };
+  const from = clamp(document.getElementById("ayah-from").value, 1);
+  const to = Math.max(from, clamp(document.getElementById("ayah-to").value, from));
+  return { from, to };
+}
+
+function browseRangeAyahs() {
+  const ayahs = surahAyahsCache[selectedBrowseSurah];
+  if (!ayahs) return { ayahs: [], from: 1, to: 1, count: 0 };
+  const { from, to } = browseRangeBounds(ayahs.length);
+  return { ayahs: ayahs.filter((a) => a.numberInSurah >= from && a.numberInSurah <= to), from, to, count: ayahs.length };
+}
+
+// What adding a range would do, worked out before doing it: which ayahs are
+// already in the plan, which continue the sequence, and which are a jump -
+// each judged against the sequence as it would stand after the ones before
+// it, exactly as adding them one by one would.
+function planRangeAddition(surahNumber, list) {
+  let reach = Object.values(state.ayahs)
+    .filter((i) => i.surah === surahNumber && i.learningStage === "srs" && !i.temporary)
+    .reduce((m, i) => Math.max(m, i.ayah), 0);
+  const already = [];
+  const contiguous = [];
+  const jumps = [];
+  list.forEach((a) => {
+    if (state.ayahs[`${surahNumber}:${a.numberInSurah}`]) {
+      already.push(a);
+    } else if (a.numberInSurah === reach + 1) {
+      contiguous.push(a);
+      reach = a.numberInSurah;
+    } else {
+      jumps.push(a);
+    }
+  });
+  return { already, contiguous, jumps, cost: jumps.length * JUMP_REVIEW_COST };
+}
+
+function addAyahDirectlyToSrs(surahNumber, surahName, ayahObj, { quiet = false } = {}) {
   const key = `${surahNumber}:${ayahObj.numberInSurah}`;
   if (state.ayahs[key]) return;
   const temporary = !isContiguousAddition(surahNumber, ayahObj.numberInSurah);
@@ -2385,30 +2477,71 @@ function addAyahDirectlyToSrs(surahNumber, surahName, ayahObj) {
     temporary,
   };
   saveState();
-  if (temporary) {
+  // Adding a range says it once, about the range, instead of once per ayah.
+  if (temporary && !quiet) {
     showToast("أُضيفت كمراجعة مؤقتة فقط (فيها قفزة عن تسلسل حفظك في هذه السورة) — لن تُحتسب ضمن نسبة التقدم.");
   }
 }
 
 document.getElementById("btn-add-range").addEventListener("click", async () => {
   const surahNumber = selectedBrowseSurah;
-  const from = Number(document.getElementById("ayah-from").value);
-  const to = Number(document.getElementById("ayah-to").value);
-  if (!surahNumber || !from || !to || from > to) return;
+  if (!surahNumber) return;
   try {
-    const ayahs = await fetchSurahAyahs(surahNumber);
     const surahs = await fetchSurahList();
     const meta = surahs.find((s) => s.number === surahNumber);
-    ayahs
-      .filter((a) => a.numberInSurah >= from && a.numberInSurah <= to)
-      .forEach((a) => addAyahDirectlyToSrs(surahNumber, meta.name, a));
-    renderBrowsePreview();
-    renderDashboard();
-    showToast(`تمت إضافة الآيات من ${from} إلى ${to} إلى خطة المراجعة.`, "success");
+    const { ayahs: list } = browseRangeAyahs();
+    const plan = planRangeAddition(surahNumber, list);
+    const toAdd = plan.contiguous.length + plan.jumps.length;
+    if (!toAdd) return;
+
+    // Adding one ayah out of sequence costs points here, so adding twenty of
+    // them at once has to cost the same - otherwise this button is simply the
+    // cheaper way to do what the ayah's own button charges for.
+    if (plan.cost) {
+      if (state.points < plan.cost) {
+        showToast(
+          `🪙 ${ayahCountLabel(plan.jumps.length)} في هذا النطاق تمثّل قفزة عن تسلسل حفظك، وتكلفتها ${plan.cost} نقطة ولا تملك ما يكفي (رصيدك: ${state.points}).`,
+          "error"
+        );
+        return;
+      }
+      showConfirmModal(
+        "قفزة عن تسلسل حفظك",
+        `${ayahCountLabel(plan.jumps.length)} من هذا النطاق خارج تسلسل حفظك في ${meta.name}، فتُضاف كمراجعة مؤقتة ولا تُحتسب ضمن نسبة تقدّمك — وتكلفتها ${plan.cost} 🪙 (رصيدك: ${state.points}).`,
+        `أنفق ${plan.cost} 🪙 وأضِف`,
+        () => commitRangeAddition(surahNumber, meta.name, plan)
+      );
+      return;
+    }
+    commitRangeAddition(surahNumber, meta.name, plan);
   } catch (e) {
     showToast("حدث خطأ أثناء الإضافة. تحقق من الاتصال بالإنترنت.", "error");
   }
 });
+
+// Says what was actually added rather than what the two boxes said: a range
+// asking for 20 ayahs of a surah that has 7 added seven of them.
+function commitRangeAddition(surahNumber, surahName, plan) {
+  if (plan.cost) {
+    state.points -= plan.cost;
+    saveState();
+    renderPointsDisplay();
+  }
+  plan.contiguous.concat(plan.jumps).forEach((a) => addAyahDirectlyToSrs(surahNumber, surahName, a, { quiet: true }));
+  const added = plan.contiguous.length + plan.jumps.length;
+  const numbers = plan.contiguous.concat(plan.jumps).map((a) => a.numberInSurah).sort((x, y) => x - y);
+  const span = numbers.length > 1 ? ` (${numbers[0]}–${numbers[numbers.length - 1]})` : ` (${numbers[0]})`;
+  renderBrowsePreview();
+  renderDashboard();
+  showToast(
+    `تمت إضافة ${ayahCountLabel(added)} من ${surahName}${span} إلى خطة المراجعة.`,
+    "success",
+    [
+      plan.already.length ? `${ayahCountLabel(plan.already.length)} كانت مضافة` : "",
+      plan.jumps.length ? `${ayahCountLabel(plan.jumps.length)} مراجعة مؤقتة · −${plan.cost} 🪙` : "",
+    ].filter(Boolean).join(" · ") || undefined
+  );
+}
 
 // ---------- Voice recitation (Web Speech API) ----------
 

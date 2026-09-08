@@ -1411,6 +1411,16 @@ main#app {
 .mcq-btn.wrong { border-color: var(--danger); background: #f6dede; animation: shake .4s ease; }
 .mcq-btn:disabled { cursor: default; opacity: 0.75; }
 
+/* A range already in the plan has nothing left to add, so its button says so
+   and stops inviting the press. */
+.browse-add-range-btn:disabled {
+  cursor: default;
+  background: var(--surface);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  box-shadow: none;
+}
+
 .type-answer { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
 .type-answer input {
   font-family: var(--ayah-font-family, 'Amiri', serif);
