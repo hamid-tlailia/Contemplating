@@ -1749,8 +1749,17 @@ function setupSurahCombo(containerId, inputId, listId, surahs, onSelect) {
 
   function renderComboList(filterText) {
     const f = (filterText || "").trim().toLowerCase();
+    // Surah names come fully vowelled ("سُورَةُ الحَجِّ") and nobody types them
+    // that way, so both sides are normalized before comparing - the same
+    // normalization the answer checker uses (diacritics dropped, alef and
+    // ya and ta-marbuta folded), which also makes "الحج" find "الحجّ".
+    const fNorm = normalizeArabic(filterText || "").trim();
     const matches = surahs.filter(
-      (s) => !f || String(s.number) === f || s.name.includes(filterText.trim()) || s.englishName.toLowerCase().includes(f)
+      (s) =>
+        !f ||
+        String(s.number) === f ||
+        (fNorm && normalizeArabic(s.name).includes(fNorm)) ||
+        s.englishName.toLowerCase().includes(f)
     );
     list.innerHTML =
       matches
@@ -2102,14 +2111,21 @@ function diffRecitation(correctText, transcript) {
 
 let voiceModalRecognition = null;
 let voiceModalCorrectText = "";
+let voiceModalAllowLowAccuracyContinue = false;
 let voiceModalOnSuccess = null;
 
 // onSuccess (optional): called after a high-accuracy verification, so the
 // caller can advance its own flow (next learning round/ayah, or reveal the
 // review grading buttons) instead of leaving the person stuck in the modal.
-function openVoiceModal(correctText, onSuccess) {
+// `continueOnLowAccuracy` is for callers whose callback GRADES the ayah
+// (review), where a weak recitation is exactly what the grading step needs
+// to hear about. It must stay off for callers whose callback PASSES a round
+// (learn): a way through offered there would hand a passed round to a
+// recitation that just failed.
+function openVoiceModal(correctText, onSuccess, { continueOnLowAccuracy = false } = {}) {
   if (!voiceSupported()) return;
   voiceModalCorrectText = correctText;
+  voiceModalAllowLowAccuracyContinue = continueOnLowAccuracy;
   voiceModalOnSuccess = onSuccess || null;
   resetVoiceModal();
   document.getElementById("voice-modal-overlay").classList.remove("modal-closed");
@@ -2451,10 +2467,12 @@ function verifyVoiceModal() {
     }
   } else {
     playErrorSound();
-    // A weak recitation is exactly the case the grading step most needs to
-    // hear about, so it gets a way through rather than being left to the
-    // person to close the modal and remember the number.
-    if (voiceModalOnSuccess) {
+    // A weak recitation is exactly the case the GRADING step most needs to
+    // hear about, so there it gets a way through rather than being left to
+    // the person to close the modal and remember the number. Where the
+    // callback passes a round instead, there is deliberately no way
+    // through: failing the recitation is the answer.
+    if (voiceModalOnSuccess && voiceModalAllowLowAccuracyContinue) {
       const cb = voiceModalOnSuccess;
       const go = document.createElement("button");
       go.className = "btn";
@@ -3925,7 +3943,7 @@ document.getElementById("btn-learn-partial-wrong").addEventListener("click", () 
 document.getElementById("btn-review-voice").addEventListener("click", () => {
   const item = reviewQueue[reviewIndex];
   if (!item) return;
-  openVoiceModal(item.text, revealForGrading);
+  openVoiceModal(item.text, revealForGrading, { continueOnLowAccuracy: true });
 });
 
 // Self-rating is the weakest link in the whole schedule: people overrate

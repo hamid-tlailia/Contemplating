@@ -109,6 +109,13 @@ html, body {
   min-height: 100%;
 }
 
+/* Everything in this file is sized in rem, so one step here lifts the whole
+   interface together - labels, chips, buttons and the ayah text - instead
+   of a dozen scattered bumps that would drift apart. Arabic needs a little
+   more height than Latin at the same nominal size to stay comfortable, and
+   at 16px the smaller labels were reading cramped. */
+html { font-size: 17px; }
+
 /* Nothing in this app is meant to scroll sideways - the strips that do
    (the wird week, the learn mode switch) scroll inside themselves. `clip`
    rather than `hidden` on purpose: `hidden` would turn the root into a
