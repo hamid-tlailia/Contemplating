@@ -276,6 +276,7 @@ function checkWirdCompletionReward() {
   state.wirdRewardedDate = today;
   saveState();
   addPoints(POINTS.wirdComplete);
+  renderWirdPlanCard();
   showToast(
     state.wirdPlan ? "🤝 وفّيت بعهد اليوم" : "🌙 أتممت ورد اليوم",
     "success",
@@ -1121,7 +1122,19 @@ function renderWirdPlanCard() {
   if (done) statusEl.textContent = "✅ وفّيت بعهد اليوم. بارك الله فيك.";
   else if (nowHM >= plan.time) statusEl.textContent = "حان موعدك — ورد اليوم ما زال ينتظرك 🌿";
   else statusEl.textContent = "موعدك لم يحن بعد.";
+
+  // A commitment kept isn't a commitment finished: it's daily, so the moment
+  // today's is done the card names tomorrow's rather than sitting on a tick.
+  // Both ways out are offered - adjust that appointment, or make a fresh
+  // commitment altogether.
+  const anchor = WIRD_ANCHORS.find((a) => a.id === plan.anchor) || WIRD_ANCHORS[0];
+  const when = plan.anchor === "custom" ? `الساعة ${plan.time}` : `${anchor.label} (${plan.time})`;
+  const nextEl = document.getElementById("wird-plan-next");
+  nextEl.textContent = `🗓️ موعدك القادم: غدًا ${when}${plan.place ? ` ${plan.place}` : ""}`;
+  nextEl.classList.toggle("hidden", !done);
   document.getElementById("btn-wird-plan-start").classList.toggle("hidden", done);
+  document.getElementById("btn-wird-plan-new").classList.toggle("hidden", !done);
+  document.getElementById("btn-wird-plan-edit").textContent = done ? "عدّل موعد الغد" : "تعديل العهد";
   renderWirdPlanAnchors();
 }
 
@@ -1131,14 +1144,14 @@ function renderWirdPlanAnchors() {
   });
 }
 
-function openWirdPlanForm() {
-  const plan = state.wirdPlan;
+function openWirdPlanForm(fresh = false) {
+  const plan = fresh ? null : state.wirdPlan;
   wirdPlanDraftAnchor = (plan && plan.anchor) || "fajr";
   document.getElementById("wird-plan-time").value = (plan && plan.time) || "05:30";
   document.getElementById("wird-plan-place").value = (plan && plan.place) || "";
   document.getElementById("wird-plan-view").classList.add("hidden");
   document.getElementById("wird-plan-form").classList.remove("hidden");
-  document.getElementById("btn-wird-plan-cancel").classList.toggle("hidden", !plan);
+  document.getElementById("btn-wird-plan-cancel").classList.toggle("hidden", !state.wirdPlan);
   renderWirdPlanAnchors();
 }
 
@@ -1202,7 +1215,8 @@ function downloadWirdPlanICS() {
 }
 
 document.getElementById("btn-wird-plan-save").addEventListener("click", saveWirdPlan);
-document.getElementById("btn-wird-plan-edit").addEventListener("click", openWirdPlanForm);
+document.getElementById("btn-wird-plan-edit").addEventListener("click", () => openWirdPlanForm());
+document.getElementById("btn-wird-plan-new").addEventListener("click", () => openWirdPlanForm(true));
 document.getElementById("btn-wird-plan-cancel").addEventListener("click", renderWirdPlanCard);
 document.getElementById("btn-wird-plan-ics").addEventListener("click", downloadWirdPlanICS);
 document.getElementById("btn-wird-plan-start").addEventListener("click", () => openTodaysWirdReading());
@@ -2111,9 +2125,36 @@ function voiceSupported() {
 // everything wrong after the first slip. Align both word lists with LCS
 // instead, so a single missed word doesn't cascade into a false failure for
 // the rest of the ayah.
+// People open a recitation with the isti'adha and the basmala without
+// thinking about it. Neither is part of the ayah, so both would count as
+// words that don't belong - unless the ayah IS the basmala, as it is in
+// Al-Fatiha.
+const RECITATION_PREAMBLES = [
+  "اعوذ بالله من الشيطان الرجيم",
+  "اعوذ بالله السميع العليم من الشيطان الرجيم",
+  "بسم الله الرحمن الرحيم",
+];
+function stripRecitationPreamble(transcript, correctWords) {
+  let words = String(transcript || "").trim().split(/\s+/).filter(Boolean);
+  for (let pass = 0; pass < 2; pass++) {
+    for (const preamble of RECITATION_PREAMBLES) {
+      const p = preamble.split(" ");
+      if (words.length <= p.length) continue;
+      // Never strip what the ayah itself opens with.
+      if (p.every((w, k) => correctWords[k] && arabicWordsMatch(correctWords[k], w))) continue;
+      if (p.every((w, k) => arabicWordsMatch(words[k], w))) {
+        words = words.slice(p.length);
+        break;
+      }
+    }
+  }
+  return words.join(" ");
+}
+
 function diffRecitation(correctText, transcript) {
   const correctWords = quranWords(correctText);
-  const saidWords = mergeDetachedConjunctions(transcript).split(/\s+/).filter(Boolean);
+  const cleaned = stripRecitationPreamble(mergeDetachedConjunctions(transcript), correctWords);
+  const saidWords = cleaned.split(/\s+/).filter(Boolean);
 
   const n = correctWords.length;
   const m = saidWords.length;
@@ -2133,16 +2174,44 @@ function diffRecitation(correctText, transcript) {
       i++;
       j++;
     } else if (j < m && dp[i][j + 1] >= dp[i + 1][j]) {
-      j++; // an extra/misheard word in the transcript - skip it
+      // A word that isn't in this ayah at all - kept, and marked, rather
+      // than quietly dropped (see the accuracy note below).
+      result.push({ word: saidWords[j], ok: false, extra: true });
+      j++;
     } else {
       result.push({ word: correctWords[i], ok: false });
       i++;
     }
   }
+  while (j < m) {
+    result.push({ word: saidWords[j], ok: false, extra: true });
+    j++;
+  }
 
-  const correctCount = result.filter((r) => r.ok).length;
-  const accuracy = n ? Math.round((correctCount / n) * 100) : 0;
-  return { result, accuracy };
+  // Both directions count. Accuracy used to be recall alone - matched over
+  // the ayah's own length - so words that were NOT in the ayah cost
+  // nothing: reciting this ayah with a neighbouring one spliced into it,
+  // or wandering into the next ayah, still scored 100% and passed the
+  // round. The F-score refuses that, because every extra word lowers
+  // precision: 13 words right out of 13, said in 20, is 73% and not 100%.
+  const matched = result.filter((r) => r.ok).length;
+  const extras = result.filter((r) => r.extra).length;
+  const recall = n ? Math.round((matched / n) * 100) : 0;
+  const precision = m ? Math.round((matched / m) * 100) : 0;
+  const accuracy = matched ? Math.round(((2 * precision * recall) / (precision + recall))) : 0;
+  return { result, accuracy, recall, precision, extras };
+}
+
+// A tasmee' is passed with no mistakes in it, and that is what this asks
+// for: every word of the ayah said, and nothing said that isn't in it.
+// A percentage threshold cannot do this - at 85%, or even 90%, reciting
+// "أصحاب الجنة" where the ayah says "أصحاب النار" scored 90% and passed,
+// which is a mistake that inverts the meaning being waved through. The
+// person is shown the transcript and can correct any word the engine
+// mangled before verifying, so what is graded is what they meant to say -
+// and a failed attempt costs nothing but pressing the mic again.
+function recitationPassed(d) {
+  return d.extras === 0 && d.recall === 100;
 }
 
 // ---------- Voice recitation modal ----------
@@ -2497,12 +2566,22 @@ function showVoiceModalWords(transcript) {
 function verifyVoiceModal() {
   const chips = [...document.getElementById("voice-words-area").querySelectorAll(".voice-word-chip")];
   const editedTranscript = chips.map((c) => c.textContent.trim()).filter(Boolean).join(" ");
-  const { result, accuracy } = diffRecitation(voiceModalCorrectText, editedTranscript);
-  const html = result.map((r) => `<span class="vr-word ${r.ok ? "ok" : "bad"}">${r.word}</span>`).join(" ");
+  const diff = diffRecitation(voiceModalCorrectText, editedTranscript);
+  const { result, accuracy } = diff;
+  const html = result
+    .map((r) => `<span class="vr-word ${r.extra ? "extra" : r.ok ? "ok" : "bad"}">${r.word}</span>`)
+    .join(" ");
   const scoreArea = document.getElementById("voice-score-area");
-  scoreArea.innerHTML = `<p class="vr-text">${html}</p><p class="vr-score">دقة التسميع: ${accuracy}%</p>`;
+  // Naming what actually went wrong, since one percentage can't: words of
+  // the ayah that never came, and words that came but aren't in it.
+  const missed = result.filter((r) => !r.ok && !r.extra).length;
+  const notes = [];
+  if (missed) notes.push(`${missed} كلمة لم تُقرأ`);
+  if (diff.extras) notes.push(`${diff.extras} كلمة ليست من الآية`);
+  const noteHTML = notes.length ? `<p class="vr-note">${notes.join(" · ")}</p>` : "";
+  scoreArea.innerHTML = `<p class="vr-text">${html}</p><p class="vr-score">دقة التسميع: ${accuracy}%</p>${noteHTML}`;
   scoreArea.classList.remove("hidden");
-  if (accuracy >= 85) {
+  if (recitationPassed(diff)) {
     playSuccessSound();
     showToast(randomEncouragement());
     if (voiceModalOnSuccess) {
