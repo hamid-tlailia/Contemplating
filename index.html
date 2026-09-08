@@ -15,6 +15,23 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Tajawal:wght@400;500;700&family=Scheherazade+New:wght@400;700&family=Lateef:wght@400;700&family=Aref+Ruqaa:wght@400;700&family=Reem+Kufi:wght@400;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
+<script>
+// Which tab is open is decided HERE, before anything is painted. The app's
+// own script runs at the end of a long file, so restoring the tab there
+// meant the dashboard was on screen for a frame or two first - the flash of
+// the wrong page on every refresh. Nothing paints before the head is
+// processed, so stamping the route on <html> (css/style.css shows the panel
+// that matches) is the only place it can be done without one. The attribute
+// is data-route, not data-tab: the app binds a tab switch to every
+// [data-tab] element, and <html> would then be one of them.
+(function () {
+  var TABS = ["dashboard", "learn", "browse", "review"];
+  var last = location.pathname.replace(/\/+$/, "").split("/").pop();
+  var legacy = (location.hash || "").replace(/^#\/?/, "");   // #learn, from before these were paths
+  var tab = TABS.indexOf(last) > -1 ? last : (TABS.indexOf(legacy) > -1 ? legacy : "dashboard");
+  document.documentElement.setAttribute("data-route", tab);
+})();
+</script>
 </head>
 <body>
 
@@ -27,7 +44,7 @@
     <h1>تدبر</h1>
   </div>
   <nav class="tabs" role="tablist">
-    <button class="tab-btn active" data-tab="dashboard">
+    <button class="tab-btn" data-tab="dashboard">
       <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9"/></svg></span>
       <span class="tab-label">لوحتي</span>
     </button>
@@ -167,7 +184,7 @@
 <main id="app">
 
   <!-- DASHBOARD -->
-  <section id="tab-dashboard" class="tab-panel active">
+  <section id="tab-dashboard" class="tab-panel">
 
     <div class="challenge-card" id="challenge-card">
       <div class="challenge-text">

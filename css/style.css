@@ -232,7 +232,11 @@ h1, h2 { font-family: 'Tajawal', sans-serif; margin: 0; }
 }
 .tab-icon { position: relative; display: inline-flex; line-height: 1; }
 .tab-icon svg { width: 18px; height: 18px; }
-.tab-btn.active {
+.tab-btn.active,
+:root[data-route="dashboard"] .tab-btn[data-tab="dashboard"],
+:root[data-route="learn"] .tab-btn[data-tab="learn"],
+:root[data-route="browse"] .tab-btn[data-tab="browse"],
+:root[data-route="review"] .tab-btn[data-tab="review"] {
   background: var(--primary);
   color: white;
 }
@@ -347,8 +351,16 @@ main#app {
   padding: 20px;
 }
 
+/* The open tab is stamped on <html> by the inline script in the document
+   head so the right panel is in the very first paint, and switchTab keeps
+   the .active class in step for the code that reads it. Both are listed:
+   before the app's script has run there is only the attribute. */
 .tab-panel { display: none; }
-.tab-panel.active { display: block; animation: fadeIn .25s ease; }
+.tab-panel.active,
+:root[data-route="dashboard"] #tab-dashboard,
+:root[data-route="learn"] #tab-learn,
+:root[data-route="browse"] #tab-browse,
+:root[data-route="review"] #tab-review { display: block; animation: fadeIn .25s ease; }
 
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(6px); }

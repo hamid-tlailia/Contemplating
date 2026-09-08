@@ -977,27 +977,65 @@ function fireConfetti(big) {
 
 // ---------- Tabs ----------
 
-document.querySelectorAll("[data-tab]").forEach((btn) => {
+// Buttons only: the route also lives in an attribute on <html> (see
+// index.html), and a listener on that would switch tabs on every click in
+// the app.
+document.querySelectorAll("button[data-tab]").forEach((btn) => {
   btn.addEventListener("click", () => switchTab(btn.dataset.tab));
 });
 
-// This is a plain HTML/CSS/JS app (no framework, no build step, no
-// router) - "tabs" are one document with .tab-panel sections toggled by
-// class, sharing one window scroll position rather than being separate
-// pages. That's why a refresh always landed back on the dashboard (nothing
-// recorded which tab was open) and why scrolling on one tab could carry
-// into whichever tab opened next. Recording the tab in the URL hash (so a
-// refresh restores it) and remembering each tab's own scroll position
-// (instead of just always resetting to 0) approximates the independent-
-// pages behavior a router would give without needing one.
+// This is a plain HTML/CSS/JS app - no framework and no build step - so the
+// routing a React app gets from a router is done here, over the History API,
+// which is what those routers use underneath anyway:
+//
+//   * every tab has its own address (/learn, /review, ...), so it can be
+//     linked, bookmarked and shared;
+//   * moving between them never loads a document - the panels are already in
+//     the page, and only the URL and which one is shown change;
+//   * a refresh reopens the tab in the address bar, and reopens it in the
+//     first painted frame: the route is stamped on <html> by an inline script
+//     in the document head (see index.html), long before this file runs, so
+//     the dashboard is never briefly on screen first;
+//   * the phone's back button walks back through the tabs instead of leaving
+//     the app.
+//
+// Each tab also keeps its own scroll position, the way separate pages would.
+const TAB_ROUTES = ["dashboard", "learn", "browse", "review"];
 const tabScrollPositions = {};
 let pendingScrollRestoreTab = null; // set to a tab name to have switchTab return to where that tab was left
-let currentTabName = "dashboard";
+let currentTabName = document.documentElement.dataset.route || "dashboard";
 
-function switchTab(tab) {
+// The app is served from the root in production, but not necessarily in a
+// test or a preview, so a route is built from wherever index.html sits
+// rather than assumed to be "/learn".
+const ROUTE_BASE = location.pathname.replace(/[^/]*$/, "");
+function routeFor(tab) {
+  return ROUTE_BASE + (tab === "dashboard" ? "" : tab) + location.search;
+}
+function tabFromLocation() {
+  const last = location.pathname.replace(/\/+$/, "").split("/").pop();
+  if (TAB_ROUTES.includes(last)) return last;
+  const legacy = (location.hash || "").replace(/^#\/?/, ""); // #learn, from before these were paths
+  return TAB_ROUTES.includes(legacy) ? legacy : "dashboard";
+}
+// file:// has no origin to push to, and a browser that refuses the write
+// should cost the app nothing but its address bar.
+function writeRoute(tab, replace) {
+  try {
+    history[replace ? "replaceState" : "pushState"]({ tab }, "", routeFor(tab));
+  } catch (e) {
+    location.hash = tab;
+  }
+}
+
+function switchTab(tab, { fromHistory = false } = {}) {
   tabScrollPositions[currentTabName] = window.scrollY;
+  // Replacing rather than pushing when the tab hasn't changed: a session
+  // restarted in place (finishing a review, say) is not a second page to
+  // press back through.
+  if (!fromHistory) writeRoute(tab, tab === currentTabName);
   currentTabName = tab;
-  history.replaceState(null, "", "#" + tab);
+  document.documentElement.dataset.route = tab;
   document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
   document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === `tab-${tab}`));
   if (tab === "dashboard") renderDashboard();
@@ -1016,6 +1054,12 @@ function switchTab(tab) {
   // land wrong against not-yet-final content height.
   setTimeout(() => window.scrollTo(0, restoreTo), 60);
 }
+
+// Back and forward move between tabs, and never reload the document.
+window.addEventListener("popstate", () => {
+  const tab = tabFromLocation();
+  if (tab !== currentTabName) switchTab(tab, { fromHistory: true });
+});
 
 // ---------- Dashboard ----------
 
@@ -4668,12 +4712,10 @@ initWirdCard();
 initMushafCard();
 initBrowseTab();
 
-// Restores whichever tab was open before a refresh (see switchTab's own
-// comment on why this app needs to do this itself instead of a router
-// handling it) instead of always landing back on the dashboard.
-const initialTab = location.hash.slice(1);
-if (["dashboard", "learn", "browse", "review"].includes(initialTab)) {
-  switchTab(initialTab);
-} else {
-  renderDashboard();
-}
+// Opens whatever the address bar asks for. The panel is already the visible
+// one (the head script saw the same URL), so this only runs the tab's own
+// setup - and rewrites an old #learn link, or an /index.html landing, as the
+// address that tab now has.
+const initialTab = tabFromLocation();
+writeRoute(initialTab, true);
+switchTab(initialTab, { fromHistory: true });
