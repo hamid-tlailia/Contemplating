@@ -479,6 +479,11 @@ function arabicWordVariants(word, spokenElision = false) {
     // (يَسْـَٔلُونَ). Only medial: a word-initial أ/إ is written in both, and
     // dropping it would fold أمر into مر.
     (w) => [w, w.replace(/(\S)[\u0623\u0625]/g, "$1").replace(/(\S)[\u0623\u0625]/g, "$1")],
+    // The rasm joins some words the modern spelling writes apart - above all
+    // the vocative يا (يَٰبَنِىٓ, يَٰٓأَيُّهَا, يَٰقَوْمِ). Only user input ever
+    // carries a space here, since the ayah's own words are split on
+    // whitespace, so this is what lets "يا بني" be typed for يَٰبَنِىٓ.
+    (w) => [w, w.replace(/\s+/g, "")],
   ];
   // Heard, not written: واو الجماعة with its silent alef (تَكْتُمُوا۟) is
   // joined to what follows it in recitation, its vowel is not a syllable of
@@ -2170,23 +2175,52 @@ function diffRecitation(correctText, transcript) {
 
   const n = correctWords.length;
   const m = saidWords.length;
-  const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+
+  // The alignment is word to word, except where the two orthographies
+  // disagree about where a word ends. The rasm writes the vocative يا joined
+  // to its noun (يَٰبَنِىٓ, يَٰٓأَيُّهَا) and nobody recites it as one word, so
+  // the engine returns "يا" and "بني" - two words for the ayah's one, which
+  // scored as one word unread plus two words that don't belong. So one word
+  // may align with two, in either direction: an ayah word against a pair of
+  // spoken ones, or a pair of ayah words against a single spoken one.
+  const joinedSaid = (j) => (j + 1 < m ? saidWords[j] + saidWords[j + 1] : null);
+  const joinedCorrect = (i) => (i + 1 < n ? correctWords[i] + correctWords[i + 1] : null);
+  const matches1 = (i, j) => j < m && arabicWordsMatch(correctWords[i], saidWords[j], HEARD);
+  const matches2Said = (i, j) => j + 1 < m && arabicWordsMatch(correctWords[i], joinedSaid(j), HEARD);
+  const matches2Correct = (i, j) => i + 1 < n && j < m && arabicWordsMatch(joinedCorrect(i), saidWords[j], HEARD);
+
+  // Scored in tokens covered, not pairs matched, so a one-to-two alignment
+  // (3 tokens) is preferred over leaving either side stranded.
+  const dp = Array.from({ length: n + 2 }, () => new Array(m + 2).fill(0));
   for (let i = n - 1; i >= 0; i--) {
     for (let j = m - 1; j >= 0; j--) {
-      dp[i][j] = arabicWordsMatch(correctWords[i], saidWords[j], HEARD)
-        ? dp[i + 1][j + 1] + 1
-        : Math.max(dp[i + 1][j], dp[i][j + 1]);
+      let best = Math.max(dp[i + 1][j], dp[i][j + 1]);
+      if (matches1(i, j)) best = Math.max(best, dp[i + 1][j + 1] + 2);
+      if (matches2Said(i, j)) best = Math.max(best, dp[i + 1][j + 2] + 3);
+      if (matches2Correct(i, j)) best = Math.max(best, dp[i + 2][j + 1] + 3);
+      dp[i][j] = best;
     }
   }
 
   const result = [];
   let i = 0;
   let j = 0;
+  let matchedCorrect = 0; // ayah words accounted for - the recall numerator
+  let matchedSaid = 0;    // spoken words that belong - the precision numerator
   while (i < n) {
-    if (j < m && arabicWordsMatch(correctWords[i], saidWords[j], HEARD)) {
+    if (matches1(i, j) && dp[i][j] === dp[i + 1][j + 1] + 2) {
       result.push({ word: correctWords[i], ok: true });
-      i++;
-      j++;
+      matchedCorrect++; matchedSaid++;
+      i++; j++;
+    } else if (matches2Said(i, j) && dp[i][j] === dp[i + 1][j + 2] + 3) {
+      result.push({ word: correctWords[i], ok: true });
+      matchedCorrect++; matchedSaid += 2;
+      i++; j += 2;
+    } else if (matches2Correct(i, j) && dp[i][j] === dp[i + 2][j + 1] + 3) {
+      result.push({ word: correctWords[i], ok: true });
+      result.push({ word: correctWords[i + 1], ok: true });
+      matchedCorrect += 2; matchedSaid++;
+      i += 2; j++;
     } else if (j < m && dp[i][j + 1] >= dp[i + 1][j]) {
       // A word that isn't in this ayah at all - kept, and marked, rather
       // than quietly dropped (see the accuracy note below).
@@ -2208,11 +2242,10 @@ function diffRecitation(correctText, transcript) {
   // or wandering into the next ayah, still scored 100% and passed the
   // round. The F-score refuses that, because every extra word lowers
   // precision: 13 words right out of 13, said in 20, is 73% and not 100%.
-  const matched = result.filter((r) => r.ok).length;
   const extras = result.filter((r) => r.extra).length;
-  const recall = n ? Math.round((matched / n) * 100) : 0;
-  const precision = m ? Math.round((matched / m) * 100) : 0;
-  const accuracy = matched ? Math.round(((2 * precision * recall) / (precision + recall))) : 0;
+  const recall = n ? Math.round((matchedCorrect / n) * 100) : 0;
+  const precision = m ? Math.round((matchedSaid / m) * 100) : 0;
+  const accuracy = matchedCorrect ? Math.round(((2 * precision * recall) / (precision + recall))) : 0;
   return { result, accuracy, recall, precision, extras };
 }
 
