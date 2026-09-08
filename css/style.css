@@ -424,7 +424,11 @@ main#app {
 @media (hover: hover) { .btn.accent:hover { background: var(--accent-light); } }
 /* Second action on the challenge card's dark green: readable there without
    competing with the gold primary next to it. */
-.challenge-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+/* Two equal columns rather than a wrapping row: at the labels' old length
+   the second button dropped to its own line and the pair read as one
+   primary action with an afterthought under it. */
+.challenge-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.challenge-actions .btn { padding-inline: 10px; white-space: nowrap; }
 .btn.challenge-secondary {
   background: rgba(255,255,255,0.14);
   border-color: rgba(255,255,255,0.45);

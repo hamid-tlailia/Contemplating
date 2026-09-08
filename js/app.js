@@ -1706,18 +1706,18 @@ function renderChallengeCard() {
     card.classList.remove("done");
     desc.textContent = "احفظ آية واحدة على الأقل لتفعيل تحدي التعاهد اليومي المفاجئ.";
     btn.disabled = true;
-    btn.textContent = "أكمل حفظ آية أولاً";
+    btn.textContent = "احفظ آية أولًا";
     return;
   }
   btn.disabled = false;
   if (doneToday) {
     card.classList.add("done");
     desc.textContent = `أنجزت تحدي اليوم بنتيجة ${state.dailyChallenge.score}/${state.dailyChallenge.total} 🎉 عد غدًا لتحدٍ جديد.`;
-    btn.textContent = "أعد التحدي";
+    btn.textContent = "⚡ أعد التحدي";
   } else {
     card.classList.remove("done");
     desc.textContent = 'اختبر نفسك بآيات عشوائية مما حفظت — «تعاهدوا هذا القرآن فوالذي نفسي بيده لهو أشد تفلتًا من الإبل في عقلها».';
-    btn.textContent = "ابدأ التحدي المفاجئ";
+    btn.textContent = "⚡ ابدأ التحدي";
   }
 }
 
