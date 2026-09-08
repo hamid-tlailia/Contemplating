@@ -1,5 +1,7 @@
 {
   "rewrites": [
-    { "source": "/(dashboard|learn|browse|review)", "destination": "/index.html" }
+    { "source": "/(dashboard|learn|browse|review|settings|mushaf)", "destination": "/index.html" },
+    { "source": "/(dashboard|learn|browse|review|mushaf)/(settings|mushaf)", "destination": "/index.html" },
+    { "source": "/(dashboard|learn|browse|review)/(mushaf)/(settings)", "destination": "/index.html" }
   ]
 }

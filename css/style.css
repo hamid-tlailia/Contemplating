@@ -1603,6 +1603,16 @@ main#app {
   visibility: hidden;
   pointer-events: none;
 }
+/* Landing straight on /settings opens the sheet in the first painted frame,
+   from the attribute the document head stamps (see index.html) - the class
+   below is what the app itself toggles once it has run. */
+:root[data-overlay~="settings"] #settings-overlay {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+:root[data-overlay~="settings"] #settings-overlay .settings-panel { transform: none; }
+
 .settings-panel, .voice-modal, .info-modal {
   transition: transform .22s ease;
 }

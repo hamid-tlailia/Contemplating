@@ -170,6 +170,7 @@ function loadState() {
       parsed.wirdRewardedDate = parsed.wirdRewardedDate || null;
       parsed.masteredCounts = parsed.masteredCounts || {};
       parsed.colorScheme = parsed.colorScheme || "system";
+      parsed.mushafReader = parsed.mushafReader || null;
       return parsed;
     }
   } catch (e) {
@@ -186,6 +187,7 @@ function loadState() {
     background: BACKGROUNDS[0].id,
     fontSize: "medium",
     colorScheme: "system", // "system" | "light" | "dark" - only the default theme follows it
+    mushafReader: null, // {ayahs, index} - what the fullscreen reader is showing, so /mushaf survives a refresh
     points: 0,
     wirdTarget: 5,
     wirdTargetType: "ayahs", // "ayahs" | "pages" - which unit wirdTarget is measured in
@@ -1001,31 +1003,131 @@ document.querySelectorAll("button[data-tab]").forEach((btn) => {
 //
 // Each tab also keeps its own scroll position, the way separate pages would.
 const TAB_ROUTES = ["dashboard", "learn", "browse", "review"];
+
+// Two of the overlays are pages of their own rather than passing dialogs:
+// they have an address, a refresh reopens them where they were, and the
+// phone's back button closes them instead of leaving the app. They layer
+// over a tab, so their address carries both - /learn/settings, /review/mushaf
+// - and closing one returns to the tab it was opened from.
+const OVERLAY_ROUTES = {
+  settings: {
+    open: () => document.getElementById("settings-overlay").classList.remove("modal-closed"),
+    close: () => document.getElementById("settings-overlay").classList.add("modal-closed"),
+    // Nothing to reload: the settings sheet is markup, which is why it can
+    // also be opened before the first paint (see index.html).
+    restorable: () => true,
+  },
+  mushaf: {
+    open: () => showMushafReader(),
+    close: () => hideMushafReader(),
+    // The reader shows what was actually loaded into it, and that is kept
+    // with the rest of the app's state - so a refresh reopens the same
+    // pages at the same one, offline included. Nothing kept, nothing to
+    // reopen, and the address falls back to the tab underneath.
+    restorable: () => !!(state.mushafReader && state.mushafReader.ayahs && state.mushafReader.ayahs.length),
+  },
+};
+
+// Dialogs that are part of a flow rather than a place: they own no address,
+// but back still has to close them rather than navigate out from under one.
+const TRANSIENT_MODALS = [
+  { id: "voice-modal-overlay", close: () => closeVoiceModal() },
+  { id: "tasmee-overlay", close: () => closeTasmeeSession() },
+  { id: "info-modal-overlay", close: () => closeInfoModal() },
+];
+
 const tabScrollPositions = {};
 let pendingScrollRestoreTab = null; // set to a tab name to have switchTab return to where that tab was left
 let currentTabName = document.documentElement.dataset.route || "dashboard";
+// Overlays stack - the settings sheet opens over the reader without closing
+// it - so the address carries them in order: /mushaf/settings is the reader
+// with settings on top of it.
+let overlayStack = [];
+let pushedDepth = 0; // how many of the open overlays this app pushed history entries for
 
 // The app is served from the root in production, but not necessarily in a
 // test or a preview, so a route is built from wherever index.html sits
 // rather than assumed to be "/learn".
-const ROUTE_BASE = location.pathname.replace(/[^/]*$/, "");
-function routeFor(tab) {
-  return ROUTE_BASE + (tab === "dashboard" ? "" : tab) + location.search;
+const ROUTE_BASE = (() => {
+  const segs = location.pathname.split("/");
+  while (segs.length > 1) {
+    const last = segs[segs.length - 1];
+    if (last === "" || last === "index.html" || TAB_ROUTES.includes(last) || OVERLAY_ROUTES[last]) segs.pop();
+    else break;
+  }
+  return segs.join("/") + "/";
+})();
+
+function routeFor(tab, overlays) {
+  const parts = tab && tab !== "dashboard" ? [tab] : [];
+  return ROUTE_BASE + parts.concat(overlays || []).join("/") + location.search;
 }
-function tabFromLocation() {
-  const last = location.pathname.replace(/\/+$/, "").split("/").pop();
-  if (TAB_ROUTES.includes(last)) return last;
-  const legacy = (location.hash || "").replace(/^#\/?/, ""); // #learn, from before these were paths
-  return TAB_ROUTES.includes(legacy) ? legacy : "dashboard";
+
+function parseRoute() {
+  let tab = "dashboard";
+  const overlays = [];
+  location.pathname.split("/").filter(Boolean).forEach((seg) => {
+    if (TAB_ROUTES.includes(seg)) tab = seg;
+    else if (OVERLAY_ROUTES[seg] && !overlays.includes(seg)) overlays.push(seg);
+  });
+  if (tab === "dashboard") {
+    const legacy = (location.hash || "").replace(/^#\/?/, ""); // #learn, from before these were paths
+    if (TAB_ROUTES.includes(legacy)) tab = legacy;
+  }
+  return { tab, overlays };
 }
+
 // file:// has no origin to push to, and a browser that refuses the write
 // should cost the app nothing but its address bar.
-function writeRoute(tab, replace) {
+function writeRoute(tab, overlays, replace) {
   try {
-    history[replace ? "replaceState" : "pushState"]({ tab }, "", routeFor(tab));
+    history[replace ? "replaceState" : "pushState"]({ tab, overlays }, "", routeFor(tab, overlays));
   } catch (e) {
-    location.hash = tab;
+    location.hash = (overlays && overlays[overlays.length - 1]) || tab;
   }
+}
+
+// The DOM half, with no history of its own - what both a deliberate open and
+// a back button end up calling. Anything open that the new list doesn't name
+// is closed, innermost first; anything named that isn't open is opened.
+function applyOverlays(list) {
+  const next = list || [];
+  for (let i = overlayStack.length - 1; i >= 0; i--) {
+    if (!next.includes(overlayStack[i])) OVERLAY_ROUTES[overlayStack[i]].close();
+  }
+  next.forEach((name) => { if (!overlayStack.includes(name)) OVERLAY_ROUTES[name].open(); });
+  overlayStack = next.slice();
+  pushedDepth = Math.min(pushedDepth, overlayStack.length);
+  if (overlayStack.length) document.documentElement.dataset.overlay = overlayStack.join(" ");
+  else delete document.documentElement.dataset.overlay;
+}
+
+function openOverlay(name) {
+  if (overlayStack.includes(name)) return;
+  const next = overlayStack.concat(name);
+  writeRoute(currentTabName, next, false);
+  pushedDepth = next.length;
+  applyOverlays(next);
+}
+
+// Closing the top one goes back rather than forward, so the entry its opening
+// pushed is popped instead of stacked on - one press of the phone's back
+// button then leaves it exactly as the ✕ does. When the app was opened
+// straight onto this address there is nothing behind it to go back to, so the
+// address is rewritten in place instead.
+function closeOverlay(name) {
+  const i = overlayStack.indexOf(name);
+  if (i < 0) {
+    OVERLAY_ROUTES[name].close();
+    return;
+  }
+  if (i === overlayStack.length - 1 && pushedDepth >= overlayStack.length) {
+    history.back(); // popstate does the closing
+    return;
+  }
+  const next = overlayStack.slice(0, i);
+  applyOverlays(next);
+  writeRoute(currentTabName, next, true);
 }
 
 function switchTab(tab, { fromHistory = false } = {}) {
@@ -1033,7 +1135,7 @@ function switchTab(tab, { fromHistory = false } = {}) {
   // Replacing rather than pushing when the tab hasn't changed: a session
   // restarted in place (finishing a review, say) is not a second page to
   // press back through.
-  if (!fromHistory) writeRoute(tab, tab === currentTabName);
+  if (!fromHistory) writeRoute(tab, overlayStack, tab === currentTabName);
   currentTabName = tab;
   document.documentElement.dataset.route = tab;
   document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
@@ -1055,10 +1157,26 @@ function switchTab(tab, { fromHistory = false } = {}) {
   setTimeout(() => window.scrollTo(0, restoreTo), 60);
 }
 
-// Back and forward move between tabs, and never reload the document.
+// Back and forward move between tabs and overlays, and never reload the
+// document.
 window.addEventListener("popstate", () => {
-  const tab = tabFromLocation();
+  // A dialog that is part of a flow gets the press first: leaving the tab
+  // out from under an open one is never what back was meant to do. The
+  // address it just left is pushed back, so nothing else moves.
+  const openDialog = TRANSIENT_MODALS.find((m) => {
+    const el = document.getElementById(m.id);
+    return el && !el.classList.contains("modal-closed");
+  });
+  if (openDialog) {
+    openDialog.close();
+    writeRoute(currentTabName, overlayStack, false);
+    return;
+  }
+  const { tab, overlays } = parseRoute();
   if (tab !== currentTabName) switchTab(tab, { fromHistory: true });
+  const openable = overlays.filter((name) => OVERLAY_ROUTES[name].restorable());
+  if (openable.join("/") !== overlayStack.join("/")) applyOverlays(openable);
+  if (openable.length !== overlays.length) writeRoute(tab, openable, true);
 });
 
 // ---------- Dashboard ----------
@@ -1630,16 +1748,62 @@ function groupAyahsIntoMushafPages(ayahs) {
 // ayahs must each carry a surahNumberForReader (see the two loadBtn paths
 // above) - reading by page number can cross a surah boundary within a
 // single page, so the reader can't assume one surah for the whole session.
+// What the reader is showing is kept with the rest of the app's state, not
+// only in memory: that is what lets /mushaf survive a refresh - and it is
+// the text itself rather than a page number, so reopening needs no network
+// and works offline. Only the fields the reader draws from are kept.
+const MUSHAF_READER_MAX_AYAHS = 400;
+function rememberMushafReader(ayahs, index) {
+  if (!ayahs || ayahs.length > MUSHAF_READER_MAX_AYAHS) {
+    state.mushafReader = null;
+  } else {
+    state.mushafReader = {
+      index: index || 0,
+      ayahs: ayahs.map((a) => ({
+        text: a.text,
+        page: a.page,
+        numberInSurah: a.numberInSurah,
+        surahNumberForReader: a.surahNumberForReader,
+      })),
+    };
+  }
+  saveState();
+}
+
 function openMushafReader(ayahs) {
-  mushafPages = groupAyahsIntoMushafPages(ayahs);
-  mushafPageIndex = 0;
-  mushafVisitedPages = new Set();
+  rememberMushafReader(ayahs, 0);
+  openOverlay("mushaf");
+  // A reading longer than the cap isn't kept, so it can't be reopened from
+  // its address - but it still has to open now, from what it was handed.
+  if (!state.mushafReader) {
+    mushafPages = groupAyahsIntoMushafPages(ayahs);
+    mushafPageIndex = 0;
+    mushafVisitedPages = new Set();
+    renderMushafReaderPage();
+  }
+}
+
+// The DOM half, driven by what was kept - reached both by opening the reader
+// and by landing on /mushaf.
+function showMushafReader() {
+  const kept = state.mushafReader;
+  if (kept) {
+    mushafPages = groupAyahsIntoMushafPages(kept.ayahs);
+    mushafPageIndex = Math.min(kept.index || 0, mushafPages.length - 1);
+    mushafVisitedPages = new Set();
+  }
   document.getElementById("mushaf-reader-overlay").classList.remove("modal-closed");
-  renderMushafReaderPage();
+  if (mushafPages.length) renderMushafReaderPage();
+}
+
+function hideMushafReader() {
+  document.getElementById("mushaf-reader-overlay").classList.add("modal-closed");
+  state.mushafReader = null;
+  saveState();
 }
 
 function closeMushafReader() {
-  document.getElementById("mushaf-reader-overlay").classList.add("modal-closed");
+  closeOverlay("mushaf");
 }
 
 function renderMushafReaderPage() {
@@ -1664,6 +1828,7 @@ function renderMushafReaderPage() {
   document.getElementById("mushaf-reader-text").innerHTML = bismillahHTML + bodyHTML;
   document.getElementById("mushaf-reader-page-label").textContent = `الصفحة ${mushafPageIndex + 1} من ${mushafPages.length}`;
   document.getElementById("mushaf-reader-body").scrollTop = 0;
+  rememberMushafPage();
 
   // No point showing a "previous" button that can't go anywhere on the
   // first page, rather than showing it just disabled.
@@ -1749,6 +1914,12 @@ function goToPrevMushafPage() {
   if (mushafPageIndex === 0) return;
   mushafPageIndex--;
   renderMushafReaderPage();
+}
+
+// Which page is open is part of where the reader is, so a refresh returns to
+// the page being read rather than the first one.
+function rememberMushafPage() {
+  if (state.mushafReader) { state.mushafReader.index = mushafPageIndex; saveState(); }
 }
 
 document.getElementById("btn-mushaf-reader-next").addEventListener("click", goToNextMushafPage);
@@ -4539,10 +4710,10 @@ function initSettingsPanel() {
   renderBackgroundGrid();
   renderPointsDisplay();
 
-  document.getElementById("btn-settings").addEventListener("click", () => overlay.classList.remove("modal-closed"));
-  document.getElementById("btn-settings-close").addEventListener("click", () => overlay.classList.add("modal-closed"));
+  document.getElementById("btn-settings").addEventListener("click", () => openOverlay("settings"));
+  document.getElementById("btn-settings-close").addEventListener("click", () => closeOverlay("settings"));
   overlay.addEventListener("click", (e) => {
-    if (e.target === overlay) overlay.classList.add("modal-closed");
+    if (e.target === overlay) closeOverlay("settings");
   });
 
   autoVaryInput.addEventListener("change", () => {
@@ -4570,7 +4741,7 @@ function initSettingsPanel() {
     applyTheme();
   });
 
-  document.getElementById("btn-settings-floating").addEventListener("click", () => overlay.classList.remove("modal-closed"));
+  document.getElementById("btn-settings-floating").addEventListener("click", () => openOverlay("settings"));
   setupFloatingSettingsButton();
 
   const prefetchBtn = document.getElementById("btn-offline-prefetch");
@@ -4697,7 +4868,10 @@ function showTerms() {
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("sw.js").catch(() => {});
+    // Root-relative for the same reason the page's assets are: registering
+    // "sw.js" from /learn/settings would ask for /learn/sw.js, and scope the
+    // worker to /learn/ even if it were there.
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
   });
 }
 
@@ -4712,10 +4886,14 @@ initWirdCard();
 initMushafCard();
 initBrowseTab();
 
-// Opens whatever the address bar asks for. The panel is already the visible
-// one (the head script saw the same URL), so this only runs the tab's own
+// Opens whatever the address bar asks for. The tab's panel is already the
+// visible one (the head script saw the same URL), so this only runs its own
 // setup - and rewrites an old #learn link, or an /index.html landing, as the
-// address that tab now has.
-const initialTab = tabFromLocation();
-writeRoute(initialTab, true);
-switchTab(initialTab, { fromHistory: true });
+// address that tab now has. An overlay with nothing left to reopen (a reader
+// whose pages aren't kept any more) drops off the address rather than
+// opening empty.
+const initialRoute = parseRoute();
+const initialOverlays = initialRoute.overlays.filter((name) => OVERLAY_ROUTES[name].restorable());
+writeRoute(initialRoute.tab, initialOverlays, true);
+switchTab(initialRoute.tab, { fromHistory: true });
+applyOverlays(initialOverlays);

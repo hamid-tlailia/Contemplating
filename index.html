@@ -6,15 +6,17 @@
 <title>تدبر - تطبيق حفظ القرآن الكريم بذكاء</title>
 <meta name="description" content="احفظ القرآن الكريم بالتكرار المتباعد، الاختيار من متعدد، الكتابة، والاختبار الصوتي.">
 <meta name="theme-color" content="#1f6f5c">
-<link rel="manifest" href="manifest.json">
-<link rel="icon" href="icons/favicon-32.png">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<!-- Root-relative, every one of them: a route like /learn/settings would
+     otherwise have the browser look for /learn/css/style.css. -->
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icons/favicon-32.png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="تدبر">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Tajawal:wght@400;500;700&family=Scheherazade+New:wght@400;700&family=Lateef:wght@400;700&family=Aref+Ruqaa:wght@400;700&family=Reem+Kufi:wght@400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="/css/style.css">
 <script>
 // Which tab is open is decided HERE, before anything is painted. The app's
 // own script runs at the end of a long file, so restoring the tab there
@@ -26,10 +28,18 @@
 // [data-tab] element, and <html> would then be one of them.
 (function () {
   var TABS = ["dashboard", "learn", "browse", "review"];
-  var last = location.pathname.replace(/\/+$/, "").split("/").pop();
+  var tab = "dashboard", overlays = [];
+  location.pathname.split("/").forEach(function (seg) {
+    if (TABS.indexOf(seg) > -1) tab = seg;
+    else if (seg === "settings" || seg === "mushaf") overlays.push(seg);
+  });
   var legacy = (location.hash || "").replace(/^#\/?/, "");   // #learn, from before these were paths
-  var tab = TABS.indexOf(last) > -1 ? last : (TABS.indexOf(legacy) > -1 ? legacy : "dashboard");
+  if (tab === "dashboard" && TABS.indexOf(legacy) > -1) tab = legacy;
   document.documentElement.setAttribute("data-route", tab);
+  // The settings sheet is markup, so it can be open in the first frame too.
+  // The reader draws from stored state the app has not read yet, so it opens
+  // a moment later rather than as an empty page.
+  if (overlays.length) document.documentElement.setAttribute("data-overlay", overlays.join(" "));
 })();
 </script>
 </head>
@@ -638,6 +648,6 @@
   </div>
 </div>
 
-<script src="js/app.js" defer></script>
+<script src="/js/app.js" defer></script>
 </body>
 </html>
