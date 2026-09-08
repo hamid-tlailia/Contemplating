@@ -779,8 +779,13 @@ main#app {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
-  margin-top: 8px;
+  margin: 8px 0 0;
+  align-items: stretch;
 }
+/* Whatever follows the grid is a separate step ("ابدأ الآن"), and needs to
+   read as one - butted straight against the cards it looked like a fifth
+   one. */
+.age-mode-grid + * { margin-top: 18px; }
 .age-mode-btn {
   display: flex;
   flex-direction: column;
