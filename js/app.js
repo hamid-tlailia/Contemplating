@@ -168,6 +168,7 @@ function loadState() {
       parsed.autoVaryModes = parsed.autoVaryModes !== false;
       parsed.ageMode = parsed.ageMode || "adult";
       parsed.wirdRewardedDate = parsed.wirdRewardedDate || null;
+      parsed.masteredCounts = parsed.masteredCounts || {};
       return parsed;
     }
   } catch (e) {
@@ -199,6 +200,7 @@ function loadState() {
     autoVaryModes: true, // rotate the test mode across an ayah's three rounds
     ageMode: "adult", // which age profile's defaults are in force
     wirdRewardedDate: null, // the day the wird-completion reward was last paid
+    masteredCounts: {}, // "YYYY-MM-DD" -> ayahs newly mastered that day
   };
 }
 
@@ -504,6 +506,22 @@ function quranWords(text) {
 // marks where a hizb begins.
 function cleanAyahText(text) {
   return quranWords(text).join(" ");
+}
+
+// New memorization outruns review very easily: adding an ayah takes one
+// session, keeping it takes months of them, and the app used to let the
+// two grow completely independently until the review queue was a wall. The
+// traditional حفظ:مراجعة balance is about one new ayah to five reviewed,
+// which is roughly what the schedule actually costs, so that is what gets
+// measured - and shown, not enforced. A person who wants to push on today
+// still can; they just do it knowing.
+const NEW_TO_REVIEW_RATIO = 5;
+
+function todaysBalance() {
+  const today = todayISO();
+  const learned = state.masteredCounts[today] || 0;
+  const reviewed = state.reviewCounts[today] || 0;
+  return { learned, reviewed, owed: Math.max(0, learned * NEW_TO_REVIEW_RATIO - reviewed) };
 }
 
 // ---------- Age profiles ----------
@@ -897,6 +915,16 @@ function renderDashboard() {
   }
   const weekEl = document.getElementById("stat-week");
   if (weekEl) weekEl.textContent = `${activeDaysThisWeek()} من 7 أيام`;
+
+  const balanceEl = document.getElementById("balance-note");
+  if (balanceEl) {
+    const { learned, reviewed, owed } = todaysBalance();
+    balanceEl.classList.toggle("hidden", learned === 0 && reviewed === 0);
+    balanceEl.classList.toggle("out-of-balance", owed > 0);
+    balanceEl.textContent = owed > 0
+      ? `⚖️ اليوم: ${learned} حفظ جديد · ${reviewed} مراجعة — الميزان يميل نحو الجديد.`
+      : `⚖️ اليوم: ${learned} حفظ جديد · ${reviewed} مراجعة — ميزان متّزن.`;
+  }
   document.getElementById("stat-new").textContent = learningCount;
   document.getElementById("stat-mastered").textContent = masteredCount;
   document.getElementById("stat-streak").textContent = computeStreak();
@@ -2418,10 +2446,21 @@ function verifyVoiceModal() {
     showToast(randomEncouragement());
     if (voiceModalOnSuccess) {
       const cb = voiceModalOnSuccess;
-      setTimeout(() => { closeVoiceModal(); cb(); }, 900); // brief pause so the score is visible before advancing
+      setTimeout(() => { closeVoiceModal(); cb(accuracy); }, 900); // brief pause so the score is visible before advancing
     }
   } else {
     playErrorSound();
+    // A weak recitation is exactly the case the grading step most needs to
+    // hear about, so it gets a way through rather than being left to the
+    // person to close the modal and remember the number.
+    if (voiceModalOnSuccess) {
+      const cb = voiceModalOnSuccess;
+      const go = document.createElement("button");
+      go.className = "btn";
+      go.textContent = "تابع إلى التقييم";
+      go.addEventListener("click", () => { closeVoiceModal(); cb(accuracy); });
+      scoreArea.appendChild(go);
+    }
   }
 }
 
@@ -2574,6 +2613,7 @@ async function loadLearnAyah() {
 
   document.getElementById("learn-ref").textContent = `${meta.name} - الآية ${pointer.ayah}`;
   renderLearnRoundInfo();
+  renderBalanceBanner();
   updateRoundDots(item.roundStreak || 0);
   renderSurahInfoCaption("learn-surah-info", meta);
 
@@ -2582,6 +2622,29 @@ async function loadLearnAyah() {
 
   renderLearnRound();
 }
+
+// Shown only when it is actually true: reviews are owed AND there are due
+// ayahs to pay them with. Dismissing it lasts for the session, not
+// forever - tomorrow's imbalance is tomorrow's to answer.
+let balanceBannerDismissed = false;
+function renderBalanceBanner() {
+  const banner = document.getElementById("learn-balance-banner");
+  if (!banner) return;
+  const { learned, reviewed, owed } = todaysBalance();
+  const due = getTodaysReviewQueue().length;
+  const show = !balanceBannerDismissed && owed > 0 && due > 0;
+  banner.classList.toggle("hidden", !show);
+  if (!show) return;
+  const pending = Math.min(owed, due);
+  document.getElementById("learn-balance-text").textContent =
+    `⚖️ حفظت ${learned} اليوم وراجعت ${reviewed}. القاعدة: خمس مراجعات مقابل كل آية جديدة — ${pending} مراجعة تنتظرك.`;
+}
+
+document.getElementById("btn-balance-review").addEventListener("click", () => switchTab("review"));
+document.getElementById("btn-balance-dismiss").addEventListener("click", () => {
+  balanceBannerDismissed = true;
+  renderBalanceBanner();
+});
 
 function updateRoundDots(streak) {
   document.querySelectorAll("#round-dots .dot").forEach((dot, i) => {
@@ -2926,6 +2989,8 @@ function completeLearnRound() {
 function masterCurrentLearningAyah(item) {
   item.learningStage = "srs";
   sm2Schedule(item, 4);
+  const today = todayISO();
+  state.masteredCounts[today] = (state.masteredCounts[today] || 0) + 1;
   markActivityToday();
   addPoints(POINTS.masterAyah);
   saveState();
@@ -3395,18 +3460,43 @@ document.getElementById("btn-review-voice").addEventListener("click", () => {
   openVoiceModal(item.text, revealForGrading);
 });
 
-function revealForGrading() {
+// Self-rating is the weakest link in the whole schedule: people overrate
+// what they know, and SM-2 then acts on that guess for months. The voice
+// test already measured the thing being guessed at, so its accuracy is
+// offered as a suggested grade - marked, not applied. The person still
+// decides: they know things the word diff doesn't (a slip of the tongue,
+// a word the engine mangled), which is also why it is never automatic.
+function suggestedQualityFor(accuracy) {
+  if (accuracy >= 95) return 5;
+  if (accuracy >= 85) return 4;
+  if (accuracy >= 60) return 3;
+  return 0;
+}
+
+function revealForGrading(accuracy) {
   maskLevel = 0;
   renderMaskedText();
   document.getElementById("grade-controls").classList.remove("hidden");
   document.getElementById("reveal-controls").classList.add("hidden");
+
+  const hint = document.getElementById("grade-suggestion");
+  document.querySelectorAll(".grade-buttons button").forEach((b) => b.classList.remove("suggested"));
+  if (typeof accuracy === "number") {
+    const quality = suggestedQualityFor(accuracy);
+    const btn = document.querySelector(`.grade-buttons button[data-quality="${quality}"]`);
+    if (btn) btn.classList.add("suggested");
+    hint.textContent = `دقة تسميعك ${accuracy}% — المقترح: ${btn ? btn.textContent : ""} (والقرار لك)`;
+    hint.classList.remove("hidden");
+  } else {
+    hint.classList.add("hidden");
+  }
   // The grading row is taller than the single reveal button it replaces, so
   // the ayah has to give that height back - measured after the swap, not
   // before it.
   fitReviewAyahHeight();
   scheduleAnswerDockUpdate();
 }
-document.getElementById("btn-reveal").addEventListener("click", revealForGrading);
+document.getElementById("btn-reveal").addEventListener("click", () => revealForGrading());
 
 document.querySelectorAll(".grade-buttons button").forEach((btn) => {
   btn.addEventListener("click", () => {

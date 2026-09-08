@@ -169,6 +169,8 @@
       </div>
     </div>
 
+    <p class="balance-note hidden" id="balance-note"></p>
+
     <div class="panel overall-progress-card">
       <div class="overall-progress-header">
         <h2>📈 تقدمك في حفظ القرآن</h2>
@@ -315,6 +317,14 @@
         </div>
       </div>
 
+      <div class="balance-banner hidden" id="learn-balance-banner">
+        <p id="learn-balance-text"></p>
+        <div class="balance-banner-actions">
+          <button class="btn primary" id="btn-balance-review">راجع الآن</button>
+          <button class="btn" id="btn-balance-dismiss">أكمل الحفظ</button>
+        </div>
+      </div>
+
       <div class="mode-switch" role="tablist">
         <button class="mode-btn" data-mode="partial" id="mode-btn-partial"></button>
         <button class="mode-btn active" data-mode="mcq" id="mode-btn-mcq"></button>
@@ -458,6 +468,7 @@
         <div class="answer-area" id="review-answer-area">
           <div id="grade-controls" class="grade-controls hidden">
             <p class="muted">قيّم مدى تذكرك لهذه الآية:</p>
+            <p class="grade-suggestion hidden" id="grade-suggestion"></p>
             <div class="grade-buttons">
               <button class="btn grade-again" data-quality="0">لم أتذكر</button>
               <button class="btn grade-hard" data-quality="3">صعبة</button>
