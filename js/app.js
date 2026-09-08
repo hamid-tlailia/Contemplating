@@ -415,9 +415,10 @@ function mergeDetachedConjunctions(text) {
 // Where a rule is genuinely ambiguous - a dagger alef after و/ى can mean
 // either "this letter IS the alef" (الصلوة) or "put an alef after it"
 // (السمٰوٰت) - both readings are produced and either may match. Measured
-// against the API's own modern-spelling edition, word for word across ten
-// surahs: 1.56% of words failed to match before this, 0.06% after.
-const ARABIC_SUPERSCRIPT_LETTERS = { "\u06E5": "\u0648", "\u06E6": "\u064A", "\u06E7": "\u064A" };
+// against the API's own modern-spelling edition, word for word across every
+// ayah in the Quran: 1.56% of words failed to match before any of this, 0.08%
+// after the first pass, and none now.
+const ARABIC_SUPERSCRIPT_LETTERS = { "\u06E5": "\u0648", "\u06E6": "\u064A", "\u06E7": "\u064A", "\u06E8": "\u0646" };
 
 function normalizeArabic(s) {
   return (s || "")
@@ -430,6 +431,10 @@ function normalizeArabic(s) {
     // seat the same way twice. Dropped on both sides like a diacritic.
     .replace(/\u0649/g, "\u064A")
     .replace(/\u0629/g, "\u0647")
+    // Everything that is not a letter goes here, BEFORE the rules below that
+    // look for the end of a word: a superscript letter left dangling past the
+    // final \u0647 (\u0639\u064e\u062f\u064f\u0648\u0651\u0650\u0647\u0650\u06e6) hid that end from them.
+    .replace(/[^\u0621-\u064A\s]/g, "")
     // Classical rasm spells the long vowel before a final \u0629 with \u0648 in a
     // handful of very common words (\u0627\u0644\u0635\u0644\u0648\u0629, \u0627\u0644\u0632\u0643\u0648\u0629, \u0627\u0644\u062d\u064a\u0648\u0629...). A typed or
     // spoken answer will use the modern spelling with \u0627, so fold that \u0648 back
@@ -438,7 +443,9 @@ function normalizeArabic(s) {
     // The silent alef after a plural-verb waw, written in the rasm and
     // dropped in modern spelling (أُو۟لُوا۟ / أولو، يَتْلُوا۟ / يتلو).
     .replace(/\u0648\u0627(?=\s|$)/g, "\u0648")
-    .replace(/[^\u0621-\u064A\s]/g, "")
+    // The rasm writes one yeh where the modern spelling writes the two it
+    // hears (\u064a\u064f\u062d\u0652\u0649\u0650 / \u064a\u064f\u062d\u0652\u064a\u0650\u064a, \u0644\u064e\u0645\u064f\u062d\u0652\u0649\u0650 / \u0644\u064e\u0645\u064f\u062d\u0652\u064a\u0650\u064a).
+    .replace(/\u064A\u064A(?=\s|$)/g, "\u064A")
     // Writing a shadda out can leave three of a letter where the modern
     // spelling already had two; two is the most Arabic ever writes. And a
     // doubled alef is never written at all - it only appears here when a
@@ -449,6 +456,32 @@ function normalizeArabic(s) {
     .trim();
 }
 
+// What is left once the rules above have done their work. Checked word for
+// word against the modern-spelling edition of all 6,236 ayahs: these are the
+// only places in the Quran where the two orthographies differ by something no
+// rule explains, so they are listed rather than guessed at. Keys are the
+// rasm's normalized form; a \u0648/\u0641/\u0644/\u0628/\u0643 in front of a whole-word key is allowed for.
+const RASM_SPELLING_SWAPS = [
+  ["\u0628\u0635\u0637", "\u0628\u0633\u0637"],      // \u0628\u064e\u0635\u0652\u0637\u064e\u0629\u064b / \u0628\u0633\u0637\u0629\u060c \u0648\u064e\u064a\u064e\u0628\u0652\u0635\u064f\u0637\u064f / \u0648\u064a\u0628\u0633\u0637
+  ["\u0635\u064A\u0637\u0631", "\u0633\u064A\u0637\u0631"], // \u0627\u0644\u0645\u064f\u0635\u064e\u064a\u0652\u0637\u0650\u0631\u064f\u0648\u0646\u064e / \u0627\u0644\u0645\u0633\u064a\u0637\u0631\u0648\u0646\u060c \u0628\u0650\u0645\u064f\u0635\u064e\u064a\u0652\u0637\u0650\u0631\u064d / \u0628\u0645\u0633\u064a\u0637\u0631
+];
+const RASM_WORD_SWAPS = new Map([
+  // A final alef the modern spelling writes as an alef maqsura. Nothing in
+  // the rasm says which word takes which, and folding every final alef into
+  // \u0649 would make \u0623\u0646\u0632\u0644\u0646\u0627 the same word as \u0623\u0646\u0632\u0644\u0646\u064a - so, by word.
+  ["\u0631\u0627", "\u0631\u064A"],           // \u0631\u064e\u0621\u064e\u0627 / \u0631\u0623\u0649
+  ["\u062A\u0631\u0627", "\u062A\u0631\u0627\u064A"],      // \u062a\u064e\u0631\u064e\u0670\u0653\u0621\u064e\u0627 / \u062a\u0631\u0627\u0621\u0649
+  ["\u0627\u0642\u0635\u0627", "\u0627\u0642\u0635\u064A"],   // \u0623\u064e\u0642\u0652\u0635\u064e\u0627 / \u0623\u0642\u0635\u0649
+  ["\u0627\u0644\u0627\u0642\u0635\u0627", "\u0627\u0644\u0627\u0642\u0635\u064A"], // \u0627\u0644\u0623\u064e\u0642\u0652\u0635\u064e\u0627 / \u0627\u0644\u0623\u0642\u0635\u0649
+  ["\u0644\u062F\u0627", "\u0644\u062F\u064A"],         // \u0644\u064e\u062f\u064e\u0627 / \u0644\u062f\u0649
+  ["\u0637\u063A\u0627", "\u0637\u063A\u064A"],         // \u0637\u064e\u063a\u064e\u0627 / \u0637\u063a\u0649
+  // And four one-off spellings.
+  ["\u0644\u064A\u0643\u0647", "\u0627\u0644\u064A\u0643\u0647"],   // \u0644\u0652\u0640\u064e\u0654\u064a\u0643\u064e\u0629\u0650 / \u0627\u0644\u0623\u064a\u0643\u0629 - written both ways in the Quran itself
+  ["\u0644\u062A\u062E\u0630\u062A", "\u0644\u0627\u062A\u062E\u0630\u062A"], // \u0644\u064e\u062a\u064e\u0651\u062e\u064e\u0630\u0652\u062a\u064e / \u0644\u0627\u062a\u062e\u0630\u062a
+  ["\u064A\u0628\u0646\u0645", "\u064A\u0627\u0628\u0646\u0645"],   // \u064a\u064e\u0628\u0652\u0646\u064e\u0624\u064f\u0645\u064e\u0651 / \u064a\u0627 \u0627\u0628\u0646 \u0623\u0645\u0651
+  ["\u0648\u0644\u0644\u0648", "\u0648\u0646\u0644\u0648"],     // \u0648\u064e\u0623\u064e\u0644\u064e\u0651\u0648\u0650 / \u0648\u0623\u0646 \u0644\u0648
+]);
+
 // Every reading of a word that the two orthographies could plausibly agree
 // on. Small set, cached: this runs inside the recitation diff's DP, which
 // calls it O(n*m) times per ayah.
@@ -458,12 +491,13 @@ function arabicWordVariants(word, spokenElision = false) {
   const cached = arabicVariantCache.get(key);
   if (cached) return cached;
   const merged = mergeDetachedConjunctions(word);
-  // Three places where the two orthographies can each be read two ways.
-  // Every combination is produced; a match on any one of them is a match.
+  // Each axis below is a place where the two orthographies can be read two
+  // ways. Every combination is produced; a match on any one of them is a
+  // match.
   const axes = [
     // A superscript small waw/yeh is a letter in some words (إِبْرَٰهِۦمَ /
     // إبراهيم، دَاوُۥدَ / داوود) and silent in others (بِهِۦ / به).
-    (w) => [w, w.replace(/[\u06E5\u06E6\u06E7]/g, (c) => ARABIC_SUPERSCRIPT_LETTERS[c])],
+    (w) => [w, w.replace(/[\u06E5-\u06E8]/g, (c) => ARABIC_SUPERSCRIPT_LETTERS[c])],
     // A dagger alef either stands in for a written alef (ٱلسَّمَٰوَٰتِ /
     // السماوات) or, when it sits on a و/ى, means that letter IS the alef
     // (ٱلصَّلَوٰةَ / الصلاة).
@@ -474,11 +508,21 @@ function arabicWordVariants(word, spokenElision = false) {
     // Never for a word's first letter, where the shadda belongs to an
     // assimilated word before it (مِن رَّبِّهِمْ) the modern text lacks.
     (w) => [w, w.replace(/(\S)([\u0621-\u064A])([\u064B-\u0650\u0652-\u065F\u0670]*)\u0651/g, "$1$2$3$2")],
+    // \u0633\u0623\u0644 after a one-letter prefix is the one place the rasm drops the alef
+    // of a connecting hamza the modern spelling writes: \u0641\u064e\u0633\u0652\u0640\u064e\u0654\u0644\u0652 / \u0641\u0627\u0633\u0623\u0644\u060c
+    // \u0648\u064e\u0633\u0652\u0640\u064e\u0654\u0644\u0652\u0647\u064f\u0645\u0652 / \u0648\u0627\u0633\u0623\u0644\u0647\u0645. Narrow on purpose: dropping that alef wherever
+    // it appears would make \u0648\u0627\u0639\u0645\u0644\u0648\u0627 the same word as \u0648\u0639\u0645\u0644\u0648\u0627, and \u0643\u0627\u0641\u0631 as \u0643\u0641\u0631.
+    (w) => [w, w.replace(/^([\u0648\u0641\u0644\u0628\u0643])([\u064B-\u0652\u0670]*)\u0627(?=\u0633[\u064B-\u0652\u0670]*[\u0621\u0623\u0624\u0626\u0654])/, "$1$2")],
     // Where the modern spelling seats a medial hamza on an alef
     // (يَسْأَلُونَ), the rasm writes the hamza alone with nothing under it
     // (يَسْـَٔلُونَ). Only medial: a word-initial أ/إ is written in both, and
     // dropping it would fold أمر into مر.
     (w) => [w, w.replace(/(\S)[\u0623\u0625]/g, "$1").replace(/(\S)[\u0623\u0625]/g, "$1")],
+    // A letter carrying the small round zero is not pronounced (U+06DF always,
+    // U+06E0 only when the reading runs on). Sometimes the modern spelling
+    // drops it too (\u0648\u064e\u062b\u064e\u0645\u064f\u0648\u062f\u064e\u0627\u06df / \u0648\u062b\u0645\u0648\u062f\u060c \u0633\u064e\u0623\u064f\u0648\u06df\u0631\u0650\u064a\u0643\u064f\u0645\u0652 / \u0633\u0623\u0631\u064a\u0643\u0645) and
+    // sometimes it keeps it (\u0623\u064f\u0648\u06df\u0644\u064e\u0670\u0653\u0626\u0650\u0643\u064e / \u0623\u0648\u0644\u0626\u0643), so both readings stand.
+    (w) => [w, w.replace(/[\u0621-\u064A][\u064B-\u0652\u0670]*[\u06DF\u06E0]/g, "")],
     // The rasm joins some words the modern spelling writes apart - above all
     // the vocative يا (يَٰبَنِىٓ, يَٰٓأَيُّهَا, يَٰقَوْمِ). Only user input ever
     // carries a space here, since the ayah's own words are split on
@@ -494,8 +538,20 @@ function arabicWordVariants(word, spokenElision = false) {
     axes.push((w) => [w, w.replace(/\u0648[\u064B-\u065F\u0670]*\u0627(?=[\u064B-\u065F\u0670\u06D6-\u06ED]*$)/g, "")]);
   }
   let forms = [merged];
-  for (const axis of axes) forms = forms.flatMap(axis);
+  // Deduplicated at every step: an axis that doesn't apply returns the form
+  // unchanged, and without this each of them would double the list anyway -
+  // 2^axes identical copies of a word nothing touched.
+  for (const axis of axes) forms = [...new Set(forms.flatMap(axis))];
   const variants = new Set(forms.map(normalizeArabic));
+  for (const v of [...variants]) {
+    for (const [rasm, modern] of RASM_SPELLING_SWAPS) if (v.includes(rasm)) variants.add(v.split(rasm).join(modern));
+    const whole = RASM_WORD_SWAPS.get(v);
+    if (whole) variants.add(whole);
+    if (v.length > 1 && "\u0648\u0641\u0644\u0628\u0643".includes(v[0])) {
+      const prefixed = RASM_WORD_SWAPS.get(v.slice(1));
+      if (prefixed) variants.add(v[0] + prefixed);
+    }
+  }
   variants.delete("");
   const list = [...variants];
   if (arabicVariantCache.size > 8000) arabicVariantCache.clear();
@@ -507,6 +563,17 @@ function arabicWordsMatch(a, b, { spokenElision = false } = {}) {
   const variantsA = arabicWordVariants(a, spokenElision);
   const variantsB = arabicWordVariants(b, spokenElision);
   return variantsA.some((va) => variantsB.includes(va));
+}
+
+// The rasm drops the yeh of a منقوص word and of the speaker's own ياء -
+// أَطِيعُونِ is read أطيعوني, وَعِيدِ is وعيدي, يَٰعِبَادِ is يا عبادي - and it is
+// pronounced, so an answer that writes it is not a mistake. One direction
+// only: the answer may carry a yeh the ayah's word ends a kasra without, and
+// never the reverse, which would let عبادي pass for عِبَادَ.
+function answerMatchesQuranWord(quranWord, answer, opts) {
+  if (arabicWordsMatch(quranWord, answer, opts)) return true;
+  if (!/\u064A\s*$/.test(answer || "") || !/\u0650[\u06D6-\u06ED]*$/.test(quranWord || "")) return false;
+  return arabicWordsMatch(quranWord, answer.replace(/\u064A(?=\s*$)/, ""), opts);
 }
 
 // Some Quran text editions attach waqf (pause) annotations - "صلى"
@@ -2185,9 +2252,12 @@ function diffRecitation(correctText, transcript) {
   // spoken ones, or a pair of ayah words against a single spoken one.
   const joinedSaid = (j) => (j + 1 < m ? saidWords[j] + saidWords[j + 1] : null);
   const joinedCorrect = (i) => (i + 1 < n ? correctWords[i] + correctWords[i + 1] : null);
-  const matches1 = (i, j) => j < m && arabicWordsMatch(correctWords[i], saidWords[j], HEARD);
-  const matches2Said = (i, j) => j + 1 < m && arabicWordsMatch(correctWords[i], joinedSaid(j), HEARD);
-  const matches2Correct = (i, j) => i + 1 < n && j < m && arabicWordsMatch(joinedCorrect(i), saidWords[j], HEARD);
+  const matches1 = (i, j) => j < m && answerMatchesQuranWord(correctWords[i], saidWords[j], HEARD);
+  const matches2Said = (i, j) => j + 1 < m && answerMatchesQuranWord(correctWords[i], joinedSaid(j), HEARD);
+  const matches2Correct = (i, j) => i + 1 < n && j < m && answerMatchesQuranWord(joinedCorrect(i), saidWords[j], HEARD);
+  // One rasm word can be three (\u064a\u064e\u0628\u0652\u0646\u064e\u0624\u064f\u0645\u064e\u0651 is \u064a\u0627 \u0627\u0628\u0646 \u0623\u0645), so the join reaches
+  // one further - in that direction only, since the reverse never occurs.
+  const matches3Said = (i, j) => j + 2 < m && answerMatchesQuranWord(correctWords[i], saidWords[j] + saidWords[j + 1] + saidWords[j + 2], HEARD);
 
   // Scored in tokens covered, not pairs matched, so a one-to-two alignment
   // (3 tokens) is preferred over leaving either side stranded.
@@ -2198,6 +2268,7 @@ function diffRecitation(correctText, transcript) {
       if (matches1(i, j)) best = Math.max(best, dp[i + 1][j + 1] + 2);
       if (matches2Said(i, j)) best = Math.max(best, dp[i + 1][j + 2] + 3);
       if (matches2Correct(i, j)) best = Math.max(best, dp[i + 2][j + 1] + 3);
+      if (matches3Said(i, j)) best = Math.max(best, dp[i + 1][j + 3] + 4);
       dp[i][j] = best;
     }
   }
@@ -2216,6 +2287,10 @@ function diffRecitation(correctText, transcript) {
       result.push({ word: correctWords[i], ok: true });
       matchedCorrect++; matchedSaid += 2;
       i++; j += 2;
+    } else if (matches3Said(i, j) && dp[i][j] === dp[i + 1][j + 3] + 4) {
+      result.push({ word: correctWords[i], ok: true });
+      matchedCorrect++; matchedSaid += 3;
+      i++; j += 3;
     } else if (matches2Correct(i, j) && dp[i][j] === dp[i + 2][j + 1] + 3) {
       result.push({ word: correctWords[i], ok: true });
       result.push({ word: correctWords[i + 1], ok: true });
@@ -3166,7 +3241,7 @@ document.getElementById("type-input").addEventListener("keydown", (e) => {
 function submitTypedAnswer() {
   const input = document.getElementById("type-input");
   const correctWord = learnWords[learnWordIndex];
-  const isCorrect = arabicWordsMatch(input.value, correctWord);
+  const isCorrect = answerMatchesQuranWord(correctWord, input.value);
   input.className = isCorrect ? "correct" : "wrong";
   handleLearnAnswer(isCorrect, null);
   if (!isCorrect) setTimeout(() => { input.value = ""; input.className = ""; }, 500);
