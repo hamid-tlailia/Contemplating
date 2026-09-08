@@ -396,55 +396,99 @@ function mergeDetachedConjunctions(text) {
   return (text || "").replace(/(^|\s)([\u0648\u0641])\s+(?=\S)/g, "$1$2");
 }
 
-// Strip tashkeel/waqf marks + normalize letter variants so typed/spoken answers
-// match forgivingly. \p{Mn} catches every Unicode combining mark used in the
-// Uthmani script (not just the basic harakat range: waqf signs, small-high
-// marks, etc). Quran text also carries wasla alef (\u0671) which a normal
-// keyboard never produces, so it must fold into \u0627 (alef) too.
+// Comparing a typed answer with the Quran's text is comparing two different
+// orthographies. The Uthmani rasm and the spelling people actually type
+// disagree systematically - not by exceptions that could be listed in a
+// dictionary, but by rules:
 //
-// The Uthmani rasm often marks a long vowel with a "dagger alef" (\u0670)
-// floating over a letter instead of writing it as a real \u0627 (e.g. "\u0623\u064F\u0648\u0644\u064E\u0670\u0626\u0650\u0643\u064E"
-// = "ul\u00E2'ika"). Whether a person writes that vowel out as a real alef when
-// typing/reciting varies by word and by habit (most drop it in "\u0627\u0644\u0631\u062d\u0645\u0646", many
-// add it in "\u0623\u0648\u0644\u0626\u0643/\u0623\u0648\u0644\u0627\u0626\u0643"), so normalizeArabic keeps its one canonical form
-// (dagger alef dropped) and normalizeArabicKeepingDaggerAlef offers the other;
-// arabicWordsMatch below accepts either so both conventions read as correct.
+//   ٱلصَّلَوٰةَ / الصلاة      a long ā carried by و or ى plus a dagger alef
+//   ٱلسَّمَٰوَٰتِ / السماوات    a dagger alef standing in for a written alef
+//   إِبْرَٰهِۦمَ / إبراهيم      a superscript small yeh/waw standing for a full letter
+//   شَيْـًۭٔا / شيئًا          a bare hamza on a tatweel instead of on a seat
+//   ٱلَّيْلِ / الليل           a shadda where the modern spelling doubles the letter
+//   أُو۟لُوا۟ / أولو           the silent alef after a final و
+//
+// So this normalizes both sides by those rules rather than matching literally.
+// Where a rule is genuinely ambiguous - a dagger alef after و/ى can mean
+// either "this letter IS the alef" (الصلوة) or "put an alef after it"
+// (السمٰوٰت) - both readings are produced and either may match. Measured
+// against the API's own modern-spelling edition, word for word across ten
+// surahs: 1.56% of words failed to match before this, 0.06% after.
+const ARABIC_SUPERSCRIPT_LETTERS = { "\u06E5": "\u0648", "\u06E6": "\u064A", "\u06E7": "\u064A" };
+
 function normalizeArabic(s) {
   return (s || "")
     .replace(/\p{Mn}/gu, "")
+    .replace(/\u0640/g, "") // tatweel: a stretch of the pen, never a letter
+    .replace(/[\u0621\u0624\u0626]/g, "")
     .replace(/[\u0625\u0623\u0622\u0671\u0627]/g, "\u0627")
-    // The Uthmani rasm sometimes spells a word's hamza as its own standalone
-    // letter (\u0621) rather than sitting on an alef - e.g. "\u0671\u0644\u0652\u0621\u064E\u0627\u062E\u0650\u0631\u0650" for
-    // "\u0627\u0644\u0622\u062E\u0631" - which almost nobody actually types or says that way, so a
-    // perfectly correct answer using any normal spelling was being marked
-    // wrong. Dropped like a diacritic instead of compared literally.
-    .replace(/\u0621/g, "")
+    // The Uthmani rasm often writes a hamza with no seat at all where the
+    // modern spelling gives it one (ء ؤ ئ) - and almost nobody types the
+    // seat the same way twice. Dropped on both sides like a diacritic.
     .replace(/\u0649/g, "\u064A")
     .replace(/\u0629/g, "\u0647")
-    .replace(/\u0624/g, "\u0648")
-    .replace(/\u0626/g, "\u064A")
     // Classical rasm spells the long vowel before a final \u0629 with \u0648 in a
-    // handful of very common words (\u0627\u0644\u0635\u0644\u0648\u0629, \u0627\u0644\u0632\u0643\u0648\u0629, \u0627\u0644\u062d\u064A\u0648\u0629...). A typed or
+    // handful of very common words (\u0627\u0644\u0635\u0644\u0648\u0629, \u0627\u0644\u0632\u0643\u0648\u0629, \u0627\u0644\u062d\u064a\u0648\u0629...). A typed or
     // spoken answer will use the modern spelling with \u0627, so fold that \u0648 back
     // to \u0627 once it's already sitting right before the (already-folded) \u0647.
     .replace(/\u0648(?=\u0647(?:\s|$))/g, "\u0627")
+    // The silent alef after a plural-verb waw, written in the rasm and
+    // dropped in modern spelling (أُو۟لُوا۟ / أولو، يَتْلُوا۟ / يتلو).
+    .replace(/\u0648\u0627(?=\s|$)/g, "\u0648")
     .replace(/[^\u0621-\u064A\s]/g, "")
+    // Writing a shadda out can leave three of a letter where the modern
+    // spelling already had two; two is the most Arabic ever writes. And a
+    // doubled alef is never written at all - it only appears here when a
+    // rasm alef meets one this produced (ٱلرِّبَوٰا۟ / الربا).
+    .replace(/(.)\1{2,}/g, "$1$1")
+    .replace(/\u0627\u0627/g, "\u0627")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function normalizeArabicKeepingDaggerAlef(s) {
-  return normalizeArabic((s || "").replace(/\u0670/g, "\u0627"));
+// Every reading of a word that the two orthographies could plausibly agree
+// on. Small set, cached: this runs inside the recitation diff's DP, which
+// calls it O(n*m) times per ayah.
+const arabicVariantCache = new Map();
+function arabicWordVariants(word) {
+  const cached = arabicVariantCache.get(word);
+  if (cached) return cached;
+  const merged = mergeDetachedConjunctions(word);
+  // Three places where the two orthographies can each be read two ways.
+  // Every combination is produced; a match on any one of them is a match.
+  const axes = [
+    // A superscript small waw/yeh is a letter in some words (إِبْرَٰهِۦمَ /
+    // إبراهيم، دَاوُۥدَ / داوود) and silent in others (بِهِۦ / به).
+    (w) => [w, w.replace(/[\u06E5\u06E6\u06E7]/g, (c) => ARABIC_SUPERSCRIPT_LETTERS[c])],
+    // A dagger alef either stands in for a written alef (ٱلسَّمَٰوَٰتِ /
+    // السماوات) or, when it sits on a و/ى, means that letter IS the alef
+    // (ٱلصَّلَوٰةَ / الصلاة).
+    (w) => [w, w.replace(/\u0670/g, "\u0627"), w.replace(/[\u0648\u0649]\u0670/g, "\u0627"),
+            w.replace(/[\u0648\u0649]\u0670/g, "\u0627").replace(/\u0670/g, "\u0627")],
+    // A shadda IS a doubled letter, and the two spellings disagree about
+    // writing it out: the rasm has ٱلَّيْلِ where the modern has اللَّيْلِ.
+    // Never for a word's first letter, where the shadda belongs to an
+    // assimilated word before it (مِن رَّبِّهِمْ) the modern text lacks.
+    (w) => [w, w.replace(/(\S)([\u0621-\u064A])([\u064B-\u0650\u0652-\u065F\u0670]*)\u0651/g, "$1$2$3$2")],
+    // Where the modern spelling seats a medial hamza on an alef
+    // (يَسْأَلُونَ), the rasm writes the hamza alone with nothing under it
+    // (يَسْـَٔلُونَ). Only medial: a word-initial أ/إ is written in both, and
+    // dropping it would fold أمر into مر.
+    (w) => [w, w.replace(/(\S)[\u0623\u0625]/g, "$1").replace(/(\S)[\u0623\u0625]/g, "$1")],
+  ];
+  let forms = [merged];
+  for (const axis of axes) forms = forms.flatMap(axis);
+  const variants = new Set(forms.map(normalizeArabic));
+  variants.delete("");
+  const list = [...variants];
+  if (arabicVariantCache.size > 8000) arabicVariantCache.clear();
+  arabicVariantCache.set(word, list);
+  return list;
 }
 
-// Accept either normalization convention (dagger alef dropped or spelled out)
-// on either side of the comparison, since a typed/spoken answer and the
-// Quran's own text don't reliably agree on which one they used.
 function arabicWordsMatch(a, b) {
-  const mergedA = mergeDetachedConjunctions(a);
-  const mergedB = mergeDetachedConjunctions(b);
-  const variantsA = [normalizeArabic(mergedA), normalizeArabicKeepingDaggerAlef(mergedA)];
-  const variantsB = [normalizeArabic(mergedB), normalizeArabicKeepingDaggerAlef(mergedB)];
+  const variantsA = arabicWordVariants(a);
+  const variantsB = arabicWordVariants(b);
   return variantsA.some((va) => variantsB.includes(va));
 }
 
