@@ -477,6 +477,8 @@ const RASM_WORD_SWAPS = new Map([
   ["\u0627\u0644\u0627\u0642\u0635\u0627", "\u0627\u0644\u0627\u0642\u0635\u064A"], // \u0627\u0644\u0623\u064e\u0642\u0652\u0635\u064e\u0627 / \u0627\u0644\u0623\u0642\u0635\u0649
   ["\u0644\u062F\u0627", "\u0644\u062F\u064A"],         // \u0644\u064e\u062f\u064e\u0627 / \u0644\u062f\u0649
   ["\u0637\u063A\u0627", "\u0637\u063A\u064A"],         // \u0637\u064e\u063a\u064e\u0627 / \u0637\u063a\u0649
+  ["\u062A\u062A\u0631\u0627", "\u062A\u062A\u0631\u064A"],     // \u062a\u064e\u062a\u0652\u0631\u064e\u0627 / \u062a\u062a\u0631\u0649
+  ["\u0646\u0627", "\u0646\u0627\u064A"],           // \u0648\u064e\u0646\u064e\u0640\u064e\u0654\u0627 / \u0648\u0646\u0623\u0649
   // And four one-off spellings.
   ["\u0644\u064A\u0643\u0647", "\u0627\u0644\u064A\u0643\u0647"],   // \u0644\u0652\u0640\u064e\u0654\u064a\u0643\u064e\u0629\u0650 / \u0627\u0644\u0623\u064a\u0643\u0629 - written both ways in the Quran itself
   ["\u0644\u062A\u062E\u0630\u062A", "\u0644\u0627\u062A\u062E\u0630\u062A"], // \u0644\u064e\u062a\u064e\u0651\u062e\u064e\u0630\u0652\u062a\u064e / \u0644\u0627\u062a\u062e\u0630\u062a
@@ -501,10 +503,27 @@ function arabicWordVariants(word, spokenElision = false) {
     // إبراهيم، دَاوُۥدَ / داوود) and silent in others (بِهِۦ / به).
     (w) => [w, w.replace(/[\u06E5-\u06E8]/g, (c) => ARABIC_SUPERSCRIPT_LETTERS[c])],
     // A dagger alef either stands in for a written alef (ٱلسَّمَٰوَٰتِ /
-    // السماوات) or, when it sits on a و/ى, means that letter IS the alef
-    // (ٱلصَّلَوٰةَ / الصلاة).
-    (w) => [w, w.replace(/\u0670/g, "\u0627"), w.replace(/[\u0648\u0649]\u0670/g, "\u0627"),
-            w.replace(/[\u0648\u0649]\u0670/g, "\u0627").replace(/\u0670/g, "\u0627")],
+    // السماوات), or - when it sits on a و/ى - means that letter IS the alef
+    // (ٱلصَّلَوٰةَ / الصلاة), or is simply not written at all (ٱلرَّحْمَٰنِ /
+    // الرحمن). A word can carry more than one, and they need not be read the
+    // same way: يَٰمُوسَىٰ is يا موسى - the first written out, the second not -
+    // so each one is decided on its own rather than all of them together.
+    (w) => {
+      let forms = [w];
+      for (let pass = 0; pass < 4 && forms.some((f) => f.includes("\u0670")); pass++) {
+        forms = forms.flatMap((f) => {
+          const at = f.indexOf("\u0670");
+          if (at < 0) return [f];
+          const before = f.slice(0, at);
+          const after = f.slice(at + 1);
+          const carrier = f[at - 1];
+          const readings = [before + after, before + "\u0627" + after];
+          if (carrier === "\u0648" || carrier === "\u0649") readings.push(before.slice(0, -1) + "\u0627" + after);
+          return readings;
+        });
+      }
+      return forms;
+    },
     // A shadda IS a doubled letter, and the two spellings disagree about
     // writing it out: the rasm has ٱلَّيْلِ where the modern has اللَّيْلِ.
     // Never for a word's first letter, where the shadda belongs to an
