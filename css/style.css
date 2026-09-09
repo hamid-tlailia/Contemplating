@@ -345,13 +345,50 @@ h1, h2 { font-family: 'Tajawal', sans-serif; margin: 0; }
   .tab-btn {
     flex: 1;
     flex-direction: column;
-    gap: 2px;
-    padding: 6px 2px;
-    font-size: 0.65rem;
+    gap: 3px;
+    padding: 5px 2px 6px;
+    font-size: 0.72rem;
     border-radius: 12px;
+    color: color-mix(in srgb, var(--muted) 70%, var(--text));
   }
   .tab-icon svg { width: 23px; height: 23px; }
-  main#app { padding-bottom: 24px; }
+
+  /* The open tab is marked by a pill behind its icon, not by painting the
+     whole cell: a solid block a quarter of the screen wide is the loudest
+     thing on the page, and it marks the part of it nobody is looking at.
+     The label carries the colour instead, mixed toward the theme's text so
+     it reads on the bar in every theme - the maroon theme's own maroon is
+     invisible on the maroon theme's own surface. */
+  .tabs .tab-btn.active,
+  :root[data-route="dashboard"] .tabs .tab-btn[data-tab="dashboard"],
+  :root[data-route="learn"] .tabs .tab-btn[data-tab="learn"],
+  :root[data-route="browse"] .tabs .tab-btn[data-tab="browse"],
+  :root[data-route="review"] .tabs .tab-btn[data-tab="review"] {
+    background: transparent;
+    color: color-mix(in srgb, var(--primary) 55%, var(--text));
+    font-weight: 700;
+  }
+  .tabs .tab-icon {
+    padding: 4px 16px;
+    border-radius: 999px;
+    transition: background-color .18s ease;
+  }
+  /* The icon box is padded out to make the pill, so the due badge is pulled
+     back in by that padding - otherwise it floats at the pill's corner
+     instead of sitting on the glyph. */
+  .tabs .tab-badge { inset-inline-end: 6px; top: -2px; }
+
+  .tabs .tab-btn.active .tab-icon,
+  :root[data-route="dashboard"] .tabs .tab-btn[data-tab="dashboard"] .tab-icon,
+  :root[data-route="learn"] .tabs .tab-btn[data-tab="learn"] .tab-icon,
+  :root[data-route="browse"] .tabs .tab-btn[data-tab="browse"] .tab-icon,
+  :root[data-route="review"] .tabs .tab-btn[data-tab="review"] .tab-icon {
+    background: color-mix(in srgb, var(--primary) 55%, var(--surface));
+  }
+
+  /* Nothing for main#app here: the padding shorthand further down the file
+     overrode this anyway, and the clearance over the fixed bar is the
+     footer's (see .app-footer near the end). */
 }
 
 main#app {
@@ -1439,6 +1476,11 @@ main#app {
   border: 1px solid var(--border);
   box-shadow: none;
 }
+
+/* The تسميع round: one button, and a line saying why the ayah is covered. */
+.voice-round-actions { display: flex; justify-content: center; }
+.voice-round-actions .btn { font-size: 1rem; padding: 12px 26px; }
+.voice-round-note { text-align: center; font-size: 0.78rem; margin-top: 10px; }
 
 .type-answer { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
 .type-answer input {

@@ -3114,6 +3114,7 @@ if (!voiceSupported()) {
 } else {
   document.getElementById("btn-learn-voice").classList.remove("hidden");
   document.getElementById("btn-review-voice").classList.remove("hidden");
+  document.getElementById("mode-btn-voice").classList.remove("hidden");
 }
 
 // ---------- Learn tab (guided sequential memorization: Al-Fatiha first) ----------
@@ -3128,6 +3129,7 @@ let learnMaskLevel = 1; // only used in 'partial' mode - 0 = none masked ... up 
 document.getElementById("mode-btn-partial").innerHTML = iconLabel("eyeOff", "اخفاء");
 document.getElementById("mode-btn-mcq").innerHTML = iconLabel("optionsList", "اختيار");
 document.getElementById("mode-btn-type").innerHTML = iconLabel("pencil", "كتابة");
+document.getElementById("mode-btn-voice").innerHTML = iconLabel("mic", "تسميع");
 
 // Round 1 recognizes the word among four, round 2 recalls it with the rest
 // of the ayah in front of you, round 3 produces it from nothing: the
@@ -3135,10 +3137,31 @@ document.getElementById("mode-btn-type").innerHTML = iconLabel("pencil", "كتا
 // drilled three times over. Each mode also tests something the others
 // don't - recognition is not recall, and recall is not production - and
 // three identical rounds is the shortest road to boredom.
-const MODE_ROUND_LABEL = { mcq: "تعرُّف", partial: "تذكُّر", type: "كتابة" };
+const MODE_ROUND_LABEL = { mcq: "تعرُّف", partial: "تذكُّر", type: "كتابة", voice: "تسميع" };
 
-function modeRotation() {
-  return (ageProfile().modes || ["mcq", "partial", "type"]);
+// The three rounds are a ladder, and the order is the point: pick the word
+// out of four (تعرُّف), then recall it with the rest of the ayah in front of
+// you (تذكُّر), then produce it from nothing. Reciting aloud is the strongest
+// rung of all - nothing on the screen, nothing to type - so it takes the top
+// one, alternating with كتابة from one ayah to the next. Both get drilled,
+// and an ayah still takes three rounds rather than four.
+//
+// A profile with no typing round (a child's, an elder's) has no production
+// round at all today - its third round repeats the first - so there تسميع is
+// added rather than alternated. Where the browser can't hear, nothing
+// changes.
+function modeRotation(key) {
+  const base = (ageProfile().modes || ["mcq", "partial", "type"]).slice();
+  if (!voiceSupported()) return base;
+  if (base.length < 3) {
+    base.push("voice");
+    return base;
+  }
+  // Stable per ayah, so leaving an ayah and coming back to it doesn't change
+  // what its last round asks for.
+  const [surah, ayah] = String(key || "").split(":").map(Number);
+  if (((surah || 0) * 1000 + (ayah || 0)) % 2 === 1) base[base.length - 1] = "voice";
+  return base;
 }
 
 // A mode picked by hand holds for the ayah being worked on, then rotation
@@ -3238,7 +3261,7 @@ async function loadLearnAyah() {
 
   const round = item.roundStreak || 0;
   if (state.autoVaryModes && !learnModeManualOverride) {
-    const rotation = modeRotation();
+    const rotation = modeRotation(learnCurrentKey);
     setLearnMode(rotation[round % rotation.length]);
   }
 
@@ -3418,16 +3441,31 @@ function renderLearnRound() {
   const mcqArea = document.getElementById("mcq-area");
   const typeArea = document.getElementById("type-area");
   const partialArea = document.getElementById("partial-area");
+  const voiceArea = document.getElementById("voice-area");
   const wordProgress = document.getElementById("learn-word-progress");
   mcqArea.classList.toggle("hidden", learnMode !== "mcq");
   typeArea.classList.toggle("hidden", learnMode !== "type");
   partialArea.classList.toggle("hidden", learnMode !== "partial");
+  voiceArea.classList.toggle("hidden", learnMode !== "voice");
   // Only the sequential modes walk word by word, so only they have a
   // position within the ayah worth showing.
-  wordProgress.classList.toggle("hidden", learnMode === "partial");
+  wordProgress.classList.toggle("hidden", learnMode === "partial" || learnMode === "voice");
 
   if (learnMode === "partial") {
     renderLearnPartialMask();
+    return;
+  }
+
+  // Recited from memory, so the ayah is covered whole - the panel keeps the
+  // shape of it and nothing else. The words are not tappable here: a word
+  // uncovered is the answer given away.
+  if (learnMode === "voice") {
+    document.getElementById("learn-text").innerHTML = learnWords
+      .map((w) => `<span class="word masked" aria-hidden="true">${w}</span>`)
+      .join(" ");
+    document.getElementById("btn-voice-round-start").innerHTML = iconLabel("mic", "ابدأ التسميع");
+    fitLearnAyahHeight();
+    scheduleAnswerDockUpdate();
     return;
   }
 
@@ -3994,6 +4032,17 @@ document.getElementById("btn-learn-meanings").addEventListener("click", async ()
   } catch (e) {
     document.getElementById("info-modal-body").innerHTML = `<p class="muted">تعذّر تحميل معاني الكلمات حاليًا.</p>`;
   }
+});
+
+// The تسميع round's own button. Same path as the standalone تسميع button
+// below it: a clean recitation completes the round.
+document.getElementById("btn-voice-round-start").addEventListener("click", () => {
+  const item = state.ayahs[learnCurrentKey];
+  if (!item) return;
+  openVoiceModal(item.text, () => {
+    learnMistakeThisRound = false;
+    completeLearnRound();
+  });
 });
 
 document.getElementById("btn-learn-voice").addEventListener("click", () => {

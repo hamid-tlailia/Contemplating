@@ -396,6 +396,7 @@
         <button class="mode-btn" data-mode="partial" id="mode-btn-partial"></button>
         <button class="mode-btn active" data-mode="mcq" id="mode-btn-mcq"></button>
         <button class="mode-btn" data-mode="type" id="mode-btn-type"></button>
+        <button class="mode-btn hidden" data-mode="voice" id="mode-btn-voice"></button>
       </div>
 
       <div class="ayah-display learn-ayah-display">
@@ -416,6 +417,14 @@
           <input type="text" id="type-input" placeholder="اكتب الكلمة الناقصة هنا..." autocomplete="off" autocorrect="off" spellcheck="false">
           <button id="btn-type-submit" class="btn primary">تحقق ✓</button>
         </div>
+      </div>
+
+      <div class="answer-area hidden" id="voice-area">
+        <p class="answer-hint">سمّع الآية كاملة من حفظك</p>
+        <div class="voice-round-actions">
+          <button id="btn-voice-round-start" class="btn primary"></button>
+        </div>
+        <p class="muted voice-round-note">الآية مخفية بالكامل — استرجعها في نفسك ثم اقرأها بصوتك.</p>
       </div>
 
       <div class="answer-area hidden" id="partial-area">
