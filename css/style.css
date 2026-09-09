@@ -1974,8 +1974,13 @@ main#app {
 .swatch-name { font-weight: 600; font-size: 0.9rem; }
 .swatch-sub { font-size: 0.75rem; color: var(--muted); }
 
-.swatch.theme-default { background: linear-gradient(135deg, #eef7f2, #d8ecdf); }
-.swatch.theme-sepia { background: linear-gradient(135deg, #f7ecd8, #ecd8ae); }
+/* Every swatch carries its own text colour, not the running theme's: these
+   two are pale, and under a dark theme their labels were being drawn in that
+   theme's light text - a cream card with cream writing on it. */
+.swatch.theme-default { background: linear-gradient(135deg, #eef7f2, #d8ecdf); color: #22322b; }
+.swatch.theme-default .swatch-sub { color: #4f6b60; }
+.swatch.theme-sepia { background: linear-gradient(135deg, #f7ecd8, #ecd8ae); color: #4a3b28; }
+.swatch.theme-sepia .swatch-sub { color: #6a5432; }
 .swatch.theme-night { background: linear-gradient(135deg, #1a2436, #2a3a52); color: #eaf0fb; }
 .swatch.theme-night .swatch-sub { color: #b7c4dd; }
 .swatch.theme-forest { background: linear-gradient(135deg, #16281c, #28402e); color: #e6f3ea; }
