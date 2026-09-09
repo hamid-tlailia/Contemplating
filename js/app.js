@@ -2715,6 +2715,8 @@ let voiceModalRecognition = null;
 let voiceModalCorrectText = "";
 let voiceModalAllowLowAccuracyContinue = false;
 let voiceModalOnSuccess = null;
+let voiceModalOnFail = null;
+let voiceModalFailedAttempt = false; // an answer was submitted and it was wrong
 
 // onSuccess (optional): called after a high-accuracy verification, so the
 // caller can advance its own flow (next learning round/ayah, or reveal the
@@ -2724,11 +2726,16 @@ let voiceModalOnSuccess = null;
 // to hear about. It must stay off for callers whose callback PASSES a round
 // (learn): a way through offered there would hand a passed round to a
 // recitation that just failed.
-function openVoiceModal(correctText, onSuccess, { continueOnLowAccuracy = false } = {}) {
+// onFail (optional): for a caller where the recitation IS the round's answer.
+// Pressing تحقق is a submitted answer there, so a failed one ends the attempt
+// the way a wrong option or a mistyped word does, instead of leaving the
+// person free to re-record until it passes.
+function openVoiceModal(correctText, onSuccess, { continueOnLowAccuracy = false, onFail = null } = {}) {
   if (!voiceSupported()) return;
   voiceModalCorrectText = correctText;
   voiceModalAllowLowAccuracyContinue = continueOnLowAccuracy;
   voiceModalOnSuccess = onSuccess || null;
+  voiceModalOnFail = onFail;
   resetVoiceModal();
   document.getElementById("voice-modal-overlay").classList.remove("modal-closed");
 }
@@ -2740,9 +2747,17 @@ function closeVoiceModal() {
     voiceModalRecognition = null;
   }
   document.getElementById("voice-modal-overlay").classList.add("modal-closed");
+  // A wrong answer already given costs the round however this modal is left -
+  // by the button under the result or by the ✕ - or closing it would be a way
+  // to un-answer and try again. Leaving without answering costs nothing.
+  const failed = voiceModalFailedAttempt ? voiceModalOnFail : null;
+  voiceModalOnFail = null;
+  voiceModalFailedAttempt = false;
+  if (failed) failed();
 }
 
 function resetVoiceModal() {
+  voiceModalFailedAttempt = false;
   voiceModalShouldContinue = false;
   if (voiceModalRecognition) {
     try { voiceModalRecognition.abort(); } catch (e) { /* already stopped */ }
@@ -3091,6 +3106,18 @@ function verifyVoiceModal() {
       go.textContent = "تابع إلى التقييم";
       go.addEventListener("click", () => { closeVoiceModal(); cb(accuracy); });
       scoreArea.appendChild(go);
+    } else if (voiceModalOnFail) {
+      // The answer was given and it was wrong, so re-recording is not on
+      // offer any more - that would make the round unfailable. The result
+      // stays on screen for as long as it takes to read which word went
+      // wrong, and the way out repeats this round (only this one).
+      voiceModalFailedAttempt = true;
+      document.getElementById("voice-modal-actions").classList.add("hidden");
+      const again = document.createElement("button");
+      again.className = "btn primary vr-again";
+      again.innerHTML = iconLabel("repeat", "أعد هذه الجولة");
+      again.addEventListener("click", closeVoiceModal);
+      scoreArea.appendChild(again);
     }
   }
 }
@@ -3447,6 +3474,11 @@ function renderLearnRound() {
   typeArea.classList.toggle("hidden", learnMode !== "type");
   partialArea.classList.toggle("hidden", learnMode !== "partial");
   voiceArea.classList.toggle("hidden", learnMode !== "voice");
+  // "اختبر بالنطق" is the shortcut into a recitation from the other modes.
+  // Inside the تسميع round the recitation IS the round, and its own button is
+  // right there - a second one beneath it only muddies which is which.
+  const voiceShortcut = document.getElementById("btn-learn-voice");
+  if (voiceShortcut) voiceShortcut.classList.toggle("hidden", learnMode === "voice" || !voiceSupported());
   // Only the sequential modes walk word by word, so only they have a
   // position within the ayah worth showing.
   wordProgress.classList.toggle("hidden", learnMode === "partial" || learnMode === "voice");
@@ -4039,10 +4071,21 @@ document.getElementById("btn-learn-meanings").addEventListener("click", async ()
 document.getElementById("btn-voice-round-start").addEventListener("click", () => {
   const item = state.ayahs[learnCurrentKey];
   if (!item) return;
-  openVoiceModal(item.text, () => {
-    learnMistakeThisRound = false;
-    completeLearnRound();
-  });
+  openVoiceModal(
+    item.text,
+    () => {
+      learnMistakeThisRound = false;
+      completeLearnRound();
+    },
+    {
+      // A slip here repeats this round, exactly as a wrong option or a
+      // mistyped word does - and only this round, not the three.
+      onFail: () => {
+        learnMistakeThisRound = true;
+        completeLearnRound();
+      },
+    }
+  );
 });
 
 document.getElementById("btn-learn-voice").addEventListener("click", () => {

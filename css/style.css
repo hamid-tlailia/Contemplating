@@ -1477,6 +1477,9 @@ main#app {
   box-shadow: none;
 }
 
+/* The way out of a failed recitation, under the result that explains it. */
+.voice-score-area .vr-again { display: block; margin: 14px auto 0; }
+
 /* The تسميع round: one button, and a line saying why the ayah is covered. */
 .voice-round-actions { display: flex; justify-content: center; }
 .voice-round-actions .btn { font-size: 1rem; padding: 12px 26px; }
