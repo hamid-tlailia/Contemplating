@@ -4174,6 +4174,10 @@ function openInfoModal(title, bodyHTML) {
   document.getElementById("info-modal-title").textContent = title;
   document.getElementById("info-modal-body").innerHTML = bodyHTML;
   document.getElementById("info-modal-actions").classList.add("hidden");
+  // One shell serves every info modal, so it keeps the scroll position of
+  // whatever was read in it last - and a tafsir opened after a long privacy
+  // policy would start halfway down. New content starts at its beginning.
+  document.querySelector(".info-modal").scrollTop = 0;
   document.getElementById("info-modal-overlay").classList.remove("modal-closed");
 }
 function closeInfoModal() {
@@ -6028,6 +6032,7 @@ function initSettingsPanel() {
 
   document.getElementById("btn-settings-floating").addEventListener("click", () => openOverlay("settings"));
   setupFloatingSettingsButton();
+  setupModalScrollLock();
 
   const exportBtn = document.getElementById("btn-backup-export");
   const importBtn = document.getElementById("btn-backup-import");
@@ -6091,6 +6096,33 @@ function setupFloatingSettingsButton() {
 
   requestAnimationFrame(update);
   window.addEventListener("load", update);
+}
+
+// The other half of the scroll lock (the CSS carries the rest): while any
+// full-screen layer is open, the document behind it stops scrolling, so a
+// swipe that runs past the end of a modal's own content doesn't carry on
+// into the tab underneath and leave it somewhere else when the modal
+// closes. Watched rather than toggled at each call site: overlays open and
+// close from a dozen places (buttons, routes, the back button, a failed
+// recitation), and one of them would always end up forgetting to say so.
+const SCROLL_LOCKING_OVERLAYS = [
+  "settings-overlay",
+  "info-modal-overlay",
+  "voice-modal-overlay",
+  "mushaf-reader-overlay",
+  "tasmee-overlay",
+  "seam-overlay",
+];
+
+function setupModalScrollLock() {
+  const layers = SCROLL_LOCKING_OVERLAYS.map((id) => document.getElementById(id)).filter(Boolean);
+  const update = () => {
+    const open = layers.some((el) => !el.classList.contains("modal-closed"));
+    document.documentElement.classList.toggle("modal-open", open);
+  };
+  const watcher = new MutationObserver(update);
+  layers.forEach((el) => watcher.observe(el, { attributes: true, attributeFilter: ["class"] }));
+  update();
 }
 
 // Warms the service worker's data cache for the surahs actually in use -

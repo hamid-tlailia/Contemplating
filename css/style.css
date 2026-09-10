@@ -162,6 +162,20 @@ body { background-color: transparent; }
    the whole thing moving as one sheet. */
 html { background-attachment: fixed; }
 
+/* ---------- The page holds still while a modal is open ----------
+   A modal is a room, not a layer of paint: scrolling inside one used to run
+   out of content and hand the gesture on to the page underneath, so closing
+   the modal revealed a tab scrolled somewhere else entirely. Two halves to
+   stopping that, and both are needed: the page behind stops scrolling at
+   all (below), and each modal's own scroller refuses to pass a gesture on
+   once it reaches its end (overscroll-behavior, further down). The scroll
+   position is kept, not reset - overflow:hidden freezes the document where
+   it stands, and it resumes there when the modal closes.
+   scrollbar-gutter keeps the desktop scrollbar's width reserved, so the
+   page doesn't jump sideways the moment it stops scrolling. */
+html { scrollbar-gutter: stable; }
+html.modal-open, html.modal-open body { overflow: hidden; }
+
 /* Subtle Islamic geometric pattern (8-point star tiling) behind everything -
    the default background choice (see BACKGROUNDS in app.js); the other
    purchasable patterns below replace it via [data-bg] on the root. */
@@ -846,6 +860,7 @@ main#app {
 .settings-overlay {
   position: fixed;
   inset: 0;
+  overscroll-behavior: contain;
   background: rgba(20,20,15,0.45);
   /* Above the fullscreen reader (400), since settings is reachable from
      inside it via the floating gear - at 200 it opened behind the reader
@@ -866,6 +881,7 @@ main#app {
   max-width: 380px;
   max-height: 85vh;
   overflow-y: auto;
+  overscroll-behavior: contain;
   box-shadow: 0 12px 40px rgba(0,0,0,0.25);
 }
 .settings-header {
@@ -1695,6 +1711,7 @@ main#app {
 .voice-modal-overlay, .info-modal-overlay {
   position: fixed;
   inset: 0;
+  overscroll-behavior: contain;
   z-index: 500;
   display: flex;
   align-items: flex-end;
@@ -1713,6 +1730,7 @@ main#app {
   max-width: 480px;
   max-height: 88vh;
   overflow-y: auto;
+  overscroll-behavior: contain;
   background: color-mix(in srgb, var(--surface) 82%, transparent);
   backdrop-filter: blur(18px) saturate(160%);
   -webkit-backdrop-filter: blur(18px) saturate(160%);
@@ -1759,6 +1777,7 @@ main#app {
 .tasmee-overlay {
   position: fixed;
   inset: 0;
+  overscroll-behavior: contain;
   z-index: 400;
   background: var(--bg);
   display: flex;
@@ -1778,6 +1797,7 @@ main#app {
 .tasmee-body {
   flex: 1;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 16px 18px 8px;
 }
 .tasmee-listener-note {
@@ -1974,6 +1994,7 @@ main#app {
 .mushaf-reader-overlay {
   position: fixed;
   inset: 0;
+  overscroll-behavior: contain;
   z-index: 400;
   background: var(--bg);
   display: flex;
@@ -1993,6 +2014,7 @@ main#app {
 .mushaf-reader-body {
   flex: 1;
   overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   padding: 24px 10px;
