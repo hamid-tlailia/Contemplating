@@ -2738,6 +2738,11 @@ let voiceModalOnSuccess = null;
 let voiceModalOnFail = null;
 let voiceModalFailedAttempt = false; // an answer was submitted and it was wrong
 let voiceModalFailedDetail = null;
+// A single word off is as likely to be the engine mishearing as the reciter
+// forgetting, so the first such slip is correctable instead of fatal: the
+// chips stay editable and تحقق stays on offer. Two words off is a real gap,
+// and so is a second failed attempt - both end the round.
+let voiceModalGraceUsed = false;
 
 // onSuccess (optional): called after a high-accuracy verification, so the
 // caller can advance its own flow (next learning round/ayah, or reveal the
@@ -2779,9 +2784,15 @@ function closeVoiceModal() {
   if (failed) failed(detail.accuracy, detail.notes);
 }
 
-function resetVoiceModal() {
-  voiceModalFailedAttempt = false;
-  voiceModalFailedDetail = null;
+// keepVerdict: re-recording clears the panel but must NOT clear what has
+// already been answered. Without it, a re-record after a wrong submission
+// would hand back both a fresh grace and a clean slate to walk out on.
+function resetVoiceModal({ keepVerdict = false } = {}) {
+  if (!keepVerdict) {
+    voiceModalFailedAttempt = false;
+    voiceModalFailedDetail = null;
+    voiceModalGraceUsed = false;
+  }
   voiceModalShouldContinue = false;
   if (voiceModalRecognition) {
     try { voiceModalRecognition.abort(); } catch (e) { /* already stopped */ }
@@ -3069,7 +3080,7 @@ function attemptRecognitionStart(recognition, isRetry) {
 }
 
 function startVoiceModalRecording() {
-  resetVoiceModal();
+  resetVoiceModal({ keepVerdict: true });
   const recognition = createVoiceRecognitionInstance();
   voiceModalShouldContinue = true;
   voiceModalBaseText = "";
@@ -3182,6 +3193,10 @@ function verifyVoiceModal() {
   scoreArea.innerHTML = `<p class="vr-text">${html}</p><p class="vr-score">دقة التسميع: ${accuracy}%</p>${noteHTML}`;
   scoreArea.classList.remove("hidden");
   if (recitationPassed(diff)) {
+    // A pass wipes any pending failure from the corrected attempt before it,
+    // or closing the modal on the way out would fail the round it just won.
+    voiceModalFailedAttempt = false;
+    voiceModalFailedDetail = null;
     playSuccessSound();
     showToast(randomEncouragement());
     if (voiceModalOnSuccess) {
@@ -3203,18 +3218,37 @@ function verifyVoiceModal() {
       go.addEventListener("click", () => { closeVoiceModal(); cb(accuracy); });
       scoreArea.appendChild(go);
     } else if (voiceModalOnFail) {
-      // The answer was given and it was wrong, so re-recording is not on
-      // offer any more - that would make the round unfailable. The result
-      // stays on screen for as long as it takes to read which word went
-      // wrong, and the way out repeats this round (only this one).
+      // Leaving now costs the round either way: an answer was submitted and
+      // it was wrong. What differs is whether it can still be taken back.
       voiceModalFailedAttempt = true;
       voiceModalFailedDetail = { accuracy, notes: notes.join(" · ") };
-      document.getElementById("voice-modal-actions").classList.add("hidden");
-      const again = document.createElement("button");
-      again.className = "btn primary vr-again";
-      again.innerHTML = iconLabel("repeat", "أعد هذه الجولة");
-      again.addEventListener("click", closeVoiceModal);
-      scoreArea.appendChild(again);
+      // A word said wrong shows up twice in the diff - once as a word of the
+      // ayah that never came, once as a word that came and isn't in it - so
+      // one substitution is max(), not the sum: one mistake, not two.
+      const slips = Math.max(missed, diff.extras);
+      if (slips === 1 && !voiceModalGraceUsed) {
+        // One word. Often the engine's, not the reciter's - and either way
+        // it is a word away from right, so the chips stay editable and تحقق
+        // stays on offer for exactly one more try.
+        voiceModalGraceUsed = true;
+        document.getElementById("voice-modal-actions").classList.remove("hidden");
+        const fix = document.createElement("p");
+        fix.className = "vr-fix";
+        fix.textContent = "كلمة واحدة فقط — صحّحها بالضغط عليها في الأعلى، أو أعد التسجيل، ثم اضغط «تحقق». هذه محاولتك الأخيرة في هذه الجولة.";
+        scoreArea.appendChild(fix);
+      } else {
+        // Two words off, or the corrected attempt failed too: the answer is
+        // final now, so re-recording is no longer on offer - that would make
+        // the round unfailable. The result stays on screen for as long as it
+        // takes to read which word went wrong, and the way out repeats this
+        // round (only this one).
+        document.getElementById("voice-modal-actions").classList.add("hidden");
+        const again = document.createElement("button");
+        again.className = "btn primary vr-again";
+        again.innerHTML = iconLabel("repeat", "أعد هذه الجولة");
+        again.addEventListener("click", closeVoiceModal);
+        scoreArea.appendChild(again);
+      }
     }
   }
 }
@@ -3233,10 +3267,7 @@ document.getElementById("voice-modal-overlay").addEventListener("click", (e) => 
   if (e.target.id === "voice-modal-overlay") closeVoiceModal();
 });
 
-if (!voiceSupported()) {
-  document.getElementById("btn-learn-voice").title = "غير مدعوم في هذا المتصفح";
-} else {
-  document.getElementById("btn-learn-voice").classList.remove("hidden");
+if (voiceSupported()) {
   document.getElementById("btn-review-voice").classList.remove("hidden");
   document.getElementById("mode-btn-voice").classList.remove("hidden");
 }
@@ -3576,11 +3607,10 @@ function renderLearnRound() {
   typeArea.classList.toggle("hidden", learnMode !== "type");
   partialArea.classList.toggle("hidden", learnMode !== "partial");
   voiceArea.classList.toggle("hidden", learnMode !== "voice");
-  // "اختبر بالنطق" is the shortcut into a recitation from the other modes.
-  // Inside the تسميع round the recitation IS the round, and its own button is
-  // right there - a second one beneath it only muddies which is which.
-  const voiceShortcut = document.getElementById("btn-learn-voice");
-  if (voiceShortcut) voiceShortcut.classList.toggle("hidden", learnMode === "voice" || !voiceSupported());
+  // No recitation shortcut under the other modes: تسميع is a mode of its own
+  // in the row above, and the rotation brings it round on its own turn. A
+  // second door into it from إخفاء/اختيار/كتابة only asked, on every round,
+  // which of the two the round was supposed to be answered by.
   // Only the sequential modes walk word by word, so only they have a
   // position within the ayah worth showing.
   wordProgress.classList.toggle("hidden", learnMode === "partial" || learnMode === "voice");
@@ -3659,7 +3689,7 @@ function renderLearnRound() {
 // the rating, not instead of it. Uncovering also walks the panel down to
 // whatever is still hidden, so a long ayah doesn't leave words waiting
 // below the fold with nothing to say they are there.
-function makeRevealGate({ scrollId, actionsId, hintId, fit }) {
+function makeRevealGate({ scrollId, actionsId, hintId, fit, ask = false }) {
   return (stillHidden, revealed) => {
     const done = stillHidden === 0;
     const actions = document.getElementById(actionsId);
@@ -3667,9 +3697,15 @@ function makeRevealGate({ scrollId, actionsId, hintId, fit }) {
     if (!actions || !hint) return;
     actions.classList.toggle("hidden", !done);
     hint.classList.toggle("hidden", done);
-    hint.textContent = stillHidden === 1
-      ? "بقيت كلمة واحدة مخفية - اضغط عليها لكشفها."
-      : `استرجعها في نفسك، ثم اضغط على كل كلمة مخفية لكشفها (بقي ${stillHidden}).`;
+    if (ask) {
+      hint.textContent = stillHidden === 1
+        ? "بقيت كلمة واحدة - اضغط عليها واختر الصحيحة."
+        : `اضغط على كل كلمة مخفية واختر الصحيحة من الخيارات (بقي ${stillHidden}).`;
+    } else {
+      hint.textContent = stillHidden === 1
+        ? "بقيت كلمة واحدة مخفية - اضغط عليها لكشفها."
+        : `استرجعها في نفسك، ثم اضغط على كل كلمة مخفية لكشفها (بقي ${stillHidden}).`;
+    }
     fit();
     // Only chase the next one after an actual tap - not on the first render,
     // which would jump straight past the opening of the ayah.
@@ -3902,7 +3938,7 @@ function cadenceDistractors(correctWord, usedNorms) {
     });
 }
 
-function buildMcqOptions(correctWord, ayahWords) {
+function buildMcqOptions(correctWord, ayahWords, surahNumber = null) {
   const usedNorms = new Set([normalizeArabic(correctWord)]);
   const pool = [];
   function addCandidate(w) {
@@ -3918,7 +3954,7 @@ function buildMcqOptions(correctWord, ayahWords) {
   distractors.forEach((w) => usedNorms.add(normalizeArabic(w)));
 
   ayahWords.forEach(addCandidate);
-  const surahWords = surahAyahsCache[state.learningPointer.surah];
+  const surahWords = surahAyahsCache[surahNumber || state.learningPointer.surah];
   if (surahWords) {
     shuffleArray(surahWords).forEach((a) => quranWords(a.text).forEach(addCandidate));
   }
@@ -4195,18 +4231,6 @@ document.getElementById("btn-voice-round-start").addEventListener("click", () =>
       },
     }
   );
-});
-
-document.getElementById("btn-learn-voice").addEventListener("click", () => {
-  const item = state.ayahs[learnCurrentKey];
-  if (!item) return;
-  // A correct full-ayah recitation counts the same as answering every word
-  // right via MCQ/typing: it completes this round (and the ayah itself, once
-  // 3 clean rounds are reached) instead of just showing a score and stopping.
-  openVoiceModal(item.text, () => {
-    learnMistakeThisRound = false;
-    completeLearnRound();
-  });
 });
 
 // ---------- Daily Ta'ahud challenge ----------
@@ -5429,7 +5453,10 @@ function computeHiddenIndices(n, maskLevel, seedOffset = 0) {
   return hiddenIndices;
 }
 
-function renderMaskedWordsInto(container, words, maskLevel, seedOffset = 0, onReveal) {
+// askFirst (optional): a word is not simply uncovered by tapping it - the tap
+// asks a question first, and the word appears only once it is answered. That
+// is the difference between "I would have known that" and knowing it.
+function renderMaskedWordsInto(container, words, maskLevel, seedOffset = 0, onReveal, askFirst = null) {
   const hiddenIndices = computeHiddenIndices(words.length, maskLevel, seedOffset);
   container.innerHTML = words
     .map((w, idx) => {
@@ -5438,26 +5465,123 @@ function renderMaskedWordsInto(container, words, maskLevel, seedOffset = 0, onRe
     })
     .join(" ");
   container.querySelectorAll(".word.masked").forEach((el) => {
-    el.addEventListener("click", () => {
-      el.classList.remove("masked");
+    const idx = Number(el.dataset.idx);
+    const reveal = () => {
+      el.classList.remove("masked", "asking");
       if (onReveal) onReveal(container.querySelectorAll(".word.masked").length, el);
+    };
+    el.addEventListener("click", () => {
+      if (askFirst) askFirst(idx, words[idx], el, reveal);
+      else reveal();
     });
   });
   if (onReveal) onReveal(hiddenIndices.size, null);
 }
 
+// ---------- Review by recognition, not by reveal ----------
+// Uncovering a word by tapping it graded nothing: the answer arrived before
+// any recall had to happen, and the self-rating that followed was a guess
+// about a guess. In review the hidden word is asked instead - four options,
+// the right one among words that could plausibly stand there - so by the
+// time the grading row appears there is a real count behind it. تسميع stays
+// one button away for whoever would rather recite the whole ayah.
+let reviewChoiceAsked = 0;
+let reviewChoiceMissed = new Set();
+
+function resetReviewChoices() {
+  reviewChoiceAsked = 0;
+  reviewChoiceMissed = new Set();
+  closeReviewChoice();
+}
+
+function closeReviewChoice() {
+  const box = document.getElementById("review-choice");
+  if (!box) return;
+  box.classList.add("hidden");
+  document.getElementById("review-choice-options").innerHTML = "";
+  document.querySelectorAll("#review-text .word.asking").forEach((el) => el.classList.remove("asking"));
+}
+
+function askReviewChoice(idx, word, el, reveal) {
+  const box = document.getElementById("review-choice");
+  const optionsBox = document.getElementById("review-choice-options");
+  if (!box || !optionsBox) { reveal(); return; }
+  closeReviewChoice();
+  el.classList.add("asking");
+  // Each word is counted once, however many times it is asked - re-opening a
+  // question already answered wrong must not deepen the same mistake.
+  if (!el.dataset.asked) {
+    el.dataset.asked = "1";
+    reviewChoiceAsked++;
+  }
+  const item = reviewQueue[reviewIndex];
+  const options = buildMcqOptions(word, currentWords, item ? item.surah : null);
+  optionsBox.innerHTML = "";
+  options.forEach((opt) => {
+    const btn = document.createElement("button");
+    btn.className = "mcq-btn";
+    btn.textContent = opt;
+    btn.addEventListener("click", () => {
+      if (opt === word) {
+        playSuccessSound();
+        btn.classList.add("correct");
+        optionsBox.querySelectorAll(".mcq-btn").forEach((b) => (b.disabled = true));
+        setTimeout(() => { closeReviewChoice(); reveal(); }, 420);
+      } else {
+        playErrorSound();
+        btn.classList.add("wrong");
+        btn.disabled = true;
+        reviewChoiceMissed.add(idx);
+        el.classList.add("missed");
+      }
+    });
+    optionsBox.appendChild(btn);
+  });
+  box.classList.remove("hidden");
+  // The options push the ayah panel shorter, which can carry the word being
+  // asked about out of view - so it is put back afterwards, not before.
+  fitReviewAyahHeight();
+  scrollWordIntoPanel(document.getElementById("review-ayah-scroll"), el);
+  scheduleAnswerDockUpdate();
+  scrollIntoViewIfNeeded("#review-choice");
+}
+
+// The choices already measured this ayah, so the grading row opens with that
+// measurement marked - the same courtesy the تسميع score gets, and for the
+// same reason: SM-2 acts on this number for months.
+function suggestFromChoices() {
+  if (!reviewChoiceAsked) return;
+  const right = reviewChoiceAsked - reviewChoiceMissed.size;
+  const accuracy = Math.round((right / reviewChoiceAsked) * 100);
+  const quality = suggestedQualityFor(accuracy);
+  const btn = document.querySelector(`.grade-buttons button[data-quality="${quality}"]`);
+  const hint = document.getElementById("grade-suggestion");
+  if (!hint) return;
+  document.querySelectorAll(".grade-buttons button").forEach((b) => b.classList.remove("suggested"));
+  if (btn) btn.classList.add("suggested");
+  hint.textContent = `أصبت ${right} من ${reviewChoiceAsked} — المقترح: ${btn ? btn.textContent : ""} (والقرار لك)`;
+  hint.classList.remove("hidden");
+}
+
 function renderMaskedText() {
+  resetReviewChoices();
+  const gate = makeRevealGate({
+    scrollId: "review-ayah-scroll",
+    actionsId: "grade-controls",
+    hintId: "review-reveal-hint",
+    fit: fitReviewAyahHeight,
+    ask: maskLevel > 0,
+  });
   renderMaskedWordsInto(
     document.getElementById("review-text"),
     currentWords,
     maskLevel,
     0,
-    makeRevealGate({
-      scrollId: "review-ayah-scroll",
-      actionsId: "grade-controls",
-      hintId: "review-reveal-hint",
-      fit: fitReviewAyahHeight,
-    })
+    (stillHidden, revealed) => {
+      gate(stillHidden, revealed);
+      if (stillHidden === 0) suggestFromChoices();
+    },
+    maskLevel > 0 ? askReviewChoice : null
   );
   fitReviewAyahHeight();
   scheduleAnswerDockUpdate();
@@ -5466,10 +5590,9 @@ function renderMaskedText() {
 setupAudioControls("review-audio-controls", "review-audio");
 document.getElementById("btn-mask-more").innerHTML = iconLabel("eyeOff", "إخفاء المزيد");
 document.getElementById("btn-review-tafsir").innerHTML = iconLabel("book", "التفسير");
-document.getElementById("btn-review-voice").innerHTML = iconLabel("mic", "اختبر بالنطق");
+document.getElementById("btn-review-voice").innerHTML = iconLabel("mic", "اختبر بالتسميع");
 document.getElementById("btn-learn-tafsir").innerHTML = iconLabel("book", "التفسير");
 document.getElementById("btn-learn-meanings").innerHTML = iconLabel("bulb", "معاني الكلمات");
-document.getElementById("btn-learn-voice").innerHTML = iconLabel("mic", "اختبر بالنطق");
 document.getElementById("btn-learn-mask-more").innerHTML = iconLabel("eyeOff", "إخفاء المزيد");
 document.getElementById("btn-learn-partial-wrong").innerHTML = iconLabel("xCircle", "أخطأت في كلمة");
 document.getElementById("btn-learn-partial-correct").innerHTML = iconLabel("check", "تذكرتها جيدًا");
@@ -5985,7 +6108,7 @@ function showPrivacyPolicy() {
       <li>Google Fonts — ملفات الخطوط.</li>
     </ul>
     <p>هذه الخدمات تتلقى - كأي موقع تزوره - عنوان الـ IP ونوع المتصفح ووقت الطلب، وتخضع لسياسات الخصوصية الخاصة بها. لا نرسل إليها أي شيء عن تقدمك في الحفظ.</p>
-    <p><strong>اختبار التسميع بالصوت:</strong> يستخدم خاصية التعرّف على الكلام المدمجة في المتصفح. في معظم المتصفحات (ومنها كروم على أندرويد) يُرسَل الصوت المسجَّل إلى خوادم مزوّد المتصفح لتحويله إلى نص، وهذا خارج عن سيطرة التطبيق. التطبيق نفسه لا يسجّل صوتك ولا يحتفظ به ولا يرسله إلى أي جهة؛ يستقبل النص الناتج فقط ويستخدمه في الجهاز. إن لم ترغب بذلك، فلا تستخدم زر "اختبر بالنطق".</p>
+    <p><strong>اختبار التسميع بالصوت:</strong> يستخدم خاصية التعرّف على الكلام المدمجة في المتصفح. في معظم المتصفحات (ومنها كروم على أندرويد) يُرسَل الصوت المسجَّل إلى خوادم مزوّد المتصفح لتحويله إلى نص، وهذا خارج عن سيطرة التطبيق. التطبيق نفسه لا يسجّل صوتك ولا يحتفظ به ولا يرسله إلى أي جهة؛ يستقبل النص الناتج فقط ويستخدمه في الجهاز. إن لم ترغب بذلك، فلا تستخدم زر "اختبر بالتسميع" ولا وضع التسميع.</p>
     <p><strong>دون إنترنت:</strong> يحتفظ التطبيق بنسخة من الصفحات والنصوص والتلاوات التي فتحتها داخل ذاكرة المتصفح ليعمل بلا اتصال، وتبقى هذه النسخة على جهازك.</p>
   `);
 }

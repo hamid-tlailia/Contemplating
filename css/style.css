@@ -1234,6 +1234,34 @@ main#app {
   user-select: none;
 }
 @media (hover: hover) { .word.masked:hover { opacity: 0.7; } }
+/* The masked word currently being asked about, so the four options below
+   are visibly attached to one place in the ayah and not to the ayah at
+   large; and one that was answered wrong, kept marked after it opens. */
+.word.masked.asking {
+  background: color-mix(in srgb, var(--primary) 22%, transparent);
+  border-bottom-color: var(--primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 30%, transparent);
+}
+/* :not(.masked) matters: a word answered wrong is still covered until the
+   right option is picked, and a colour applied while it is covered would
+   override the transparent text and hand over the answer. */
+.word.missed:not(.masked) { color: color-mix(in srgb, var(--danger) 55%, var(--text)); }
+
+/* The question under the ayah: which word stood there. */
+.review-choice {
+  background: color-mix(in srgb, var(--primary) 5%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, transparent);
+  border-radius: 14px;
+  padding: 10px 12px 12px;
+  margin-bottom: 12px;
+}
+.review-choice-lead {
+  margin: 0 0 8px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--primary);
+  text-align: center;
+}
 
 /* A word not reached yet in the sequential modes: no tile, just the ruled
    blank it stands for, so what's left to recall reads as quiet empty space
@@ -1755,6 +1783,13 @@ main#app {
   border-color: color-mix(in srgb, var(--warn) 45%, transparent);
   color: color-mix(in srgb, var(--warn) 50%, var(--text));
 }
+/* The other way to answer a review: recite the whole ayah instead of picking
+   its hidden words. It is an alternative to the drill above, not another
+   utility next to التفسير, so it is coloured like one. */
+#btn-review-voice {
+  border-color: color-mix(in srgb, var(--primary) 45%, transparent);
+  color: color-mix(in srgb, var(--primary) 60%, var(--text));
+}
 .cmp-pair {
   margin-top: 16px;
   padding: 12px 14px;
@@ -2043,6 +2078,18 @@ main#app {
 }
 .voice-score-area .vr-score { margin-top: 8px; font-weight: 700; color: var(--primary); }
 .voice-score-area .vr-note { margin-top: 4px; font-size: 0.82rem; color: color-mix(in srgb, var(--warn) 50%, var(--text)); }
+/* One word off is still fixable, so it is said in the colour of a hint
+   rather than of a verdict. */
+.voice-score-area .vr-fix {
+  margin-top: 10px;
+  font-size: 0.82rem;
+  line-height: 1.7;
+  color: color-mix(in srgb, var(--primary) 55%, var(--text));
+  background: color-mix(in srgb, var(--primary) 8%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--primary) 25%, transparent);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
 
 /* Whether the microphone is live, said plainly - and in the one colour the
    answer is worth: red for listening, amber for the gap where nothing is

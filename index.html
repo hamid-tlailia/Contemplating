@@ -472,7 +472,6 @@
       <div class="learn-controls">
         <button id="btn-learn-meanings" class="btn"></button>
         <button id="btn-learn-tafsir" class="btn"></button>
-        <button id="btn-learn-voice" class="btn hidden"></button>
         <button id="btn-learn-similar" class="btn btn-similar hidden"></button>
       </div>
 
@@ -593,7 +592,12 @@
             </div>
           </div>
 
-          <p class="muted" id="review-reveal-hint">استرجع الكلمات المخفية في نفسك، ثم اضغط على كل واحدة لكشفها.</p>
+          <div id="review-choice" class="review-choice hidden">
+            <p class="review-choice-lead">ما الكلمة المخفية؟</p>
+            <div id="review-choice-options" class="mcq-options"></div>
+          </div>
+
+          <p class="muted" id="review-reveal-hint">اضغط على كل كلمة مخفية واختر الصحيحة من الخيارات.</p>
         </div>
 
         <audio id="review-audio"></audio>
