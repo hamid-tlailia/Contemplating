@@ -2005,13 +2005,21 @@ function buildPlanItemRow(item, today) {
     ? `<span class="badge temp" title="\u0644\u0627 \u062a\u064f\u062d\u062a\u0633\u0628 \u0636\u0645\u0646 \u0646\u0633\u0628\u0629 \u0627\u0644\u062a\u0642\u062f\u0645">\u0645\u0631\u0627\u062c\u0639\u0629 \u0645\u0624\u0642\u062a\u0629</span>`
     : "";
   const reviewBtn = isDue ? `<button class="btn btn-review-now">${iconLabel("check", "\u0631\u0627\u062c\u0639\u0647\u0627 \u0627\u0644\u0622\u0646")}</button>` : "";
+  // The ayah gets the row to itself, with everything that describes it on a
+  // line underneath: sharing one line with the number, the date and two
+  // buttons left it about forty pixels wide on a phone - "\u0630\u064e\u0644\u0650..." and nothing
+  // more, which is not enough of an ayah to recognize it by.
   div.innerHTML = `
-    <span class="ref">\u0622\u064a\u0629 ${item.ayah}</span>
-    <span class="snippet">${cleanAyahText(item.text)}</span>
-    <span class="badge ${badge}">${badgeText}</span>
-    ${tempBadge}
-    ${reviewBtn}
-    <button class="icon-btn" title="\u0625\u0632\u0627\u0644\u0629 \u0645\u0646 \u0627\u0644\u062e\u0637\u0629" data-key="${item.surah}:${item.ayah}">\u2715</button>
+    <div class="plan-item-text">
+      <span class="snippet">${cleanAyahText(item.text)}</span>
+      <button class="icon-btn" title="\u0625\u0632\u0627\u0644\u0629 \u0645\u0646 \u0627\u0644\u062e\u0637\u0629" data-key="${item.surah}:${item.ayah}">\u2715</button>
+    </div>
+    <div class="plan-item-meta">
+      <span class="ref">\u0622\u064a\u0629 ${item.ayah}</span>
+      <span class="badge ${badge}">${badgeText}</span>
+      ${tempBadge}
+      ${reviewBtn}
+    </div>
   `;
   div.querySelector(".icon-btn").addEventListener("click", (e) => {
     e.stopPropagation();
