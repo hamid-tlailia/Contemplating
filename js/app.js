@@ -2782,7 +2782,7 @@ function resetVoiceModal() {
     try { voiceModalRecognition.abort(); } catch (e) { /* already stopped */ }
     voiceModalRecognition = null;
   }
-  setVoiceMicRecording(false);
+  setVoiceMicState("idle");
   document.getElementById("voice-status-text").textContent = "اضغط على الميكروفون وابدأ بالتسميع";
   const wordsArea = document.getElementById("voice-words-area");
   wordsArea.innerHTML = "";
@@ -2966,10 +2966,33 @@ function dedupeRepeatedPasses(text) {
 // itself is CSS off this class - see .voice-mic-btn.listening), so its
 // label has to say "stop" then too, or a screen reader still announces it
 // as "start recording" mid-recording.
-function setVoiceMicRecording(recording) {
+// Three states, and they are read off the engine's own events rather than
+// guessed at. The one that matters is "resuming": Android's recogniser ends
+// the session on a pause - a breath is enough - and the app starts it again,
+// but start() returning is not the microphone being live. Anything recited in
+// that gap is simply not heard, and until now nothing on screen said so.
+function setVoiceMicState(mode) {
   const btn = document.getElementById("btn-voice-mic");
-  btn.classList.toggle("listening", recording);
-  btn.setAttribute("aria-label", recording ? "إيقاف التسجيل" : "ابدأ التسجيل");
+  const state = document.getElementById("voice-listen-state");
+  const note = document.getElementById("voice-breath-note");
+  btn.classList.toggle("listening", mode !== "idle");
+  btn.classList.toggle("resuming", mode === "resuming");
+  btn.setAttribute("aria-label", mode === "idle" ? "ابدأ التسجيل" : "إيقاف التسجيل");
+  if (state) {
+    state.classList.toggle("hidden", mode === "idle");
+    state.classList.toggle("waiting", mode === "resuming");
+    state.textContent = mode === "resuming" ? "انتظر… الميكروفون يستعيد الاستماع" : "يستمع الآن";
+  }
+  if (note) note.classList.toggle("hidden", mode === "idle");
+}
+
+// The cue itself: a short tone the moment the microphone is actually live
+// again, with a tap of haptics for a phone held away from the eyes. The
+// reciter's rule is one thing - carry on when you hear it - so it plays at
+// the first start too, not only after a pause.
+function playListeningCue() {
+  playTone(1320, 0.09);
+  try { if (navigator.vibrate) navigator.vibrate(25); } catch (e) { /* not supported */ }
 }
 
 function createVoiceRecognitionInstance() {
@@ -2992,7 +3015,7 @@ function attemptRecognitionStart(recognition, isRetry) {
   } catch (e) {
     if (isRetry) {
       voiceModalShouldContinue = false;
-      setVoiceMicRecording(false);
+      setVoiceMicState("idle");
       document.getElementById("voice-status-text").textContent = "تعذّر بدء الاستماع.";
       return;
     }
@@ -3010,8 +3033,18 @@ function startVoiceModalRecording() {
   voiceModalFinalSegments = [];
   voiceModalLiveTranscript = "";
   const statusText = document.getElementById("voice-status-text");
-  setVoiceMicRecording(true);
-  statusText.textContent = "🔴 يستمع الآن... اقرأ الآية، ثم اضغط الميكروفون مجددًا لإنهاء التسجيل";
+  setVoiceMicState("resuming");
+  statusText.textContent = "اقرأ الآية، ثم اضغط الميكروفون مجددًا لإنهاء التسجيل";
+
+  // onstart says the service accepted the request; onaudiostart says the
+  // microphone is actually capturing. It is the second one the reciter needs.
+  recognition.onaudiostart = () => {
+    setVoiceMicState("listening");
+    playListeningCue();
+  };
+  recognition.onaudioend = () => {
+    if (voiceModalShouldContinue) setVoiceMicState("resuming");
+  };
 
   recognition.onresult = (e) => {
     let interim = "";
@@ -3025,13 +3058,13 @@ function startVoiceModalRecording() {
     // dedupeRepeatedPasses last: the engine can hand back a single segment
     // that already repeats itself, which segment-level merging can't see.
     voiceModalLiveTranscript = dedupeRepeatedPasses(mergeSessionText(voiceModalBaseText, merged));
-    statusText.textContent = voiceModalLiveTranscript || "🔴 يستمع الآن...";
+    statusText.textContent = voiceModalLiveTranscript || "اقرأ الآية…";
   };
   recognition.onerror = (e) => {
     if (e.error === "aborted") return; // our own stop()/close() triggers this - not a real error
     if (VOICE_FATAL_ERRORS.has(e.error)) {
       voiceModalShouldContinue = false;
-      setVoiceMicRecording(false);
+      setVoiceMicState("idle");
       statusText.textContent = `تعذّر الاستماع (${e.error}). تأكد من السماح بالوصول للميكروفون وحاول مجددًا.`;
     }
     // other errors (e.g. "no-speech" during a pause) are left to onend below
@@ -3049,6 +3082,7 @@ function startVoiceModalRecording() {
     // appending a near-duplicate phrase again on every pause. mergeSessionText
     // trims a clean re-heard overlap or drops the whole session when it's a
     // fuzzy re-hear with no clean boundary, fixing this at the fold point.
+    setVoiceMicState("resuming");
     const sessionMerged = mergeVoiceSegments(voiceModalFinalSegments.filter(Boolean));
     voiceModalBaseText = mergeSessionText(voiceModalBaseText, sessionMerged) + " ";
     voiceModalFinalSegments = [];
@@ -3061,7 +3095,7 @@ function stopVoiceModalRecording() {
   voiceModalShouldContinue = false;
   const recognition = voiceModalRecognition;
   voiceModalRecognition = null;
-  setVoiceMicRecording(false);
+  setVoiceMicState("idle");
   if (recognition) {
     recognition.onend = null;
     try { recognition.abort(); } catch (e) { /* already stopped */ }

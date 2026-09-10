@@ -1910,6 +1910,52 @@ main#app {
 .voice-score-area .vr-score { margin-top: 8px; font-weight: 700; color: var(--primary); }
 .voice-score-area .vr-note { margin-top: 4px; font-size: 0.82rem; color: color-mix(in srgb, var(--warn) 50%, var(--text)); }
 
+/* Whether the microphone is live, said plainly - and in the one colour the
+   answer is worth: red for listening, amber for the gap where nothing is
+   being heard. */
+.voice-listen-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 10px auto 0;
+  padding: 5px 14px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: color-mix(in srgb, var(--danger) 50%, var(--text));
+  background: color-mix(in srgb, var(--danger) 14%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+}
+.voice-listen-state::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--danger);
+  animation: micDot 1.1s ease-in-out infinite;
+}
+.voice-listen-state.waiting {
+  color: color-mix(in srgb, var(--warn) 50%, var(--text));
+  background: color-mix(in srgb, var(--warn) 14%, var(--surface));
+  border-color: color-mix(in srgb, var(--warn) 35%, transparent);
+}
+.voice-listen-state.waiting::before { background: var(--warn); animation: none; opacity: 0.6; }
+@keyframes micDot { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+.voice-breath-note {
+  margin: 8px auto 0;
+  max-width: 34ch;
+  font-size: 0.76rem;
+  line-height: 1.7;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* The pulse rings are the microphone being live; in the gap they stop, so the
+   button itself says the same thing the pill does. */
+.voice-mic-btn.resuming { background: var(--warn); }
+.voice-mic-btn.resuming .mic-pulse-ring { animation: none; opacity: 0; }
+
 .voice-modal-actions { display: flex; gap: 10px; justify-content: center; }
 
 /* ---------- Toasts ---------- */
