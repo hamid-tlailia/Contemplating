@@ -1699,6 +1699,9 @@ main#app {
 /* ---------- خريطة الحفظ ---------- */
 .mushaf-map { margin-top: 14px; }
 .mushaf-map-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   cursor: pointer;
   list-style: none;
   font-weight: 700;
@@ -1708,6 +1711,15 @@ main#app {
   user-select: none;
 }
 .mushaf-map-summary::-webkit-details-marker { display: none; }
+.mushaf-map-summary::before {
+  content: "\25C0";
+  font-size: 0.7rem;
+  line-height: 1;
+  color: var(--accent);
+  transition: transform .2s ease;
+  flex: none;
+}
+.mushaf-map[open] > .mushaf-map-summary::before { transform: rotate(-90deg); }
 .mushaf-map-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(10px, 1fr));
