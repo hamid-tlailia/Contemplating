@@ -2870,13 +2870,39 @@ function prefixLCSLengths(a, b) {
 //      only that, so a re-hear that then carries on into new words (the
 //      usual shape after a pause) still keeps the new words.
 //   3) anything left over is genuinely new content and gets appended.
-function mergeSessionText(baseText, sessionText) {
+// How many times a phrase occurs in a word list. The one thing that can tell
+// a re-heard repeat from a repeat the ayah actually contains: the ayah itself.
+function countPhraseOccurrences(normHaystack, normNeedle) {
+  if (!normNeedle.length || normNeedle.length > normHaystack.length) return 0;
+  const needle = normNeedle.join(" ");
+  let count = 0;
+  for (let i = 0; i + normNeedle.length <= normHaystack.length; i++) {
+    if (normHaystack.slice(i, i + normNeedle.length).join(" ") === needle) count++;
+  }
+  return count;
+}
+
+function mergeSessionText(baseText, sessionText, referenceText) {
   const baseWords = baseText.trim().split(/\s+/).filter(Boolean);
   const sessionWords = sessionText.trim().split(/\s+/).filter(Boolean);
   if (sessionWords.length === 0) return baseWords.join(" ");
   if (baseWords.length === 0) return sessionWords.join(" ");
   const normBase = baseWords.map(normalizeArabic);
   const normSession = sessionWords.map(normalizeArabic);
+
+  // البقرة 74 says "وَإِنَّ مِنْهَا لَمَا" twice, and the second time is not the engine
+  // repeating itself - it is the ayah. So before treating a repeat as a
+  // re-hear, ask the ayah how many times it says that phrase: while the
+  // transcript has fewer copies than the ayah does, another one is not a
+  // duplicate at all.
+  const normRef = referenceText ? quranWords(referenceText).map(normalizeArabic) : [];
+  const ayahAllowsAnother = (normPhrase) => {
+    if (!normRef.length) return false;
+    const inAyah = countPhraseOccurrences(normRef, normPhrase);
+    // Keeping it must not put MORE copies in the transcript than the ayah
+    // has: two is the recitation, three is the engine.
+    return inAyah > 0 && countPhraseOccurrences(normBase.concat(normSession), normPhrase) <= inAyah;
+  };
 
   let overlap = 0;
   for (let len = Math.min(baseWords.length, sessionWords.length); len > 0; len--) {
@@ -2885,6 +2911,7 @@ function mergeSessionText(baseText, sessionText) {
       break;
     }
   }
+  if (overlap && ayahAllowsAnother(normSession.slice(0, overlap))) overlap = 0;
   let newWords = sessionWords.slice(overlap);
 
   // No clean boundary: locate where a re-heard run ENDS instead. The last
@@ -2906,7 +2933,11 @@ function mergeSessionText(baseText, sessionText) {
     for (let k = 1; k < lcs.length; k++) {
       if (lcs[k] > lcs[k - 1]) lastMatchK = k;
     }
-    if (lastMatchK >= 3 && lcs[lastMatchK] / lastMatchK >= 0.6) {
+    // Same question of the ayah before trimming a fuzzy re-hear: if what is
+    // about to be dropped is a phrase the ayah has more copies of than the
+    // transcript does, it is the recitation, not an echo of it.
+    const dropping = normSession.slice(0, lastMatchK);
+    if (lastMatchK >= 3 && lcs[lastMatchK] / lastMatchK >= 0.6 && !ayahAllowsAnother(dropping)) {
       newWords = sessionWords.slice(lastMatchK);
       // A pass cut short by the engine tends to end on a clipped word that
       // the next pass then says in full ("...قالوا ام" -> "...قالوا امنا").
@@ -2939,7 +2970,7 @@ function mergeSessionText(baseText, sessionText) {
 // any pass that a LATER pass repeats more completely. The last pass is
 // usually the complete one, and dropping only what reappears later means
 // nothing that was actually said gets lost.
-function dedupeRepeatedPasses(text) {
+function dedupeRepeatedPasses(text, referenceText) {
   const words = text.trim().split(/\s+/).filter(Boolean);
   const ANCHOR = 3;
   if (words.length < ANCHOR * 2) return words.join(" ");
@@ -2951,6 +2982,13 @@ function dedupeRepeatedPasses(text) {
     if (norm.slice(i, i + ANCHOR).join(" ") === anchor) starts.push(i);
   }
   if (starts.length < 2) return words.join(" ");
+  // An ayah that opens a phrase it says again later (there are plenty) is not
+  // a transcript that repeated a pass - the ayah is asked before anything is
+  // split on it.
+  const normRef = referenceText ? quranWords(referenceText).map(normalizeArabic) : [];
+  if (normRef.length && countPhraseOccurrences(normRef, norm.slice(0, ANCHOR)) >= starts.length) {
+    return words.join(" ");
+  }
 
   const passes = starts.map((start, i) => words.slice(start, i + 1 < starts.length ? starts[i + 1] : words.length));
   const repeatedLater = (pass, i) =>
@@ -2964,7 +3002,7 @@ function dedupeRepeatedPasses(text) {
 
   return passes
     .filter((pass, i) => !repeatedLater(pass, i))
-    .reduce((acc, pass) => mergeSessionText(acc, pass.join(" ")), "");
+    .reduce((acc, pass) => mergeSessionText(acc, pass.join(" "), referenceText), "");
 }
 
 // The mic button swaps to a stop square while recording (the glyph swap
@@ -2986,7 +3024,7 @@ function setVoiceMicState(mode) {
   if (state) {
     state.classList.toggle("hidden", mode === "idle");
     state.classList.toggle("waiting", mode === "resuming");
-    state.textContent = mode === "resuming" ? "انتظر… الميكروفون يستعيد الاستماع" : "يستمع الآن";
+    state.textContent = mode === "resuming" ? "توقّف… انتظر الضوء الأخضر" : "أخضر — يستمع الآن";
   }
   if (note) note.classList.toggle("hidden", mode === "idle");
 }
@@ -3062,7 +3100,7 @@ function startVoiceModalRecording() {
     const merged = mergeVoiceSegments([...voiceModalFinalSegments.filter(Boolean), interim]);
     // dedupeRepeatedPasses last: the engine can hand back a single segment
     // that already repeats itself, which segment-level merging can't see.
-    voiceModalLiveTranscript = dedupeRepeatedPasses(mergeSessionText(voiceModalBaseText, merged));
+    voiceModalLiveTranscript = dedupeRepeatedPasses(mergeSessionText(voiceModalBaseText, merged, voiceModalCorrectText), voiceModalCorrectText);
     statusText.textContent = voiceModalLiveTranscript || "اقرأ الآية…";
   };
   recognition.onerror = (e) => {
@@ -3089,7 +3127,7 @@ function startVoiceModalRecording() {
     // fuzzy re-hear with no clean boundary, fixing this at the fold point.
     setVoiceMicState("resuming");
     const sessionMerged = mergeVoiceSegments(voiceModalFinalSegments.filter(Boolean));
-    voiceModalBaseText = mergeSessionText(voiceModalBaseText, sessionMerged) + " ";
+    voiceModalBaseText = mergeSessionText(voiceModalBaseText, sessionMerged, voiceModalCorrectText) + " ";
     voiceModalFinalSegments = [];
     attemptRecognitionStart(recognition);
   };

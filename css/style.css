@@ -1955,7 +1955,11 @@ main#app {
 .voice-mic-btn.listening .mic-glyph { display: none; }
 .voice-mic-btn.listening .stop-glyph { display: block; }
 @media (hover: hover) { .voice-mic-btn:hover { transform: scale(1.04); } }
-.voice-mic-btn.listening { background: var(--danger); animation: micBeat 1s ease-in-out infinite; }
+/* Green is "go": the microphone is live and the recitation may carry on.
+   Red is "stop": it is not hearing you yet. Recording apps use red for the
+   opposite, but here the question the colour answers is not "am I recording?"
+   - it is "may I recite now?" */
+.voice-mic-btn.listening { background: var(--good); animation: micBeat 1s ease-in-out infinite; }
 
 .mic-pulse-ring {
   position: absolute;
@@ -1965,7 +1969,7 @@ main#app {
   opacity: 0;
 }
 .voice-mic-btn.listening .mic-pulse-ring {
-  border-color: var(--danger);
+  border-color: var(--good);
   animation: micPulse 1.6s ease-out infinite;
 }
 .voice-mic-btn.listening .mic-pulse-ring.delay { animation-delay: 0.6s; }
@@ -2040,24 +2044,24 @@ main#app {
   border-radius: 999px;
   font-size: 0.82rem;
   font-weight: 700;
-  color: color-mix(in srgb, var(--danger) 50%, var(--text));
-  background: color-mix(in srgb, var(--danger) 14%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  color: color-mix(in srgb, var(--good) 50%, var(--text));
+  background: color-mix(in srgb, var(--good) 14%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--good) 35%, transparent);
 }
 .voice-listen-state::before {
   content: "";
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: var(--danger);
+  background: var(--good);
   animation: micDot 1.1s ease-in-out infinite;
 }
 .voice-listen-state.waiting {
-  color: color-mix(in srgb, var(--warn) 50%, var(--text));
-  background: color-mix(in srgb, var(--warn) 14%, var(--surface));
-  border-color: color-mix(in srgb, var(--warn) 35%, transparent);
+  color: color-mix(in srgb, var(--danger) 50%, var(--text));
+  background: color-mix(in srgb, var(--danger) 14%, var(--surface));
+  border-color: color-mix(in srgb, var(--danger) 35%, transparent);
 }
-.voice-listen-state.waiting::before { background: var(--warn); animation: none; opacity: 0.6; }
+.voice-listen-state.waiting::before { background: var(--danger); animation: none; }
 @keyframes micDot { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
 
 .voice-breath-note {
@@ -2071,7 +2075,7 @@ main#app {
 
 /* The pulse rings are the microphone being live; in the gap they stop, so the
    button itself says the same thing the pill does. */
-.voice-mic-btn.resuming { background: var(--warn); }
+.voice-mic-btn.resuming { background: var(--danger); animation: none; }
 .voice-mic-btn.resuming .mic-pulse-ring { animation: none; opacity: 0; }
 
 .voice-modal-actions { display: flex; gap: 10px; justify-content: center; }
