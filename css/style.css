@@ -1696,6 +1696,45 @@ main#app {
   color: var(--muted);
 }
 .tasmee-display { margin-bottom: 12px; }
+/* ---------- خريطة الحفظ ---------- */
+.mushaf-map { margin-top: 14px; }
+.mushaf-map-summary {
+  cursor: pointer;
+  list-style: none;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--primary);
+  padding: 6px 0;
+  user-select: none;
+}
+.mushaf-map-summary::-webkit-details-marker { display: none; }
+.mushaf-map-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10px, 1fr));
+  gap: 3px;
+  margin: 10px 0;
+  direction: rtl;
+}
+.map-cell {
+  aspect-ratio: 1;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+.map-cell.l1 { background: color-mix(in srgb, var(--primary) 28%, transparent); }
+.map-cell.l2 { background: color-mix(in srgb, var(--primary) 58%, transparent); }
+.map-cell.l3 { background: var(--primary); }
+.mushaf-map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.mushaf-map-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.mushaf-map-legend i { width: 10px; height: 10px; display: inline-block; }
+
 .backup-row { display: flex; gap: 10px; flex-wrap: wrap; }
 .backup-row .btn { flex: 1; min-width: 130px; }
 
