@@ -2422,6 +2422,13 @@ function isContiguousAddition(surahNumber, ayahNumber) {
   return ayahNumber === existingMax + 1;
 }
 
+function wordCountLabel(n) {
+  if (n === 1) return "كلمة واحدة";
+  if (n === 2) return "كلمتان";
+  if (n <= 10) return `${n} كلمات`;
+  return `${n} كلمة`;
+}
+
 // Arabic counts a pair, and a few, differently from a lot.
 function ayahCountLabel(n) {
   if (n === 1) return "آية واحدة";
@@ -2717,6 +2724,7 @@ let voiceModalAllowLowAccuracyContinue = false;
 let voiceModalOnSuccess = null;
 let voiceModalOnFail = null;
 let voiceModalFailedAttempt = false; // an answer was submitted and it was wrong
+let voiceModalFailedDetail = null;
 
 // onSuccess (optional): called after a high-accuracy verification, so the
 // caller can advance its own flow (next learning round/ayah, or reveal the
@@ -2751,13 +2759,16 @@ function closeVoiceModal() {
   // by the button under the result or by the ✕ - or closing it would be a way
   // to un-answer and try again. Leaving without answering costs nothing.
   const failed = voiceModalFailedAttempt ? voiceModalOnFail : null;
+  const detail = voiceModalFailedDetail || {};
   voiceModalOnFail = null;
   voiceModalFailedAttempt = false;
-  if (failed) failed();
+  voiceModalFailedDetail = null;
+  if (failed) failed(detail.accuracy, detail.notes);
 }
 
 function resetVoiceModal() {
   voiceModalFailedAttempt = false;
+  voiceModalFailedDetail = null;
   voiceModalShouldContinue = false;
   if (voiceModalRecognition) {
     try { voiceModalRecognition.abort(); } catch (e) { /* already stopped */ }
@@ -3112,6 +3123,7 @@ function verifyVoiceModal() {
       // stays on screen for as long as it takes to read which word went
       // wrong, and the way out repeats this round (only this one).
       voiceModalFailedAttempt = true;
+      voiceModalFailedDetail = { accuracy, notes: notes.join(" · ") };
       document.getElementById("voice-modal-actions").classList.add("hidden");
       const again = document.createElement("button");
       again.className = "btn primary vr-again";
@@ -3150,6 +3162,9 @@ let learnCurrentKey = null;
 let learnWords = [];
 let learnWordIndex = 0;
 let learnMistakeThisRound = false;
+// The last recitation of the ayah being worked on: what the repeated round
+// shows in place of the words it cannot show.
+let lastVoiceAttempt = null;
 let learnMode = "mcq"; // 'mcq' | 'type' | 'partial'
 let learnMaskLevel = 1; // only used in 'partial' mode - 0 = none masked ... up to full mask
 
@@ -3277,6 +3292,7 @@ async function loadLearnAyah() {
   }
 
   const item = getOrCreateLearningItem(pointer.surah, meta.name, ayahObj);
+  if (learnCurrentKey !== `${pointer.surah}:${pointer.ayah}`) lastVoiceAttempt = null;
   learnCurrentKey = `${pointer.surah}:${pointer.ayah}`;
   learnWords = quranWords(ayahObj.text);
   learnWordIndex = 0;
@@ -3488,14 +3504,19 @@ function renderLearnRound() {
     return;
   }
 
-  // Recited from memory, so the ayah is covered whole - the panel keeps the
-  // shape of it and nothing else. The words are not tappable here: a word
-  // uncovered is the answer given away.
+  // Recited from memory, so there are no words to show - and a wall of empty
+  // tiles standing in for them said nothing and took half the screen. What
+  // the panel carries instead is what is worth knowing before reciting and
+  // cannot give an answer away: how many words are coming, and - when this
+  // round is being repeated - how the last attempt went.
   if (learnMode === "voice") {
-    document.getElementById("learn-text").innerHTML = learnWords
-      .map((w) => `<span class="word masked" aria-hidden="true">${w}</span>`)
-      .join(" ");
-    document.getElementById("btn-voice-round-start").innerHTML = iconLabel("mic", "ابدأ التسميع");
+    const last = lastVoiceAttempt && lastVoiceAttempt.key === learnCurrentKey ? lastVoiceAttempt : null;
+    document.getElementById("learn-text").innerHTML = `
+      <div class="voice-round-shape">
+        <span class="voice-round-count">${wordCountLabel(learnWords.length)}</span>
+        ${last ? `<span class="voice-round-last">آخر محاولة: ${last.accuracy}%${last.notes ? ` · ${last.notes}` : ""}</span>` : ""}
+      </div>`;
+    document.getElementById("btn-voice-round-start").innerHTML = iconLabel("mic", last ? "أعد التسميع" : "ابدأ التسميع");
     fitLearnAyahHeight();
     scheduleAnswerDockUpdate();
     return;
@@ -4074,13 +4095,15 @@ document.getElementById("btn-voice-round-start").addEventListener("click", () =>
   openVoiceModal(
     item.text,
     () => {
+      lastVoiceAttempt = null;
       learnMistakeThisRound = false;
       completeLearnRound();
     },
     {
       // A slip here repeats this round, exactly as a wrong option or a
       // mistyped word does - and only this round, not the three.
-      onFail: () => {
+      onFail: (accuracy, notes) => {
+        lastVoiceAttempt = { key: learnCurrentKey, accuracy, notes };
         learnMistakeThisRound = true;
         completeLearnRound();
       },

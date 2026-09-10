@@ -157,6 +157,11 @@ html { overflow-x: clip; }
 html { background-color: var(--bg); }
 body { background-color: transparent; }
 
+/* The pattern belongs to the page, not to the paper on it: pinned to the
+   viewport, so the cards slide over a sky that stays where it is instead of
+   the whole thing moving as one sheet. */
+html { background-attachment: fixed; }
+
 /* Subtle Islamic geometric pattern (8-point star tiling) behind everything -
    the default background choice (see BACKGROUNDS in app.js); the other
    purchasable patterns below replace it via [data-bg] on the root. */
@@ -1475,6 +1480,31 @@ main#app {
   color: var(--muted);
   border: 1px solid var(--border);
   box-shadow: none;
+}
+
+/* The تسميع round's panel: no words to show, so one quiet line about what is
+   coming, centred in the frame rather than a wall of empty tiles. */
+.voice-round-shape {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 120px;
+  font-family: 'Tajawal', sans-serif;
+}
+.voice-round-count {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: color-mix(in srgb, var(--primary) 60%, var(--text));
+  background: color-mix(in srgb, var(--primary) 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
+  border-radius: 999px;
+  padding: 6px 18px;
+}
+.voice-round-last {
+  font-size: 0.82rem;
+  color: color-mix(in srgb, var(--warn) 50%, var(--text));
 }
 
 /* The way out of a failed recitation, under the result that explains it. */
