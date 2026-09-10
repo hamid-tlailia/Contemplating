@@ -1696,6 +1696,9 @@ main#app {
   color: var(--muted);
 }
 .tasmee-display { margin-bottom: 12px; }
+.backup-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.backup-row .btn { flex: 1; min-width: 130px; }
+
 /* ---------- المتشابهات ---------- */
 .btn-similar {
   border-color: color-mix(in srgb, var(--warn) 45%, transparent);

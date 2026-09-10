@@ -2442,6 +2442,7 @@ function wordCountLabel(n) {
 
 // Arabic counts a pair, and a few, differently from a lot.
 function ayahCountLabel(n) {
+  if (!n) return "لا آيات";
   if (n === 1) return "آية واحدة";
   if (n === 2) return "آيتان";
   if (n <= 10) return `${n} آيات`;
@@ -4522,6 +4523,92 @@ let tasmeeIndex = 0;
 let tasmeeTally = { good: 0, hesitant: 0, wrong: 0 };
 
 // The entry point only appears when there is actually something to recite.
+// ---------- نسخة احتياطية ----------
+//
+// Everything this app knows lives in one object in one browser's storage.
+// Clearing site data, or changing phone, takes months of memorization with
+// it, and nothing here could carry it out. The file below is the whole of
+// that object - the ayahs and their schedule, the points, the reciter, the
+// theme, the font, the background and what has been unlocked of each, the
+// wird commitment, the daily counts - not a summary of it.
+
+const BACKUP_FORMAT = "tadabbur-backup";
+
+function backupSummary(data) {
+  const st = (data && data.state) || {};
+  const ayahs = Object.values(st.ayahs || {});
+  return {
+    ayahs: ayahs.length,
+    mastered: ayahs.filter((a) => a.learningStage === "srs" && !a.temporary).length,
+    points: st.points || 0,
+    savedAt: (data && data.savedAt) || "",
+  };
+}
+
+function exportBackup() {
+  const payload = {
+    format: BACKUP_FORMAT,
+    version: 1,
+    savedAt: new Date().toISOString().slice(0, 16).replace("T", " "),
+    app: "تدبر",
+    state,
+  };
+  try {
+    const blob = new Blob([JSON.stringify(payload, null, 1)], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `tadabbur-${todayISO()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const s = backupSummary(payload);
+    showToast("💾 حُفظت نسختك", "success", `${ayahCountLabel(s.ayahs)} · ${s.points} نقطة`);
+  } catch (e) {
+    showToast("تعذّر حفظ النسخة على هذا الجهاز.", "error");
+  }
+}
+
+// Restoring replaces everything, so it says what it is about to replace it
+// WITH - a file from the wrong phone, or an older one, is otherwise
+// indistinguishable until the damage is done.
+function importBackupFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    let data;
+    try {
+      data = JSON.parse(String(reader.result));
+    } catch (e) {
+      showToast("هذا الملف ليس نسخة صالحة.", "error");
+      return;
+    }
+    if (!data || data.format !== BACKUP_FORMAT || !data.state || typeof data.state.ayahs !== "object") {
+      showToast("هذا الملف ليس نسخة من تدبر.", "error");
+      return;
+    }
+    const incoming = backupSummary(data);
+    const current = backupSummary({ state });
+    showConfirmModal(
+      "استعادة نسخة",
+      `النسخة المحفوظة${incoming.savedAt ? ` بتاريخ ${incoming.savedAt}` : ""} فيها <strong>${ayahCountLabel(incoming.ayahs)}</strong> منها ${incoming.mastered} محفوظة، و<strong>${incoming.points} نقطة</strong>.<br><br>ستحلّ محلّ ما على هذا الجهاز الآن (${ayahCountLabel(current.ayahs)} · ${current.points} نقطة)، ولا يمكن التراجع.`,
+      "استعد هذه النسخة",
+      () => {
+        try {
+          localStorage.setItem(STATE_KEY, JSON.stringify(data.state));
+        } catch (e) {
+          showToast("تعذّرت الكتابة في ذاكرة المتصفّح.", "error");
+          return;
+        }
+        showToast("✅ استُعيدت نسختك", "success");
+        setTimeout(() => location.reload(), 700);
+      }
+    );
+  };
+  reader.onerror = () => showToast("تعذّرت قراءة الملف.", "error");
+  reader.readAsText(file);
+}
+
 // ---------- المتشابهات ----------
 //
 // Ayahs that are nearly the same as ayahs elsewhere are the other half of
@@ -5618,6 +5705,19 @@ function initSettingsPanel() {
 
   document.getElementById("btn-settings-floating").addEventListener("click", () => openOverlay("settings"));
   setupFloatingSettingsButton();
+
+  const exportBtn = document.getElementById("btn-backup-export");
+  const importBtn = document.getElementById("btn-backup-import");
+  const fileInput = document.getElementById("backup-file");
+  exportBtn.innerHTML = iconLabel("book", "احفظ نسخة");
+  importBtn.innerHTML = iconLabel("repeat", "استعد من ملف");
+  exportBtn.addEventListener("click", exportBackup);
+  importBtn.addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files && fileInput.files[0];
+    fileInput.value = ""; // so choosing the same file twice still fires
+    if (file) importBackupFile(file);
+  });
 
   const prefetchBtn = document.getElementById("btn-offline-prefetch");
   prefetchBtn.innerHTML = iconLabel("book", "تحميل سور خطتي للاستخدام دون إنترنت");

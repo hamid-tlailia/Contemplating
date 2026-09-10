@@ -155,6 +155,16 @@
       </select>
     </label>
     <div class="settings-field">
+      نسخة احتياطية
+      <div class="backup-row">
+        <button id="btn-backup-export" class="btn"></button>
+        <button id="btn-backup-import" class="btn"></button>
+      </div>
+      <input type="file" id="backup-file" accept="application/json,.json" class="hidden">
+      <p class="muted">حفظك كلّه يعيش في هذا المتصفّح وحده: مسح بيانات الموقع أو تغيير الهاتف يمحوه. الملف يحفظ كل شيء — الآيات وخطتها ومواعيد مراجعتها، والنقاط، والقارئ والمظهر والخط والخلفية وما فتحته منها، وعهد وردك وسجلّ أيامك.</p>
+    </div>
+
+    <div class="settings-field">
       العمل دون إنترنت
       <button id="btn-offline-prefetch" class="btn"></button>
       <p class="muted" id="offline-prefetch-status">حمّل سور خطتك الآن ليعمل الحفظ والمراجعة دون اتصال.</p>
