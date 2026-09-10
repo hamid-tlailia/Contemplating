@@ -351,7 +351,7 @@ h1, h2 { font-family: 'Tajawal', sans-serif; margin: 0; }
 /* A couple of px down: digit glyphs sit slightly high within their own
    line box compared to the icon's true visual center, so the two read as
    misaligned even though both are flex-centered on the same row. */
-.header-points-badge #header-points-value { line-height: 1; position: relative; top: 1px; }
+.header-points-badge #header-points-value { line-height: 1; position: relative; top: 2px; }
 
 /* Bottom app-style navigation on phones/tablets: easier to reach with a thumb,
    and it keeps the brand header from competing with four tab pills for width. */
@@ -2373,13 +2373,13 @@ main#app {
 
 /* ---------- Points display & theme grid (settings panel) ---------- */
 
-/* Label, coin and number as one centred group on one line, rather than a
-   label pushed to one edge and a number to the other - it is one statement,
-   and it reads as one. */
+/* The label holds the right edge of the pill and the total the left, with
+   the coin travelling with the number it belongs to - one group, not two
+   loose items. */
 .points-display-row {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   gap: 8px;
   background: var(--bg);
   border: 1px solid var(--border);
@@ -2388,6 +2388,11 @@ main#app {
   margin-bottom: 14px;
   font-size: 0.95rem;
   line-height: 1;
+}
+.points-display-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 .points-display-row .coin-icon svg { width: 18px; height: 18px; }
 .points-display-row strong {
