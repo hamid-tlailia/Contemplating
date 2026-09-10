@@ -108,7 +108,10 @@ function iconLabel(iconKey, text) {
 // vertical position within its own box is outside CSS's control, so no
 // amount of align-items/line-height ever lines it up with the point count
 // reliably across devices - a plain stroke icon we draw ourselves does.
-document.getElementById("header-coin-icon").innerHTML = ICONS.coin;
+// Both places that report the point total draw the same coin: the header
+// badge and the settings row. One icon, one colour, one alignment - two
+// different marks for one thing read as two different things.
+document.querySelectorAll(".coin-icon").forEach((el) => { el.innerHTML = ICONS.coin; });
 
 function audioSrcFor(globalAyahNumber) {
   const reciter = RECITERS.find((r) => r.id === state.reciter) || RECITERS[0];

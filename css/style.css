@@ -338,13 +338,16 @@ h1, h2 { font-family: 'Tajawal', sans-serif; margin: 0; }
   padding: 5px 10px;
   white-space: nowrap;
 }
-.header-points-badge .coin-icon {
+/* One coin, wherever the total is reported - the header badge and the
+   settings row. */
+.coin-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: none;
   color: #eab308;
 }
-.header-points-badge .coin-icon svg { width: 15px; height: 15px; }
+.coin-icon svg { width: 15px; height: 15px; }
 /* A couple of px down: digit glyphs sit slightly high within their own
    line box compared to the icon's true visual center, so the two read as
    misaligned even though both are flex-centered on the same row. */
@@ -2370,18 +2373,30 @@ main#app {
 
 /* ---------- Points display & theme grid (settings panel) ---------- */
 
+/* Label, coin and number as one centred group on one line, rather than a
+   label pushed to one edge and a number to the other - it is one statement,
+   and it reads as one. */
 .points-display-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
+  gap: 8px;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 999px;
   padding: 10px 16px;
   margin-bottom: 14px;
   font-size: 0.95rem;
+  line-height: 1;
 }
-.points-display-row strong { color: var(--primary); font-size: 1.1rem; }
+.points-display-row .coin-icon svg { width: 18px; height: 18px; }
+.points-display-row strong {
+  color: var(--primary);
+  font-size: 1.1rem;
+  line-height: 1;
+  position: relative;
+  top: 1px; /* same nudge as the header: digits sit high in their line box */
+}
 
 /* Shared by every cosmetic collectible grid (reciters, themes, fonts,
    backgrounds) - see renderCollectibleGrid in app.js. */
