@@ -3602,6 +3602,17 @@ function slotWidth(word) {
   return `${(n * 0.42 + 0.5).toFixed(2)}em`;
 }
 
+// The تسميع round hides the ayah, which left nothing to say WHERE to start
+// from - and "24 كلمة" is not a place. A few opening words are: enough to
+// begin from, and short enough that the rest is still recited from memory.
+// It scales with the ayah, so a four-word ayah isn't handed over whole, and
+// the shortest ayahs get nothing but their reference above.
+function voiceRoundLead(words) {
+  if (!words || words.length <= 3) return "";
+  const count = Math.min(3, Math.max(1, Math.floor(words.length / 4)));
+  return `${words.slice(0, count).join(" ")} …`;
+}
+
 function renderLearnRound() {
   scrollIntoViewIfNeeded(".learn-ayah-display");
 
@@ -3634,8 +3645,10 @@ function renderLearnRound() {
   // round is being repeated - how the last attempt went.
   if (learnMode === "voice") {
     const last = lastVoiceAttempt && lastVoiceAttempt.key === learnCurrentKey ? lastVoiceAttempt : null;
+    const lead = voiceRoundLead(learnWords);
     document.getElementById("learn-text").innerHTML = `
       <div class="voice-round-shape">
+        ${lead ? `<span class="voice-round-lead">${lead}</span>` : ""}
         <span class="voice-round-count">${wordCountLabel(learnWords.length)}</span>
         ${last ? `<span class="voice-round-last">آخر محاولة: ${last.accuracy}%${last.notes ? ` · ${last.notes}` : ""}</span>` : ""}
       </div>`;
@@ -5033,7 +5046,8 @@ async function openSimilarCompare(baseRef, refs) {
 // "إِنَّ", and guessing between them teaches nothing.
 
 const SEAM_QUESTION_COUNT = 10;
-const SEAM_CUE_WORDS = 4;      // how much of the ayah before is shown
+const SEAM_CUE_WORDS = 4;      // how much of the END of the ayah before is shown
+const SEAM_LEAD_WORDS = 3;     // and how much of its beginning, to name it
 const SEAM_OPENING_WORDS = 3;  // how much of an ayah's opening an option shows
 
 let seamQueue = [];
@@ -5046,6 +5060,20 @@ function ayahOpening(item) {
 }
 function ayahEnding(item) {
   return quranWords(item.text).slice(-SEAM_CUE_WORDS).join(" ");
+}
+
+// The seam is asked from the END of an ayah, but four closing words are often
+// four words that close a dozen ayahs ("لعلكم تتقون", "وهو العزيز الحكيم") -
+// and being unsure WHICH ayah you are being asked to leave makes the question
+// about recognising a phrase rather than about the join. So it opens with the
+// ayah's own first words too: enough to place it, never enough to recite it.
+function ayahCue(item) {
+  const words = quranWords(item.text);
+  if (words.length <= SEAM_LEAD_WORDS + SEAM_CUE_WORDS + 1) return { text: words.join(" "), whole: true };
+  return {
+    text: `${words.slice(0, SEAM_LEAD_WORDS).join(" ")} … ${words.slice(-SEAM_CUE_WORDS).join(" ")}`,
+    whole: false,
+  };
 }
 
 // A seam exists where two consecutive ayahs of one surah are BOTH memorized
@@ -5107,7 +5135,9 @@ function renderSeamQuestion() {
   seamAnswered = false;
   document.getElementById("seam-position").textContent = `المفصل ${seamIndex + 1} من ${seamQueue.length}`;
   document.getElementById("seam-ref").textContent = `${seam.from.surahName} - الآية ${seam.from.ayah}`;
-  document.getElementById("seam-cue").textContent = `… ${ayahEnding(seam.from)}`;
+  const cue = ayahCue(seam.from);
+  document.getElementById("seam-cue").textContent = cue.text;
+  document.getElementById("seam-cue-label").textContent = cue.whole ? "هذه الآية…" : "أوّل هذه الآية وآخرها…";
   document.getElementById("seam-feedback").classList.add("hidden");
   document.getElementById("btn-seam-next").classList.add("hidden");
 
