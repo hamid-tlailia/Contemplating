@@ -6194,6 +6194,15 @@ function showTerms() {
   `);
 }
 
+// ---------- No zooming ----------
+// The meta viewport and touch-action cover Chrome; Safari ignores
+// user-scalable=no and delivers a pinch as a gesture event of its own, which
+// no CSS can refuse - so it is turned away here. Nothing is lost: the text
+// size setting scales the whole interface together, which zoom never did.
+["gesturestart", "gesturechange", "gestureend"].forEach((type) => {
+  document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
+});
+
 // ---------- PWA service worker ----------
 
 // An installed app is resumed far more often than it is opened: the page on

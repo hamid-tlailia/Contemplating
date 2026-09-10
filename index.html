@@ -2,7 +2,10 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+<!-- maximum-scale/user-scalable: no pinch-zoom. The app has its own text-size
+     setting (صغير…كبير جدًا) which resizes everything together, so zooming is
+     the wrong tool here - it only ever left the page half off the screen. -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
 <title>تدبر - تطبيق حفظ القرآن الكريم بذكاء</title>
 <meta name="description" content="احفظ القرآن الكريم بالتكرار المتباعد، الاختيار من متعدد، الكتابة، والاختبار الصوتي.">
 <meta name="theme-color" content="#1f6f5c">
