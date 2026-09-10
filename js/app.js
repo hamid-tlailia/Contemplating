@@ -67,6 +67,9 @@ const POINTS = {
   // Rewarding effort rather than output is the one shape of reward that
   // doesn't erode the motivation it's meant to support.
   wirdComplete: 4,
+  // The seams between ayahs, drilled on their own. Small: it is a short
+  // exercise, and the point of it is the seam, not the coin.
+  seamCorrect: 1,
 };
 
 // Small inline icon set matching the bottom-nav's stroke style, used instead
@@ -4518,9 +4521,166 @@ let tasmeeIndex = 0;
 let tasmeeTally = { good: 0, hesitant: 0, wrong: 0 };
 
 // The entry point only appears when there is actually something to recite.
+// ---------- وصل الآيات: the seams between them ----------
+//
+// The commonest way a memorized surah breaks down is not inside an ayah but
+// between two: each one is known on its own and the join is not. Nothing in
+// the app drilled that, so this does - and deliberately as its own exercise
+// rather than as a word slipped into a round of the ayah being learned,
+// which would only blur which ayah is being asked about.
+//
+// A question shows the END of one ayah and asks what OPENS the next. The
+// options are openings of ayahs, three words each rather than one: a single
+// word is no answer at all when half the Quran's ayahs open with "وَ" or
+// "إِنَّ", and guessing between them teaches nothing.
+
+const SEAM_QUESTION_COUNT = 10;
+const SEAM_CUE_WORDS = 4;      // how much of the ayah before is shown
+const SEAM_OPENING_WORDS = 3;  // how much of an ayah's opening an option shows
+
+let seamQueue = [];
+let seamIndex = 0;
+let seamTally = { right: 0, wrong: 0 };
+let seamAnswered = false;
+
+function ayahOpening(item) {
+  return quranWords(item.text).slice(0, SEAM_OPENING_WORDS).join(" ");
+}
+function ayahEnding(item) {
+  return quranWords(item.text).slice(-SEAM_CUE_WORDS).join(" ");
+}
+
+// A seam exists where two consecutive ayahs of one surah are BOTH memorized
+// for real - a temporary review isn't part of the sequence, and neither is an
+// ayah still being learned.
+function memorizedSeams() {
+  const solid = Object.values(state.ayahs).filter((i) => i.learningStage === "srs" && !i.temporary);
+  const byKey = new Map(solid.map((i) => [`${i.surah}:${i.ayah}`, i]));
+  const seams = [];
+  solid.forEach((i) => {
+    const next = byKey.get(`${i.surah}:${i.ayah + 1}`);
+    if (next) seams.push({ from: i, to: next });
+  });
+  return seams;
+}
+
+function renderSeamEntry() {
+  const entry = document.getElementById("seam-entry");
+  const btn = document.getElementById("btn-open-seam");
+  if (!entry || !btn) return;
+  const seams = memorizedSeams();
+  // Four options need four different openings to choose between, so the
+  // exercise stays out of sight until there is enough memorized to build one.
+  entry.classList.toggle("hidden", seams.length < 4);
+  btn.innerHTML = iconLabel("repeat", `وصل الآيات (${seams.length})`);
+}
+
+function openSeamSession() {
+  const seams = memorizedSeams();
+  if (seams.length < 4) {
+    showToast("احفظ آيات متتالية أكثر أولًا — التمرين يحتاج مفاصل يختار من بينها.", "error");
+    return;
+  }
+  seamQueue = shuffleArray(seams).slice(0, SEAM_QUESTION_COUNT);
+  seamIndex = 0;
+  seamTally = { right: 0, wrong: 0 };
+  document.getElementById("seam-overlay").classList.remove("modal-closed");
+  renderSeamQuestion();
+}
+
+function closeSeamSession() {
+  document.getElementById("seam-overlay").classList.add("modal-closed");
+  const done = seamTally.right + seamTally.wrong;
+  if (!done) return;
+  const earned = seamTally.right * POINTS.seamCorrect;
+  if (earned) addPoints(earned);
+  showToast(
+    `🔗 وصلت ${seamTally.right} من ${done} مفصلًا`,
+    seamTally.wrong ? undefined : "success",
+    earned ? `+${earned}` : undefined
+  );
+  renderSeamEntry();
+  renderDashboard();
+}
+
+function renderSeamQuestion() {
+  const seam = seamQueue[seamIndex];
+  if (!seam) return closeSeamSession();
+  seamAnswered = false;
+  document.getElementById("seam-position").textContent = `المفصل ${seamIndex + 1} من ${seamQueue.length}`;
+  document.getElementById("seam-ref").textContent = `${seam.from.surahName} - الآية ${seam.from.ayah}`;
+  document.getElementById("seam-cue").textContent = `… ${ayahEnding(seam.from)}`;
+  document.getElementById("seam-feedback").classList.add("hidden");
+  document.getElementById("btn-seam-next").classList.add("hidden");
+
+  const correct = ayahOpening(seam.to);
+  // Wrong answers are openings of other memorized ayahs - a plausible next
+  // ayah, not a random phrase - preferring the same surah, where the
+  // confusion actually lives.
+  const pool = Object.values(state.ayahs)
+    .filter((i) => i.learningStage === "srs" && `${i.surah}:${i.ayah}` !== `${seam.to.surah}:${seam.to.ayah}` && `${i.surah}:${i.ayah}` !== `${seam.from.surah}:${seam.from.ayah}`)
+    .sort((a, b) => (a.surah === seam.from.surah ? -1 : 1) - (b.surah === seam.from.surah ? -1 : 1));
+  const seen = new Set([normalizeArabic(correct)]);
+  const distractors = [];
+  shuffleArray(pool.filter((i) => i.surah === seam.from.surah))
+    .concat(shuffleArray(pool.filter((i) => i.surah !== seam.from.surah)))
+    .forEach((i) => {
+      if (distractors.length >= 3) return;
+      const opening = ayahOpening(i);
+      const n = normalizeArabic(opening);
+      if (seen.has(n)) return;
+      seen.add(n);
+      distractors.push(opening);
+    });
+
+  const box = document.getElementById("seam-options");
+  box.innerHTML = "";
+  shuffleArray([correct, ...distractors]).forEach((opening) => {
+    const btn = document.createElement("button");
+    btn.className = "btn seam-option";
+    btn.textContent = `${opening} …`;
+    btn.addEventListener("click", () => answerSeam(btn, opening === correct, correct));
+    box.appendChild(btn);
+  });
+}
+
+function answerSeam(btn, isCorrect, correct) {
+  if (seamAnswered) return;
+  seamAnswered = true;
+  const seam = seamQueue[seamIndex];
+  document.querySelectorAll("#seam-options .seam-option").forEach((b) => {
+    b.disabled = true;
+    if (b.textContent.startsWith(correct)) b.classList.add("correct");
+  });
+  if (isCorrect) {
+    btn.classList.add("correct");
+    seamTally.right++;
+    playSuccessSound();
+  } else {
+    btn.classList.add("wrong");
+    seamTally.wrong++;
+    playErrorSound();
+  }
+  const feedback = document.getElementById("seam-feedback");
+  feedback.textContent = `${seam.from.surahName}: ${seam.from.ayah} ← ${seam.to.ayah}`;
+  feedback.classList.remove("hidden");
+  const next = document.getElementById("btn-seam-next");
+  next.innerHTML = iconLabel(seamIndex + 1 >= seamQueue.length ? "checkDone" : "chevronLeft", seamIndex + 1 >= seamQueue.length ? "أنهِ التمرين" : "المفصل التالي");
+  next.classList.remove("hidden");
+}
+
+document.getElementById("btn-seam-next").addEventListener("click", () => {
+  seamIndex++;
+  if (seamIndex >= seamQueue.length) closeSeamSession();
+  else renderSeamQuestion();
+});
+document.getElementById("btn-seam-close").addEventListener("click", closeSeamSession);
+document.getElementById("btn-open-seam").addEventListener("click", openSeamSession);
+
 function renderTasmeeEntry() {
   const entry = document.getElementById("tasmee-entry");
   if (entry) entry.classList.toggle("hidden", getTodaysReviewQueue().length === 0);
+  renderSeamEntry();
 }
 
 function openTasmeeSession() {

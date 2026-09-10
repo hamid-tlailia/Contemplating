@@ -526,6 +526,11 @@
         <button class="btn" id="btn-open-tasmee">📿 سمّع لشخص أمامك</button>
       </div>
 
+      <div class="tasmee-entry hidden" id="seam-entry">
+        <button class="btn" id="btn-open-seam"></button>
+        <p class="muted">تعرف كل آية وحدها، وتتوقّف عند الانتقال؟ هذا تمرين المفاصل وحدها.</p>
+      </div>
+
       <div id="review-surah-list" class="review-surah-list hidden">
         <h2>السور المستحقة اليوم</h2>
         <p class="muted">تُراجَع سورةً بعد سورة، وآياتُ كل سورة بترتيبها — فما يتلو بعضه بعضًا يُراجَع معًا.</p>
@@ -615,6 +620,29 @@
 </div>
 
 <!-- FULLSCREEN MUSHAF READER (paginated by real Mushaf page, swipe to turn) -->
+<div id="seam-overlay" class="tasmee-overlay seam-overlay modal-closed">
+  <div class="tasmee-header">
+    <button id="btn-seam-close" class="icon-only-btn" aria-label="إنهاء التمرين">✕</button>
+    <span id="seam-position">1 / 1</span>
+  </div>
+  <div class="tasmee-body">
+    <p class="seam-lead">🔗 وصل الآيات</p>
+    <div class="ayah-ref" id="seam-ref"></div>
+    <div class="ayah-display seam-display">
+      <div class="ayah-scroll">
+        <p class="seam-cue-label">…نهاية هذه الآية</p>
+        <p id="seam-cue" class="ayah-text seam-cue"></p>
+      </div>
+    </div>
+    <p class="seam-question">وبِمَ تبدأ الآية التي بعدها؟</p>
+    <div id="seam-options" class="seam-options"></div>
+    <p id="seam-feedback" class="seam-feedback hidden"></p>
+  </div>
+  <div class="tasmee-actions seam-actions">
+    <button class="btn primary hidden" id="btn-seam-next"></button>
+  </div>
+</div>
+
 <div id="mushaf-reader-overlay" class="mushaf-reader-overlay modal-closed">
   <div class="mushaf-reader-header">
     <button id="btn-mushaf-reader-close" class="icon-only-btn" aria-label="إغلاق">✕</button>
