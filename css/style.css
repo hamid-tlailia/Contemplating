@@ -904,6 +904,70 @@ main#app {
   color: var(--muted);
 }
 
+/* ---------- Settings, folded ----------
+   Laid out flat, the sheet was a long scroll of grids most of which are set
+   once and never touched again. Each group is a drawer now: shut by
+   default, its heading carrying the choice inside it, so the whole sheet
+   fits on one screen and only what is being changed takes up room. */
+.settings-group {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--text) 2.5%, var(--surface));
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.settings-group[open] {
+  border-color: color-mix(in srgb, var(--primary) 35%, transparent);
+  background: var(--surface);
+}
+.settings-group-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.settings-group-summary::-webkit-details-marker { display: none; }
+.settings-group-summary::before {
+  content: "\25C0";
+  font-size: 0.7rem;
+  line-height: 1;
+  flex: none;
+  color: var(--accent);
+  transition: transform .2s ease;
+}
+.settings-group[open] > .settings-group-summary::before { transform: rotate(-90deg); }
+@media (hover: hover) { .settings-group-summary:hover { background: color-mix(in srgb, var(--primary) 6%, transparent); } }
+.settings-group-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text);
+  flex: none;
+}
+/* What is chosen inside, on the same line - the reason the drawer can stay
+   shut. It gives way first when the two don't fit. */
+.settings-group-value {
+  margin-inline-start: auto;
+  min-width: 0;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: var(--muted);
+  text-align: end;
+  /* Wraps rather than clips: a value cut off mid-word ("تنويع تلقائي · 0…")
+     defeats the point of showing it at all, and a second line here is still
+     shorter than opening the drawer to read it. It breaks between words
+     only - "20/يوم" split across two lines would be its own puzzle. */
+  overflow-wrap: normal;
+}
+.settings-group-body {
+  padding: 0 14px 4px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.settings-group-body .settings-field:last-child { margin-bottom: 10px; }
+
 /* Today's word: the meaning is the reward on show, so it gets a card of its
    own rather than a line in a list. */
 .meaning-day-card { text-align: center; }

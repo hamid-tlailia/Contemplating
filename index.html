@@ -97,78 +97,140 @@
       <strong id="points-display">0</strong>
     </div>
     <p class="settings-section-note">🪙 زينة مصحفك — اختيارية بالكامل، ولا تفتح شيئًا في الحفظ أو المراجعة.</p>
-    <div class="settings-field">
-      القارئ
-      <div id="reciter-grid" class="swatch-grid"></div>
-    </div>
-    <div class="settings-field">
-      المظهر
-      <div id="theme-grid" class="swatch-grid"></div>
-    </div>
-    <label class="settings-field">
-      الوضع الفاتح والداكن
-      <select id="color-scheme-select">
-        <option value="system">حسب إعداد الهاتف</option>
-        <option value="light">فاتح دائمًا</option>
-        <option value="dark">داكن دائمًا</option>
-      </select>
-      <p class="muted">يخصّ مظهر «أخضر هادئ» فقط؛ بقية المظاهر ألوانها ثابتة كما اخترتها.</p>
-    </label>
-    <div class="settings-field">
-      خط الآيات
-      <div id="font-grid" class="swatch-grid"></div>
-    </div>
-    <div class="settings-field">
-      خلفية التطبيق
-      <div id="background-grid" class="swatch-grid"></div>
-    </div>
-    <div class="settings-field">
-      لمن الحفظ؟
-      <div class="age-mode-grid" id="settings-age-grid"></div>
-      <p class="muted" id="age-mode-note"></p>
-    </div>
-    <label class="settings-field settings-toggle">
-      <span>
-        تنويع طريقة الاختبار تلقائيًا
-        <small class="muted">تعرُّف ← تذكُّر ← كتابة عبر جولات الآية الثلاث، بدل تكرار الطريقة نفسها.</small>
-      </span>
-      <input type="checkbox" id="auto-vary-modes" checked>
-    </label>
-    <label class="settings-field">
-      سقف المراجعة اليومي
-      <select id="review-cap-select">
-        <option value="10">10 آيات في اليوم</option>
-        <option value="20">20 آية في اليوم</option>
-        <option value="30">30 آية في اليوم</option>
-        <option value="50">50 آية في اليوم</option>
-        <option value="0">بلا سقف</option>
-      </select>
-      <p class="muted">ما يزيد عن السقف لا يُلغى، بل يُؤجَّل ليأتيك في الأيام التالية حتى لا تتكدّس المراجعات دفعة واحدة.</p>
-    </label>
-    <label class="settings-field">
-      حجم نص الآيات
-      <select id="font-size-select">
-        <option value="small">صغير</option>
-        <option value="medium">متوسط</option>
-        <option value="large">كبير</option>
-        <option value="xlarge">كبير جدًا</option>
-      </select>
-    </label>
-    <div class="settings-field">
-      نسخة احتياطية
-      <div class="backup-row">
-        <button id="btn-backup-export" class="btn"></button>
-        <button id="btn-backup-import" class="btn"></button>
-      </div>
-      <input type="file" id="backup-file" accept="application/json,.json" class="hidden">
-      <p class="muted">حفظك كلّه يعيش في هذا المتصفّح وحده: مسح بيانات الموقع أو تغيير الهاتف يمحوه. الملف يحفظ كل شيء — الآيات وخطتها ومواعيد مراجعتها، والنقاط، والقارئ والمظهر والخط والخلفية وما فتحته منها، وعهد وردك وسجلّ أيامك.</p>
-    </div>
 
-    <div class="settings-field">
-      العمل دون إنترنت
-      <button id="btn-offline-prefetch" class="btn"></button>
-      <p class="muted" id="offline-prefetch-status">حمّل سور خطتك الآن ليعمل الحفظ والمراجعة دون اتصال.</p>
-    </div>
+    <!-- Every group is a closed accordion: the sheet opens as a short list of
+         headings, each already saying what is chosen inside it, and only the
+         one being changed unfolds (name= makes them mutually exclusive where
+         the browser supports it). -->
+    <details class="settings-group" name="settings-accordion">
+      <summary class="settings-group-summary">
+        <span class="settings-group-title">🎧 القارئ</span>
+        <span class="settings-group-value" id="group-reciter-value"></span>
+      </summary>
+      <div class="settings-group-body">
+        <div class="settings-field">
+          <div id="reciter-grid" class="swatch-grid"></div>
+        </div>
+      </div>
+    </details>
+
+    <details class="settings-group" name="settings-accordion">
+      <summary class="settings-group-summary">
+        <span class="settings-group-title">🎨 المظهر</span>
+        <span class="settings-group-value" id="group-theme-value"></span>
+      </summary>
+      <div class="settings-group-body">
+        <div class="settings-field">
+          <div id="theme-grid" class="swatch-grid"></div>
+        </div>
+        <label class="settings-field">
+          الوضع الفاتح والداكن
+          <select id="color-scheme-select">
+            <option value="system">حسب إعداد الهاتف</option>
+            <option value="light">فاتح دائمًا</option>
+            <option value="dark">داكن دائمًا</option>
+          </select>
+          <p class="muted">يخصّ مظهر «أخضر هادئ» فقط؛ بقية المظاهر ألوانها ثابتة كما اخترتها.</p>
+        </label>
+      </div>
+    </details>
+
+    <details class="settings-group" name="settings-accordion">
+      <summary class="settings-group-summary">
+        <span class="settings-group-title">✒️ خط الآيات</span>
+        <span class="settings-group-value" id="group-font-value"></span>
+      </summary>
+      <div class="settings-group-body">
+        <div class="settings-field">
+          <div id="font-grid" class="swatch-grid"></div>
+        </div>
+        <label class="settings-field">
+          حجم نص الآيات
+          <select id="font-size-select">
+            <option value="small">صغير</option>
+            <option value="medium">متوسط</option>
+            <option value="large">كبير</option>
+            <option value="xlarge">كبير جدًا</option>
+          </select>
+        </label>
+      </div>
+    </details>
+
+    <details class="settings-group" name="settings-accordion">
+      <summary class="settings-group-summary">
+        <span class="settings-group-title">🖼️ خلفية التطبيق</span>
+        <span class="settings-group-value" id="group-background-value"></span>
+      </summary>
+      <div class="settings-group-body">
+        <div class="settings-field">
+          <div id="background-grid" class="swatch-grid"></div>
+        </div>
+      </div>
+    </details>
+
+    <details class="settings-group" name="settings-accordion">
+      <summary class="settings-group-summary">
+        <span class="settings-group-title">👤 لمن الحفظ؟</span>
+        <span class="settings-group-value" id="group-age-value"></span>
+      </summary>
+      <div class="settings-group-body">
+        <div class="settings-field">
+          <div class="age-mode-grid" id="settings-age-grid"></div>
+          <p class="muted" id="age-mode-note"></p>
+        </div>
+      </div>
+    </details>
+
+    <details class="settings-group" name="settings-accordion">
+      <summary class="settings-group-summary">
+        <span class="settings-group-title">🧠 الحفظ والمراجعة</span>
+        <span class="settings-group-value" id="group-drill-value"></span>
+      </summary>
+      <div class="settings-group-body">
+        <label class="settings-field settings-toggle">
+          <span>
+            تنويع طريقة الاختبار تلقائيًا
+            <small class="muted">تعرُّف ← تذكُّر ← كتابة عبر جولات الآية الثلاث، بدل تكرار الطريقة نفسها.</small>
+          </span>
+          <input type="checkbox" id="auto-vary-modes" checked>
+        </label>
+        <label class="settings-field">
+          سقف المراجعة اليومي
+          <select id="review-cap-select">
+            <option value="10">10 آيات في اليوم</option>
+            <option value="20">20 آية في اليوم</option>
+            <option value="30">30 آية في اليوم</option>
+            <option value="50">50 آية في اليوم</option>
+            <option value="0">بلا سقف</option>
+          </select>
+          <p class="muted">ما يزيد عن السقف لا يُلغى، بل يُؤجَّل ليأتيك في الأيام التالية حتى لا تتكدّس المراجعات دفعة واحدة.</p>
+        </label>
+      </div>
+    </details>
+
+    <details class="settings-group" name="settings-accordion">
+      <summary class="settings-group-summary">
+        <span class="settings-group-title">💾 بياناتك</span>
+        <span class="settings-group-value">نسخة احتياطية · دون إنترنت</span>
+      </summary>
+      <div class="settings-group-body">
+        <div class="settings-field">
+          نسخة احتياطية
+          <div class="backup-row">
+            <button id="btn-backup-export" class="btn"></button>
+            <button id="btn-backup-import" class="btn"></button>
+          </div>
+          <input type="file" id="backup-file" accept="application/json,.json" class="hidden">
+          <p class="muted">حفظك كلّه يعيش في هذا المتصفّح وحده: مسح بيانات الموقع أو تغيير الهاتف يمحوه. الملف يحفظ كل شيء — الآيات وخطتها ومواعيد مراجعتها، والنقاط، والقارئ والمظهر والخط والخلفية وما فتحته منها، وعهد وردك وسجلّ أيامك.</p>
+        </div>
+
+        <div class="settings-field">
+          العمل دون إنترنت
+          <button id="btn-offline-prefetch" class="btn"></button>
+          <p class="muted" id="offline-prefetch-status">حمّل سور خطتك الآن ليعمل الحفظ والمراجعة دون اتصال.</p>
+        </div>
+      </div>
+    </details>
     <div class="settings-field settings-legal">
       <button id="btn-privacy" class="link-btn">سياسة الخصوصية</button>
       <button id="btn-terms" class="link-btn">شروط الاستخدام</button>

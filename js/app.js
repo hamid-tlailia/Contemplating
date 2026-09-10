@@ -763,6 +763,7 @@ function renderAgeModeGrids() {
   });
   const note = document.getElementById("age-mode-note");
   if (note) note.textContent = ageProfile().note;
+  if (typeof syncSettingsSummaries === "function") syncSettingsSummaries();
 }
 
 // ---------- SM-2 spaced repetition ----------
@@ -1033,7 +1034,13 @@ const TAB_ROUTES = ["dashboard", "learn", "browse", "review"];
 // - and closing one returns to the tab it was opened from.
 const OVERLAY_ROUTES = {
   settings: {
-    open: () => document.getElementById("settings-overlay").classList.remove("modal-closed"),
+    // Every drawer starts shut on each opening, not just the first: a group
+    // left open from the last visit would hand back the long sheet this is
+    // meant to fold away.
+    open: () => {
+      document.querySelectorAll("#settings-overlay .settings-group").forEach((d) => { d.open = false; });
+      document.getElementById("settings-overlay").classList.remove("modal-closed");
+    },
     close: () => document.getElementById("settings-overlay").classList.add("modal-closed"),
     // Nothing to reload: the settings sheet is markup, which is why it can
     // also be opened before the first paint (see index.html).
@@ -5890,7 +5897,7 @@ function renderThemeGrid() {
     activeId: state.theme,
     extraClass: (t) => `theme-${t.id}`,
     previewHTML: (t) => `<span class="swatch-name">${t.name}</span>`,
-    onSelect: (id) => { state.theme = id; applyTheme(); },
+    onSelect: (id) => { state.theme = id; applyTheme(); syncSettingsSummaries(); },
     confirmTitle: "فتح مظهر جديد",
     unlockedNoun: "مظهرًا جديدًا",
     thisNoun: "هذا المظهر",
@@ -5904,7 +5911,7 @@ function renderReciterGrid() {
     ownedList: state.unlockedReciters,
     activeId: state.reciter,
     previewHTML: (r) => `<span class="swatch-name">${r.name}</span>`,
-    onSelect: (id) => { state.reciter = id; refreshCurrentAudioSrc(); },
+    onSelect: (id) => { state.reciter = id; refreshCurrentAudioSrc(); syncSettingsSummaries(); },
     confirmTitle: "فتح قارئ جديد",
     unlockedNoun: "صوت",
     thisNoun: "هذا القارئ",
@@ -5918,7 +5925,7 @@ function renderFontGrid() {
     ownedList: state.unlockedFonts,
     activeId: state.font,
     previewHTML: (f) => `<span class="swatch-name" style="font-family:${f.family}">بِسْمِ اللَّهِ</span>`,
-    onSelect: (id) => { state.font = id; applyFont(); },
+    onSelect: (id) => { state.font = id; applyFont(); syncSettingsSummaries(); },
     confirmTitle: "فتح خط جديد",
     unlockedNoun: "خطًا جديدًا",
     thisNoun: "هذا الخط",
@@ -5933,11 +5940,36 @@ function renderBackgroundGrid() {
     activeId: state.background,
     extraClass: (b) => `bg-${b.id}`,
     previewHTML: (b) => `<span class="swatch-name">${b.name}</span>`,
-    onSelect: (id) => { state.background = id; applyBackground(); },
+    onSelect: (id) => { state.background = id; applyBackground(); syncSettingsSummaries(); },
     confirmTitle: "فتح خلفية جديدة",
     unlockedNoun: "خلفية جديدة",
     thisNoun: "هذه الخلفية",
   });
+}
+
+// Each settings group is folded shut, so its heading has to carry what is
+// inside it - otherwise finding a setting means opening every drawer in
+// turn. The value shown is the one currently in force, refreshed wherever
+// it can change.
+function syncSettingsSummaries() {
+  const put = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text || ""; };
+  const nameOf = (list, id) => { const hit = list.find((x) => x.id === id); return hit ? hit.name : ""; };
+  const optionOf = (id) => {
+    const sel = document.getElementById(id);
+    return sel && sel.selectedOptions[0] ? sel.selectedOptions[0].textContent.trim() : "";
+  };
+  put("group-reciter-value", nameOf(RECITERS, state.reciter));
+  const scheme = state.colorScheme && state.colorScheme !== "system" ? ` · ${optionOf("color-scheme-select")}` : "";
+  put("group-theme-value", nameOf(THEMES, state.theme) + scheme);
+  put("group-font-value", `${nameOf(FONTS, state.font)} · ${optionOf("font-size-select")}`);
+  put("group-background-value", nameOf(BACKGROUNDS, state.background));
+  const age = AGE_MODES.find((m) => m.id === state.ageMode);
+  put("group-age-value", age ? `${age.emoji} ${age.label}` : "");
+  const vary = state.autoVaryModes !== false ? "تنويع تلقائي" : "طريقة ثابتة";
+  // The select's own label ("30 آية في اليوم") is too long to sit beside the
+  // heading, so the summary says the same thing in the space it has.
+  const cap = state.reviewDailyCap ? `${state.reviewDailyCap} يوميًا` : "بلا سقف";
+  put("group-drill-value", `${vary} · ${cap}`);
 }
 
 function initSettingsPanel() {
@@ -5957,6 +5989,7 @@ function initSettingsPanel() {
   renderFontGrid();
   renderBackgroundGrid();
   renderPointsDisplay();
+  syncSettingsSummaries();
 
   document.getElementById("btn-settings").addEventListener("click", () => openOverlay("settings"));
   document.getElementById("btn-settings-close").addEventListener("click", () => closeOverlay("settings"));
@@ -5968,12 +6001,14 @@ function initSettingsPanel() {
     state.autoVaryModes = autoVaryInput.checked;
     learnModeManualOverride = false;
     saveState();
+    syncSettingsSummaries();
     if (document.getElementById("tab-learn").classList.contains("active")) loadLearnAyah();
   });
 
   reviewCapSelect.addEventListener("change", () => {
     state.reviewDailyCap = Number(reviewCapSelect.value);
     saveState();
+    syncSettingsSummaries();
     renderDashboard();
   });
 
@@ -5981,12 +6016,14 @@ function initSettingsPanel() {
     state.fontSize = fontSizeSelect.value;
     saveState();
     applyFontSize();
+    syncSettingsSummaries();
   });
 
   colorSchemeSelect.addEventListener("change", () => {
     state.colorScheme = colorSchemeSelect.value;
     saveState();
     applyTheme();
+    syncSettingsSummaries();
   });
 
   document.getElementById("btn-settings-floating").addEventListener("click", () => openOverlay("settings"));
