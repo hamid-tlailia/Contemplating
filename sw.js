@@ -19,7 +19,7 @@
 // Anything an ayah's data was never fetched for can't be shown offline, so
 // the settings panel offers a prefetch for the surahs actually in use.
 
-const VERSION = "v3";
+const VERSION = "v4";
 const SHELL_CACHE = `tadabbur-shell-${VERSION}`;
 const DATA_CACHE = `tadabbur-data-${VERSION}`;
 const FONT_CACHE = `tadabbur-fonts-${VERSION}`;
@@ -42,8 +42,23 @@ const AUDIO_HOSTS = ["cdn.islamic.network"];
 const AUDIO_MAX_ENTRIES = 400;
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(SHELL_CACHE).then((c) => c.addAll(SHELL)));
+  // cache: "reload" so the shell is taken from the server, not from the
+  // browser's own HTTP cache: a worker installing right after a deploy
+  // would otherwise be able to store the previous build's files and serve
+  // them offline (and on any failed revalidation) long after they changed.
+  event.waitUntil(
+    caches.open(SHELL_CACHE).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: "reload" }))))
+  );
   self.skipWaiting();
+});
+
+// A new worker normally has to wait for every tab using the old one to go
+// away, which for an installed app can be days. The page asks it to take
+// over as soon as it has installed, and reloads itself when it does - so a
+// deployed fix arrives on the next time the app is brought to the front,
+// not on the next time the person happens to pull-to-refresh.
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {

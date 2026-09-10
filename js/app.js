@@ -6196,12 +6196,97 @@ function showTerms() {
 
 // ---------- PWA service worker ----------
 
-if ("serviceWorker" in navigator) {
+// An installed app is resumed far more often than it is opened: the page on
+// screen is the one from last time, and nothing in it goes looking for a
+// newer build - which is why a deployed change could sit unseen until the
+// person happened to pull-to-refresh. So the app asks whenever it comes back
+// to the foreground, and takes the new version itself when one arrives.
+// Tested for truthiness, not with `in`: a browser (or a test) can have the
+// property present and empty, and this block reads from it immediately - a
+// throw here would take the app's whole init section below with it.
+if (navigator.serviceWorker) {
+  // Whether a worker was already serving this page when it loaded. The very
+  // first registration also fires controllerchange, and reloading for that
+  // would be a pointless reload on someone's first ever visit.
+  const hadController = !!navigator.serviceWorker.controller;
+  const RELOADED_FOR_UPDATE = "tadabbur_update_reload";
+  let reloading = false;
+
+  const flag = {
+    set: () => { try { sessionStorage.setItem(RELOADED_FOR_UPDATE, "1"); } catch (e) { /* private mode */ } },
+    isSet: () => { try { return sessionStorage.getItem(RELOADED_FOR_UPDATE) === "1"; } catch (e) { return false; } },
+    clear: () => { try { sessionStorage.removeItem(RELOADED_FOR_UPDATE); } catch (e) { /* private mode */ } },
+  };
+
+  // Never in the middle of something: a reload during a recitation or a
+  // confirm dialog would take the round with it. Nothing is lost by waiting -
+  // the new worker is installed already and serves whatever loads next.
+  function reloadWhenIdle() {
+    if (document.documentElement.classList.contains("modal-open")) {
+      setTimeout(reloadWhenIdle, 4000);
+      return;
+    }
+    location.reload();
+  }
+
+  function reloadOnce(delay) {
+    if (reloading) return;
+    reloading = true;
+    setTimeout(reloadWhenIdle, delay || 0);
+  }
+
+  // The new worker activated and took this page over: everything on screen is
+  // from the previous build, so the page has to come again to match it.
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!hadController) return;
+    flag.set();
+    reloadOnce(0);
+  });
+
   window.addEventListener("load", () => {
     // Root-relative for the same reason the page's assets are: registering
     // "sw.js" from /learn/settings would ask for /learn/sw.js, and scope the
     // worker to /learn/ even if it were there.
-    navigator.serviceWorker.register("/sw.js").catch(() => {});
+    navigator.serviceWorker.register("/sw.js").then((reg) => {
+      if (!reg) return;
+
+      // A worker that has installed sits in "waiting" until every page using
+      // the old one is gone - which, for an app that is resumed rather than
+      // reopened, can be days. Ask it to take over; and reload regardless a
+      // moment later, because a reload is the other thing that lets a waiting
+      // worker through (it is why refreshing by hand fixed this) and because
+      // the page would otherwise stay on the build it was loaded with. The
+      // flag keeps that to one reload per update: if the worker is still
+      // waiting after it - another tab holding the old one open - the app
+      // stays usable on the old build rather than reloading in a circle.
+      const takeNewVersion = (worker) => {
+        if (worker) worker.postMessage({ type: "SKIP_WAITING" });
+        if (flag.isSet()) return;
+        flag.set();
+        reloadOnce(1200); // long enough for skipWaiting to land first
+      };
+
+      if (reg.waiting && navigator.serviceWorker.controller) takeNewVersion(reg.waiting);
+      else if (!reg.waiting) flag.clear(); // nothing pending: the next update may reload again
+      reg.addEventListener("updatefound", () => {
+        const incoming = reg.installing;
+        if (!incoming) return;
+        incoming.addEventListener("statechange", () => {
+          if (incoming.state === "installed" && navigator.serviceWorker.controller) takeNewVersion(incoming);
+        });
+      });
+
+      let lastCheck = Date.now();
+      const check = () => {
+        if (document.visibilityState !== "visible") return;
+        if (Date.now() - lastCheck < 60000) return; // once a minute at most
+        lastCheck = Date.now();
+        reg.update().catch(() => {});
+      };
+      document.addEventListener("visibilitychange", check);
+      window.addEventListener("pageshow", check);
+      window.addEventListener("focus", check);
+    }).catch(() => {});
   });
 }
 
