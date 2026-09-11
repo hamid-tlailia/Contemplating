@@ -2086,16 +2086,22 @@ main#app {
   margin: 0 0 20px;
   text-align: center;
 }
+/* The ayah's number at the end of its ayah. A circle for one or two digits,
+   and it lengthens into a lozenge for three rather than letting 100+ spill
+   out of the ring - which is what a fixed 1.6em width did from البقرة 100
+   onwards. min-width keeps the round shape where the number still fits. */
 .ayah-number-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.6em;
-  height: 1.6em;
+  min-width: 1.7em;
+  height: 1.7em;
+  padding: 0 0.32em;
   font-size: 0.5em;
+  line-height: 1;
   vertical-align: middle;
   border: 1.5px solid var(--accent);
-  border-radius: 50%;
+  border-radius: 999px;
   color: var(--accent);
 }
 .mushaf-reader-footer {

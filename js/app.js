@@ -193,6 +193,7 @@ function loadState() {
     background: BACKGROUNDS[0].id,
     fontSize: "medium",
     colorScheme: "system", // "system" | "light" | "dark" - only the default theme follows it
+    numerals: "western", // "western" (123) | "arabic" (١٢٣) - every number the app shows
     mushafReader: null, // {ayahs, index} - what the fullscreen reader is showing, so /mushaf survives a refresh
     points: 0,
     wirdTarget: 5,
@@ -1608,6 +1609,75 @@ function toArabicIndicDigits(n) {
   return String(n).replace(/[0-9]/g, (d) => ARABIC_INDIC_DIGITS[Number(d)]);
 }
 
+// ---------- One shape for every number the app shows ----------
+// Numbers arrive on screen from a hundred places - counters, percentages,
+// dates, "الجولة 1 من 3", an ayah's number in its ring - and threading a
+// formatter through every one of them would mean missing some. So the choice
+// is applied to the rendered text instead: a pass over the text nodes, and an
+// observer that catches whatever is drawn next. Idempotent, so re-running it
+// over text it already converted changes nothing.
+const WESTERN_DIGIT_RE = /[0-9]/g;
+const ARABIC_DIGIT_RE = /[٠-٩]/g;
+// Left alone: what the person is typing, what the engine heard (the voice
+// chips, whose text is compared against the ayah), and anything asking to
+// keep its digits as they are.
+const NUMERALS_SKIP = "input, textarea, select, option, [contenteditable], .voice-word-chip, script, style, [data-keep-numerals]";
+
+function numeralsStyle() {
+  return state.numerals === "arabic" ? "arabic" : "western";
+}
+
+function convertDigits(text, style) {
+  return style === "arabic"
+    ? text.replace(WESTERN_DIGIT_RE, (d) => ARABIC_INDIC_DIGITS[Number(d)])
+    : text.replace(ARABIC_DIGIT_RE, (d) => String(d.charCodeAt(0) - 0x0660));
+}
+
+let numeralsPassRunning = false;
+function applyNumeralsTo(root) {
+  if (!root || numeralsPassRunning) return;
+  const style = numeralsStyle();
+  const wanted = style === "arabic" ? WESTERN_DIGIT_RE : ARABIC_DIGIT_RE;
+  numeralsPassRunning = true;
+  try {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        if (!node.data || !wanted.test(node.data)) return NodeFilter.FILTER_REJECT;
+        wanted.lastIndex = 0; // the regex is global; a stale index would skip matches
+        const el = node.parentElement;
+        if (!el || el.closest(NUMERALS_SKIP)) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+    const pending = [];
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) pending.push(n);
+    pending.forEach((node) => {
+      const next = convertDigits(node.data, style);
+      if (next !== node.data) node.data = next;
+    });
+  } finally {
+    numeralsPassRunning = false;
+  }
+}
+
+function applyNumerals() {
+  applyNumeralsTo(document.body);
+}
+
+// Everything drawn after the first pass goes through the same shaping.
+function watchNumerals() {
+  const observer = new MutationObserver((records) => {
+    if (numeralsPassRunning) return;
+    const roots = new Set();
+    records.forEach((r) => {
+      if (r.type === "characterData") { if (r.target.parentElement) roots.add(r.target.parentElement); }
+      else r.addedNodes.forEach((n) => roots.add(n.nodeType === 1 ? n : n.parentElement));
+    });
+    roots.forEach((el) => el && applyNumeralsTo(el));
+  });
+  observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+}
+
 // A way to log the daily wird from reading the Mushaf directly, instead of
 // only being able to bump dailyCounts by memorizing/reviewing - some days
 // the wird is just reading, not new memorization. Reading happens in a
@@ -1871,7 +1941,7 @@ function renderMushafReaderPage() {
           text = rest;
         }
       }
-      return `${text} <span class="ayah-number-badge">${toArabicIndicDigits(a.numberInSurah)}</span>`;
+      return `${text} <span class="ayah-number-badge">${a.numberInSurah}</span>`;
     })
     .join(" ");
   document.getElementById("mushaf-reader-text").innerHTML = bismillahHTML + bodyHTML;
@@ -6028,7 +6098,7 @@ function syncSettingsSummaries() {
   put("group-reciter-value", nameOf(RECITERS, state.reciter));
   const scheme = state.colorScheme && state.colorScheme !== "system" ? ` · ${optionOf("color-scheme-select")}` : "";
   put("group-theme-value", nameOf(THEMES, state.theme) + scheme);
-  put("group-font-value", `${nameOf(FONTS, state.font)} · ${optionOf("font-size-select")}`);
+  put("group-font-value", `${nameOf(FONTS, state.font)} · ${optionOf("font-size-select")} · ${numeralsStyle() === "arabic" ? "١٢٣" : "123"}`);
   put("group-background-value", nameOf(BACKGROUNDS, state.background));
   const age = AGE_MODES.find((m) => m.id === state.ageMode);
   put("group-age-value", age ? `${age.emoji} ${age.label}` : "");
@@ -6045,7 +6115,9 @@ function initSettingsPanel() {
   const reviewCapSelect = document.getElementById("review-cap-select");
   const autoVaryInput = document.getElementById("auto-vary-modes");
   const colorSchemeSelect = document.getElementById("color-scheme-select");
+  const numeralsSelect = document.getElementById("numerals-select");
 
+  numeralsSelect.value = numeralsStyle();
   colorSchemeSelect.value = state.colorScheme || "system";
   fontSizeSelect.value = state.fontSize;
   reviewCapSelect.value = String(state.reviewDailyCap);
@@ -6090,6 +6162,13 @@ function initSettingsPanel() {
     state.colorScheme = colorSchemeSelect.value;
     saveState();
     applyTheme();
+    syncSettingsSummaries();
+  });
+
+  numeralsSelect.addEventListener("change", () => {
+    state.numerals = numeralsSelect.value;
+    saveState();
+    applyNumerals(); // converts what is already on screen, in both directions
     syncSettingsSummaries();
   });
 
@@ -6368,6 +6447,7 @@ applyTheme();
 applyFontSize();
 applyFont();
 applyBackground();
+watchNumerals();
 initSettingsPanel();
 initWirdCard();
 initMushafCard();
@@ -6384,3 +6464,6 @@ const initialOverlays = initialRoute.overlays.filter((name) => OVERLAY_ROUTES[na
 writeRoute(initialRoute.tab, initialOverlays, true);
 switchTab(initialRoute.tab, { fromHistory: true });
 applyOverlays(initialOverlays);
+// The markup that shipped with the page carries digits too, and it was drawn
+// before the observer existed: one sweep now covers it.
+applyNumerals();
