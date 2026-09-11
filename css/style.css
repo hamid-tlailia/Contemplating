@@ -536,7 +536,9 @@ main#app {
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
-  box-shadow: 0 4px 14px rgba(31,111,92,0.3);
+  /* Shadow in the theme's own colour, not the default theme's green - it was
+     casting a teal shadow under a maroon card. */
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--primary) 35%, transparent);
   position: relative;
   overflow: hidden;
 }
@@ -572,7 +574,11 @@ main#app {
   white-space: nowrap;
 }
 @media (hover: hover) { .btn.challenge-secondary:hover { background: rgba(255,255,255,0.24); } }
-.challenge-card.done { background: linear-gradient(135deg, var(--good), #245e3c); }
+/* Finished for today. It was a fixed green, which wore the wrong colour in
+   every theme but the default one - and the card already says it is done in
+   words. So it keeps the theme's own gradient and turns it round instead:
+   the same card, settled. */
+.challenge-card.done { background: linear-gradient(135deg, var(--primary-dark), var(--primary)); }
 
 #onboarding-panel { display: none; }
 #onboarding-panel.show { display: block; text-align: center; }
