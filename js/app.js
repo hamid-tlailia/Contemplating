@@ -6117,11 +6117,17 @@ function initSettingsPanel() {
   const colorSchemeSelect = document.getElementById("color-scheme-select");
   const numeralsSelect = document.getElementById("numerals-select");
 
-  numeralsSelect.value = numeralsStyle();
-  colorSchemeSelect.value = state.colorScheme || "system";
-  fontSizeSelect.value = state.fontSize;
-  reviewCapSelect.value = String(state.reviewDailyCap);
-  autoVaryInput.checked = state.autoVaryModes !== false;
+  // Each one checked before it is touched. A browser can hold a page from
+  // one build and a script from the next for a moment after a deploy, and a
+  // control the script knows about may simply not be in that page - which
+  // used to throw here and take the whole init sequence down with it: no
+  // wird card, no Mushaf card, no browse tab, no routing. A missing control
+  // should cost its own setting and nothing else.
+  if (numeralsSelect) numeralsSelect.value = numeralsStyle();
+  if (colorSchemeSelect) colorSchemeSelect.value = state.colorScheme || "system";
+  if (fontSizeSelect) fontSizeSelect.value = state.fontSize;
+  if (reviewCapSelect) reviewCapSelect.value = String(state.reviewDailyCap);
+  if (autoVaryInput) autoVaryInput.checked = state.autoVaryModes !== false;
   renderAgeModeGrids();
   renderReciterGrid();
   renderThemeGrid();
@@ -6136,7 +6142,7 @@ function initSettingsPanel() {
     if (e.target === overlay) closeOverlay("settings");
   });
 
-  autoVaryInput.addEventListener("change", () => {
+  if (autoVaryInput) autoVaryInput.addEventListener("change", () => {
     state.autoVaryModes = autoVaryInput.checked;
     learnModeManualOverride = false;
     saveState();
@@ -6144,28 +6150,28 @@ function initSettingsPanel() {
     if (document.getElementById("tab-learn").classList.contains("active")) loadLearnAyah();
   });
 
-  reviewCapSelect.addEventListener("change", () => {
+  if (reviewCapSelect) reviewCapSelect.addEventListener("change", () => {
     state.reviewDailyCap = Number(reviewCapSelect.value);
     saveState();
     syncSettingsSummaries();
     renderDashboard();
   });
 
-  fontSizeSelect.addEventListener("change", () => {
+  if (fontSizeSelect) fontSizeSelect.addEventListener("change", () => {
     state.fontSize = fontSizeSelect.value;
     saveState();
     applyFontSize();
     syncSettingsSummaries();
   });
 
-  colorSchemeSelect.addEventListener("change", () => {
+  if (colorSchemeSelect) colorSchemeSelect.addEventListener("change", () => {
     state.colorScheme = colorSchemeSelect.value;
     saveState();
     applyTheme();
     syncSettingsSummaries();
   });
 
-  numeralsSelect.addEventListener("change", () => {
+  if (numeralsSelect) numeralsSelect.addEventListener("change", () => {
     state.numerals = numeralsSelect.value;
     saveState();
     applyNumerals(); // converts what is already on screen, in both directions
@@ -6443,15 +6449,23 @@ if (navigator.serviceWorker) {
 
 // ---------- Init ----------
 
-applyTheme();
-applyFontSize();
-applyFont();
-applyBackground();
-watchNumerals();
-initSettingsPanel();
-initWirdCard();
-initMushafCard();
-initBrowseTab();
+// Each step on its own. They are independent pieces of the screen, and a
+// failure in one is no reason for the rest of the app not to start - the
+// alternative is what a single missing element produced: a page of empty
+// cards with nothing wired to anything.
+function startUp(name, fn) {
+  try { fn(); } catch (e) { console.error(`تعذّر تهيئة ${name}`, e); }
+}
+
+startUp("المظهر", applyTheme);
+startUp("حجم الخط", applyFontSize);
+startUp("الخط", applyFont);
+startUp("الخلفية", applyBackground);
+startUp("شكل الأرقام", watchNumerals);
+startUp("الإعدادات", initSettingsPanel);
+startUp("بطاقة الورد", initWirdCard);
+startUp("بطاقة المصحف", initMushafCard);
+startUp("تبويب التصفح", initBrowseTab);
 
 // Opens whatever the address bar asks for. The tab's panel is already the
 // visible one (the head script saw the same URL), so this only runs its own
@@ -6459,11 +6473,13 @@ initBrowseTab();
 // address that tab now has. An overlay with nothing left to reopen (a reader
 // whose pages aren't kept any more) drops off the address rather than
 // opening empty.
-const initialRoute = parseRoute();
-const initialOverlays = initialRoute.overlays.filter((name) => OVERLAY_ROUTES[name].restorable());
-writeRoute(initialRoute.tab, initialOverlays, true);
-switchTab(initialRoute.tab, { fromHistory: true });
-applyOverlays(initialOverlays);
+startUp("العنوان", () => {
+  const initialRoute = parseRoute();
+  const initialOverlays = initialRoute.overlays.filter((name) => OVERLAY_ROUTES[name].restorable());
+  writeRoute(initialRoute.tab, initialOverlays, true);
+  switchTab(initialRoute.tab, { fromHistory: true });
+  applyOverlays(initialOverlays);
+});
 // The markup that shipped with the page carries digits too, and it was drawn
 // before the observer existed: one sweep now covers it.
 applyNumerals();
