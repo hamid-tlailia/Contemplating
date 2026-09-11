@@ -235,17 +235,25 @@ function formatArabicDate(iso) {
 // Days for the first ~2 weeks, weeks up to ~2 months, months beyond that -
 // so a brand-new streak reads "3 أيام" rather than an odd "0 أسابيع", and a
 // years-long one reads in months rather than a triple-digit day count.
+// Arabic counts in four shapes, not two: one, two, a few (3-10, plural after
+// the number) and many (11+, singular accusative after it). "2 يومان" and
+// "15 أيام" are both wrong, and both were being printed.
+function arabicCount(n, one, two, few, many) {
+  if (n === 1) return one;
+  if (n === 2) return two;
+  if (n <= 10) return `${n} ${few}`;
+  return `${n} ${many}`;
+}
+
 function formatDurationSince(iso) {
   const start = new Date(`${iso}T00:00:00`);
-  const days = Math.max(0, Math.round((new Date() - start) / 86400000));
+  // Floor, not round: at noon on the day after, you have been at this for one
+  // day - not two.
+  const days = Math.max(0, Math.floor((new Date() - start) / 86400000));
   if (days === 0) return "اليوم";
-  if (days < 14) return `${days} ${days === 1 ? "يوم" : days === 2 ? "يومان" : "أيام"}`;
-  if (days < 60) {
-    const weeks = Math.round(days / 7);
-    return `${weeks} ${weeks === 1 ? "أسبوع" : weeks === 2 ? "أسبوعان" : "أسابيع"}`;
-  }
-  const months = Math.round(days / 30);
-  return `${months} ${months === 1 ? "شهر" : months === 2 ? "شهران" : "أشهر"}`;
+  if (days < 14) return arabicCount(days, "يوم واحد", "يومان", "أيام", "يومًا");
+  if (days < 60) return arabicCount(Math.round(days / 7), "أسبوع", "أسبوعان", "أسابيع", "أسبوعًا");
+  return arabicCount(Math.round(days / 30), "شهر", "شهران", "أشهر", "شهرًا");
 }
 
 function markActivityToday() {
@@ -1258,10 +1266,18 @@ function renderDashboard() {
   document.getElementById("overall-progress-text").textContent =
     `${masteredCount} / ${TOTAL_QURAN_AYAHS} (${overallPct.toFixed(1)}%)`;
 
+  // "تحفظ منذ" dates from the first ayah actually memorized - the same set the
+  // counter above reports. It used to date from the first ayah that entered
+  // the app at all, so a single temporary review (which is never counted as
+  // memorized) started a clock on a memorization that hadn't begun.
   const sinceEl = document.getElementById("memorization-since-text");
-  const firstAdded = items.reduce((min, i) => (!min || i.added < min ? i.added : min), null);
-  sinceEl.textContent = firstAdded
-    ? `تحفظ منذ ${formatArabicDate(firstAdded)} (${formatDurationSince(firstAdded)})`
+  const firstMemorized = items.reduce((min, i) => {
+    if (i.learningStage !== "srs" || i.temporary) return min;
+    const day = i.memorizedOn || i.added; // older items predate the stamp
+    return !min || day < min ? day : min;
+  }, null);
+  sinceEl.textContent = firstMemorized
+    ? `تحفظ منذ ${formatArabicDate(firstMemorized)} (${formatDurationSince(firstMemorized)})`
     : "";
 
   document.getElementById("onboarding-panel").classList.toggle("show", items.length === 0);
@@ -2524,6 +2540,9 @@ function addAyahDirectlyToSrs(surahNumber, surahName, ayahObj, { quiet = false }
     learningStage: "srs",
     roundStreak: 0,
     temporary,
+    // A contiguous addition counts as memorized from the moment it is added;
+    // a temporary one never counts at all, so it carries no date.
+    memorizedOn: temporary ? null : todayISO(),
   };
   saveState();
   // Adding a range says it once, about the range, instead of once per ayah.
@@ -4074,6 +4093,10 @@ function completeLearnRound() {
 
 function masterCurrentLearningAyah(item) {
   item.learningStage = "srs";
+  // The day this ayah was actually memorized - which is what "تحفظ منذ"
+  // counts from. Its `added` date is when it entered the plan, which can be
+  // weeks earlier, and belongs to a different question.
+  if (!item.memorizedOn) item.memorizedOn = todayISO();
   sm2Schedule(item, 4);
   const today = todayISO();
   state.masteredCounts[today] = (state.masteredCounts[today] || 0) + 1;
