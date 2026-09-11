@@ -153,6 +153,11 @@ body {
   flex-direction: column;
   min-height: 100dvh;
 }
+/* min-width: 0 on every one of them. A flex item is min-content wide by
+   default, so a single wide thing inside a tab (a long unbreakable label,
+   a grid of many cells) stopped the column from fitting the phone and made
+   the whole page scroll sideways - which block layout never did. */
+body > * { min-width: 0; }
 main#app { flex: 1 0 auto; } /* the tab takes the slack, so the footer lands at the bottom */
 
 /* Everything in this file is sized in rem, so one step here lifts the whole
@@ -454,6 +459,12 @@ h1, h2 { font-family: 'Tajawal', sans-serif; margin: 0; }
 }
 
 main#app {
+  /* width, not auto: as a flex item with auto side margins this box sizes to
+     fit-content, and fit-content never goes below the widest thing inside it
+     - so one wide element used to drag the whole column past the edge of the
+     phone. An explicit width puts it back to filling its line, the way it did
+     under block layout. */
+  width: 100%;
   max-width: 880px;
   margin: 0 auto;
   padding: 20px;
