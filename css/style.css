@@ -259,7 +259,9 @@ h1, h2 { font-family: 'Tajawal', sans-serif; margin: 0; }
   gap: 8px;
 }
 .brand-icon { font-size: 1.5rem; }
-.brand h1 { font-size: 1.3rem; color: var(--primary); }
+/* Room above the letters for the vowels: at a tight line height the shadda
+   and damma on the بّ ride into the header's edge. */
+.brand h1 { font-size: 1.3rem; line-height: 1.55; color: var(--primary); }
 
 .tabs {
   display: flex;
