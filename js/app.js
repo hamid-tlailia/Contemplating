@@ -4172,8 +4172,13 @@ function setupAudioControls(prefix, audioId) {
   };
   render();
 
+  // Whether the person has actually asked to hear this ayah. An <audio>
+  // element reports an error for a src it merely failed to preload, and
+  // announcing that unprompted put "تعذّر تشغيل هذا القارئ" on screen the
+  // moment a tab opened, over an ayah nobody had asked to hear.
+  let playRequested = false;
   playBtn.addEventListener("click", () => {
-    if (audio.paused) audio.play().catch(() => {});
+    if (audio.paused) { playRequested = true; audio.play().catch(() => {}); }
     else audio.pause();
   });
   stopBtn.addEventListener("click", () => {
@@ -4195,10 +4200,12 @@ function setupAudioControls(prefix, audioId) {
   audio.addEventListener("pause", () => { setLoading(false); render(); });
   audio.addEventListener("ended", () => { if (!audio.loop) render(); });
   // A new src (next ayah, reciter change) drops any pending wait for the old one.
-  audio.addEventListener("emptied", () => { setLoading(false); render(); });
+  audio.addEventListener("emptied", () => { setLoading(false); playRequested = false; render(); });
   audio.addEventListener("error", () => {
     setLoading(false);
     render();
+    if (!playRequested) return; // nobody was listening; nothing to apologise for
+    playRequested = false;
     showToast("تعذّر تشغيل هذا القارئ لهذه الآية. جرّب قارئًا آخر من الإعدادات ⚙️", "error");
   });
 }

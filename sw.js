@@ -19,7 +19,7 @@
 // Anything an ayah's data was never fetched for can't be shown offline, so
 // the settings panel offers a prefetch for the surahs actually in use.
 
-const VERSION = "v4";
+const VERSION = "v5";
 const SHELL_CACHE = `tadabbur-shell-${VERSION}`;
 const DATA_CACHE = `tadabbur-data-${VERSION}`;
 const FONT_CACHE = `tadabbur-fonts-${VERSION}`;
@@ -136,6 +136,13 @@ self.addEventListener("fetch", (event) => {
     return;
   }
   if (AUDIO_HOSTS.includes(url.hostname)) {
+    // A ranged request is left to the network entirely. Media elements ask
+    // for byte ranges, and a cached whole-file response answered with 200
+    // where the element asked for 206 is something Safari refuses outright -
+    // which is why recitations played on Android and failed on iPhone. The
+    // unranged request (the first one, and every one Chrome makes) still
+    // fills the cache, so offline playback is unaffected.
+    if (event.request.headers.has("range")) return;
     event.respondWith(cacheFirst(event.request, AUDIO_CACHE, AUDIO_MAX_ENTRIES));
     return;
   }

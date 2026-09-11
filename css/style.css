@@ -144,21 +144,14 @@ html, body {
   min-height: 100%;
 }
 
-/* A column that always fills the screen, so a short tab (an empty review
-   queue, say) doesn't leave the credit line stranded halfway up with a void
-   under it - and doesn't make a screenful of nothing scrollable, which on
-   iOS meant rubber-banding the whole page, bottom bar and all. */
-body {
-  display: flex;
-  flex-direction: column;
-  min-height: 100dvh;
-}
-/* min-width: 0 on every one of them. A flex item is min-content wide by
-   default, so a single wide thing inside a tab (a long unbreakable label,
-   a grid of many cells) stopped the column from fitting the phone and made
-   the whole page scroll sideways - which block layout never did. */
-body > * { min-width: 0; }
-main#app { flex: 1 0 auto; } /* the tab takes the slack, so the footer lands at the bottom */
+/* What made the bottom bar look like it drifted away from the content was
+   the page bouncing under the finger, not where anything was laid out: an
+   overscroll carries the fixed bar with it, and lets go of it somewhere
+   else. Stopping the bounce keeps the bar on the edge where it belongs -
+   vertically only, so the browser's own back-swipe is untouched. The credit
+   line, meanwhile, goes back to sitting right under the content: pinning it
+   to the bottom of the screen opened a gulf between it and a short tab. */
+html, body { overscroll-behavior-y: none; }
 
 /* Everything in this file is sized in rem, so one step here lifts the whole
    interface together - labels, chips, buttons and the ayah text - instead
@@ -459,12 +452,6 @@ h1, h2 { font-family: 'Tajawal', sans-serif; margin: 0; }
 }
 
 main#app {
-  /* width, not auto: as a flex item with auto side margins this box sizes to
-     fit-content, and fit-content never goes below the widest thing inside it
-     - so one wide element used to drag the whole column past the edge of the
-     phone. An explicit width puts it back to filling its line, the way it did
-     under block layout. */
-  width: 100%;
   max-width: 880px;
   margin: 0 auto;
   padding: 20px;
@@ -2291,9 +2278,11 @@ main#app {
 /* ---------- Toasts ---------- */
 .toast-container {
   position: fixed;
-  top: 16px;
-  right: 16px;
-  left: 16px;
+  /* Below the notch and the clock: this is fixed to the viewport, and the
+     viewport reaches under the status bar. */
+  top: calc(16px + env(safe-area-inset-top, 0px));
+  right: calc(16px + env(safe-area-inset-right, 0px));
+  left: calc(16px + env(safe-area-inset-left, 0px));
   z-index: 1000;
   display: flex;
   flex-direction: column;
