@@ -1194,19 +1194,27 @@ function switchTab(tab, { fromHistory = false, from = null } = {}) {
   currentTabName = tab;
   document.documentElement.dataset.route = tab;
   document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
+  // The one being left, kept on screen for the length of the slide so the two
+  // pages pass each other instead of one blinking into the other's place.
+  const leaving = slideDirection ? document.querySelector(".tab-panel.active") : null;
   document.querySelectorAll(".tab-panel").forEach((p) => {
-    p.classList.remove("slide-from-left", "slide-from-right");
+    p.classList.remove("slide-from-left", "slide-from-right", "leaving", "leave-to-right", "leave-to-left");
     const on = p.id === `tab-${tab}`;
     p.classList.toggle("active", on);
     if (on && slideDirection) {
       // Reading the offset forces the class change to land as a restart of
       // the animation rather than as no change at all. A finger dragged to
       // the right pulls the next tab in from the left, and the other way
-      // round - the panel follows the hand.
+      // round - the panels follow the hand.
       void p.offsetWidth;
       p.classList.add(slideDirection === "next" ? "slide-from-left" : "slide-from-right");
     }
   });
+  if (leaving && leaving.id !== `tab-${tab}`) {
+    const out = slideDirection === "next" ? "leave-to-right" : "leave-to-left";
+    leaving.classList.add("leaving", out);
+    setTimeout(() => leaving.classList.remove("leaving", out), 300);
+  }
   slideDirection = null;
   if (tab === "dashboard") renderDashboard();
   if (tab === "review" && !isChallengeMode && !isEphemeralReview) startReviewSession();

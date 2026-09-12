@@ -460,6 +460,8 @@ main#app {
   max-width: 880px;
   margin: 0 auto;
   padding: 20px;
+  /* The tab on its way out is positioned against this while it slides. */
+  position: relative;
 }
 
 /* The open tab is stamped on <html> by the inline script in the document
@@ -478,24 +480,50 @@ main#app {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* A swiped tab arrives from the edge the finger pulled it in from, rather
-   than fading up in place: the four tabs read as a row you walk along. Named
-   by the physical side, since the whole point is which way the thumb went.
-   Anyone who has asked for less motion gets the plain fade. */
-@keyframes slideFromLeft {
-  from { opacity: 0; transform: translateX(-28px); }
-  to { opacity: 1; transform: translateX(0); }
+/* A swiped tab travels: the one arriving comes the whole way in from the
+   edge the finger pulled it from, and the one leaving goes out the other
+   side at the same time - two pages sliding past each other, not one page
+   appearing where the last one was. The leaving page is taken out of the
+   flow for those few frames so the two can overlap without the page
+   growing. Anyone who has asked for less motion gets neither. */
+@keyframes slideInFromLeft {
+  from { transform: translateX(-100%); opacity: 0.35; }
+  to { transform: translateX(0); opacity: 1; }
 }
-@keyframes slideFromRight {
-  from { opacity: 0; transform: translateX(28px); }
-  to { opacity: 1; transform: translateX(0); }
+@keyframes slideInFromRight {
+  from { transform: translateX(100%); opacity: 0.35; }
+  to { transform: translateX(0); opacity: 1; }
 }
-.tab-panel.active.slide-from-left { animation: slideFromLeft .24s cubic-bezier(.22,.61,.36,1); }
-.tab-panel.active.slide-from-right { animation: slideFromRight .24s cubic-bezier(.22,.61,.36,1); }
+@keyframes slideOutToRight {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(100%); opacity: 0.35; }
+}
+@keyframes slideOutToLeft {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(-100%); opacity: 0.35; }
+}
+/* !important because the rule that reveals a tab is written against its id
+   (:root[data-route="learn"] #tab-learn) so the right panel is painted before
+   any script runs - and an id beats any number of classes, so its fadeIn was
+   quietly winning over this and the arriving page never moved. */
+.tab-panel.active.slide-from-left { animation: slideInFromLeft .28s cubic-bezier(.22,.61,.36,1) !important; }
+.tab-panel.active.slide-from-right { animation: slideInFromRight .28s cubic-bezier(.22,.61,.36,1) !important; }
+/* Still on screen, no longer in the flow: same box it occupied a frame ago
+   (main's padding is 20px, so the inset matches it). */
+.tab-panel.leaving {
+  display: block;
+  position: absolute;
+  top: 20px;
+  inset-inline: 20px;
+  pointer-events: none;
+}
+.tab-panel.leaving.leave-to-right { animation: slideOutToRight .28s cubic-bezier(.22,.61,.36,1) forwards; }
+.tab-panel.leaving.leave-to-left { animation: slideOutToLeft .28s cubic-bezier(.22,.61,.36,1) forwards; }
 @media (prefers-reduced-motion: reduce) {
   .tab-panel.active,
   .tab-panel.active.slide-from-left,
-  .tab-panel.active.slide-from-right { animation: none; }
+  .tab-panel.active.slide-from-right { animation: none !important; }
+  .tab-panel.leaving { display: none; }
 }
 
 .panel {
