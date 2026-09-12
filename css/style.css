@@ -1991,6 +1991,60 @@ main#app {
 .map-cell.l1 { background: color-mix(in srgb, var(--primary) 28%, transparent); }
 .map-cell.l2 { background: color-mix(in srgb, var(--primary) 58%, transparent); }
 .map-cell.l3 { background: var(--primary); }
+/* The year sheet. One row per weekday, one column per week, RTL so the
+   oldest week sits on the right and today at the left end - the direction
+   the rest of the app reads in. */
+.activity-calendar {
+  display: flex;
+  gap: 5px;
+  margin: 10px 0 8px;
+  direction: rtl;
+  align-items: stretch;
+}
+.activity-days {
+  display: grid;
+  grid-template-rows: repeat(7, 1fr);
+  gap: 2px;
+  font-size: 0.6rem;
+  color: var(--muted);
+  width: 12px;
+  text-align: center;
+}
+.activity-days span { line-height: 1; display: flex; align-items: center; justify-content: center; }
+.activity-grid {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  /* Column-major: seven cells fill a week before the next week starts. */
+  grid-template-rows: repeat(7, 1fr);
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2px;
+}
+.activity-cell {
+  aspect-ratio: 1;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  cursor: pointer;
+}
+.activity-cell.l1 { background: color-mix(in srgb, var(--primary) 25%, transparent); }
+.activity-cell.l2 { background: color-mix(in srgb, var(--primary) 48%, transparent); }
+.activity-cell.l3 { background: color-mix(in srgb, var(--primary) 74%, transparent); }
+.activity-cell.l4 { background: var(--primary); }
+/* Days that haven't happened yet are part of the current week's column and
+   have to be there for the rows to line up - just not offered as data. */
+.activity-cell.future { opacity: 0.35; cursor: default; }
+.activity-cell.picked { outline: 2px solid var(--accent, var(--primary)); outline-offset: 1px; }
+.activity-caption { font-size: 0.8rem; min-height: 1.4em; }
+.activity-legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.activity-legend .activity-cell { width: 11px; height: 11px; aspect-ratio: auto; cursor: default; }
+
 .mushaf-map-legend {
   display: flex;
   flex-wrap: wrap;
@@ -2667,6 +2721,12 @@ main#app {
   border: 1px solid var(--border);
 }
 #btn-protect-storage { margin-top: 10px; width: 100%; }
+
+/* The commitment form, folded. Same disclosure the settings groups use, so
+   the arrow and its rotation are already understood here. */
+.wird-plan-details.hidden { display: none; }
+.wird-plan-open { margin-top: 4px; }
+.wird-plan-details > #wird-plan-form { margin-top: 10px; }
 
 /* The reminder switch. A whole-row <label> so the text is part of the hit
    target - a 16px checkbox alone is a poor thing to aim a thumb at. */

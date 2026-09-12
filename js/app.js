@@ -273,6 +273,157 @@ function formatDurationSince(iso) {
   return arabicCount(Math.round(days / 30), "شهر", "شهران", "أشهر", "شهرًا");
 }
 
+// ---------- The year, as a sheet ----------
+//
+// Every one of these days was already being recorded - activity,
+// dailyCounts, masteredCounts, reviewCounts - and all the app ever showed
+// of them was "this week". A year of effort compressed into one sheet is
+// the cheapest motivation there is: it is built entirely from numbers
+// already on disk, and a long unbroken run is visible in a way a streak
+// counter reading "23" never is.
+//
+// Read right to left, like everything else here: the oldest week on the
+// right, today at the left end. The grid inherits the page's direction, so
+// laying the weeks out oldest-first puts them in exactly that order without
+// any reversing.
+
+const ACTIVITY_WEEKDAYS = ["ح", "ن", "ث", "ر", "خ", "ج", "س"]; // الأحد → السبت
+const ACTIVITY_MONTHS = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
+const ACTIVITY_CELL = 13; // px per column, cell plus its gap
+
+function isoOf(d) {
+  // Local date, not toISOString(): east of UTC that would name yesterday
+  // for most of the evening, and the whole sheet would sit a day out.
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function activityLevel(n) {
+  if (!n) return 0;
+  if (n <= 2) return 1;
+  if (n <= 5) return 2;
+  if (n <= 10) return 3;
+  return 4;
+}
+
+function activityShortDate(iso) {
+  const d = new Date(`${iso}T00:00:00`);
+  return `${d.getDate()} ${ACTIVITY_MONTHS[d.getMonth()]}`;
+}
+
+function activityDayLabel(iso) {
+  const date = activityShortDate(iso);
+  const learned = state.masteredCounts[iso] || 0;
+  const reviewed = state.reviewCounts[iso] || 0;
+  const pages = state.dailyPageCounts[iso] || 0;
+  const total = state.dailyCounts[iso] || 0;
+  if (!total && !learned && !reviewed && !pages) return `${date}: لا نشاط`;
+  const parts = [];
+  if (learned) parts.push(`${arabicCount(learned, "آية جديدة", "آيتان جديدتان", "آيات جديدة", "آية جديدة")}`);
+  if (reviewed) parts.push(`${arabicCount(reviewed, "مراجعة", "مراجعتان", "مراجعات", "مراجعة")}`);
+  if (pages) parts.push(`${arabicCount(pages, "صفحة", "صفحتان", "صفحات", "صفحة")}`);
+  // A day recorded by markActivityToday alone has a total but no breakdown.
+  if (!parts.length) parts.push(arabicCount(total, "نشاط واحد", "نشاطان", "أنشطة", "نشاطًا"));
+  return `${date}: ${parts.join(" · ")}`;
+}
+
+// How many weeks fit without the cells becoming a texture nobody can aim
+// at. A phone gets about half a year, a wide screen the whole one.
+function activityWeeksThatFit(width) {
+  const usable = Math.max(0, width - 22); // the weekday column on the side
+  return Math.max(8, Math.min(53, Math.floor(usable / ACTIVITY_CELL)));
+}
+
+function renderActivityCalendar() {
+  const host = document.getElementById("activity-calendar");
+  if (!host) return;
+  const caption = document.getElementById("activity-caption");
+  const summary = document.getElementById("activity-summary");
+
+  const weeks = activityWeeksThatFit(host.clientWidth || 340);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  // Start on the Sunday of the first week shown, so every column is a whole
+  // week and the weekday rows line up down the sheet.
+  const start = new Date(today);
+  start.setDate(start.getDate() - (weeks - 1) * 7 - today.getDay());
+
+  host.innerHTML = "";
+  host.style.setProperty("--activity-cols", weeks);
+
+  // The weekday initials, in their own column beside the grid.
+  const days = document.createElement("div");
+  days.className = "activity-days";
+  ACTIVITY_WEEKDAYS.forEach((d, i) => {
+    const el = document.createElement("span");
+    // Three of seven, or the column is a wall of letters at this size.
+    el.textContent = i % 2 === 1 ? d : "";
+    days.appendChild(el);
+  });
+
+  const grid = document.createElement("div");
+  grid.className = "activity-grid";
+  let active = 0, best = null, bestN = 0;
+  const cursor = new Date(start);
+  for (let w = 0; w < weeks; w++) {
+    for (let d = 0; d < 7; d++) {
+      const iso = isoOf(cursor);
+      const future = cursor > today;
+      const n = state.dailyCounts[iso] || 0;
+      const cell = document.createElement("i");
+      cell.className = `activity-cell l${future ? 0 : activityLevel(n)}${future ? " future" : ""}`;
+      cell.dataset.iso = iso;
+      // A grid this dense can't carry visible labels, so every cell names
+      // itself to a screen reader and to a long press.
+      cell.title = activityDayLabel(iso);
+      if (!future) {
+        if (state.activity[iso]) active++;
+        if (n > bestN) { bestN = n; best = iso; }
+      }
+      grid.appendChild(cell);
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  }
+
+  host.appendChild(days);
+  host.appendChild(grid);
+
+  if (summary) {
+    const span = arabicCount(weeks, "أسبوع", "أسبوعان", "أسابيع", "أسبوعًا");
+    // Just the date and the size of the day here - the full breakdown is
+    // one tap away in the caption, and two colons in one line read badly.
+    const peak = best ? ` · أفضل يوم: ${activityShortDate(best)} (${bestN})` : "";
+    summary.textContent = active
+      ? `آخر ${span} · ${arabicCount(active, "يوم نشِط", "يومان نشِطان", "أيام نشِطة", "يومًا نشِطًا")}${peak}`
+      : `آخر ${span} · لم يُسجَّل نشاط بعد`;
+  }
+  if (caption) caption.textContent = "اضغط على أي مربّع لترى ما فعلته فيه.";
+}
+
+// The number of weeks is chosen from the available width, so a rotation or
+// a resized window has to recompute it. Debounced: resize fires in bursts.
+let activityResizeTimer = null;
+window.addEventListener("resize", () => {
+  clearTimeout(activityResizeTimer);
+  activityResizeTimer = setTimeout(() => {
+    if (document.getElementById("activity-map") && document.getElementById("activity-map").open) renderActivityCalendar();
+  }, 200);
+});
+
+// A <details> that has never been opened has no width to measure, so the
+// sheet is drawn (or redrawn) the moment it opens.
+document.addEventListener("toggle", (e) => {
+  if (e.target && e.target.id === "activity-map" && e.target.open) renderActivityCalendar();
+}, true);
+
+// Delegated once, so redrawing the grid never needs rewiring.
+document.addEventListener("click", (e) => {
+  const cell = e.target.closest(".activity-cell");
+  if (!cell) return;
+  const caption = document.getElementById("activity-caption");
+  if (caption) caption.textContent = activityDayLabel(cell.dataset.iso);
+  document.querySelectorAll(".activity-cell.picked").forEach((c) => c.classList.remove("picked"));
+  cell.classList.add("picked");
+});
+
 function markActivityToday() {
   const today = todayISO();
   state.activity[today] = true;
@@ -1397,6 +1548,7 @@ function renderDashboard() {
 
   renderSurahProgress();
   renderMushafMap();
+  renderActivityCalendar();
   renderWirdCard();
   renderWirdPlanCard();
   renderMeaningOfTheDay();
@@ -1435,7 +1587,9 @@ function wirdPlanSentence(plan) {
 
 function renderWirdPlanCard() {
   const view = document.getElementById("wird-plan-view");
-  const form = document.getElementById("wird-plan-form");
+  // The form lives inside a <details> now: the wrapper is what is shown or
+  // hidden, and whether it is open decides whether the fields are unfolded.
+  const form = document.getElementById("wird-plan-details");
   if (!view || !form) return;
   const plan = state.wirdPlan;
 
@@ -1462,6 +1616,10 @@ function renderWirdPlanCard() {
   if (!plan) {
     view.classList.add("hidden");
     form.classList.remove("hidden");
+    // Folded by default: a form with six fields, unasked-for and fully
+    // unrolled, is most of the reason the dashboard read as long. The
+    // invitation is one line; the fields come when they are wanted.
+    form.open = false;
     document.getElementById("btn-wird-plan-cancel").classList.add("hidden");
     renderWirdPlanAnchors();
     return;
@@ -1509,7 +1667,9 @@ function openWirdPlanForm(fresh = false) {
   document.getElementById("wird-plan-time").value = (plan && plan.time) || "05:30";
   document.getElementById("wird-plan-place").value = (plan && plan.place) || "";
   document.getElementById("wird-plan-view").classList.add("hidden");
-  document.getElementById("wird-plan-form").classList.remove("hidden");
+  const details = document.getElementById("wird-plan-details");
+  details.classList.remove("hidden");
+  details.open = true; // asked for explicitly, so it opens on the fields
   document.getElementById("btn-wird-plan-cancel").classList.toggle("hidden", !state.wirdPlan);
   renderWirdPlanAnchors();
 }

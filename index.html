@@ -354,6 +354,22 @@
       <div class="progress-bar"><div id="overall-progress-fill" class="progress-fill"></div></div>
       <p id="memorization-since-text" class="muted overall-progress-since"></p>
 
+      <details class="mushaf-map activity-map" id="activity-map">
+        <summary class="mushaf-map-summary">🗓️ سجلّ نشاطك</summary>
+        <p class="muted" id="activity-summary"></p>
+        <div class="activity-calendar" id="activity-calendar"></div>
+        <p class="muted activity-caption" id="activity-caption"></p>
+        <div class="activity-legend">
+          <span>أقل</span>
+          <i class="activity-cell l0"></i>
+          <i class="activity-cell l1"></i>
+          <i class="activity-cell l2"></i>
+          <i class="activity-cell l3"></i>
+          <i class="activity-cell l4"></i>
+          <span>أكثر</span>
+        </div>
+      </details>
+
       <details class="mushaf-map" id="mushaf-map">
         <summary class="mushaf-map-summary">🗺️ خريطة الحفظ في المصحف</summary>
         <p class="muted" id="mushaf-map-summary"></p>
@@ -405,7 +421,7 @@
     </div>
 
     <div class="panel wird-plan-card needs-data" id="wird-plan-card">
-      <h2>🤝 عهد الورد</h2>
+      <h2 id="wird-plan-heading">🤝 عهد الورد</h2>
 
       <div id="wird-plan-view" class="hidden">
         <p class="wird-plan-sentence" id="wird-plan-sentence"></p>
@@ -424,7 +440,9 @@
         </div>
       </div>
 
-      <div id="wird-plan-form">
+      <details class="wird-plan-details" id="wird-plan-details">
+        <summary class="mushaf-map-summary wird-plan-open">حدِّد موعدًا ثابتًا لوردك</summary>
+        <div id="wird-plan-form">
         <p class="muted">حدِّد <strong>متى</strong> و<strong>أين</strong> مرة واحدة. النية المعلّقة ("سأحفظ يومًا ما") تتبخّر، أما ربط الورد بموعد ومكان معلومين فهو أقوى ما يحوّله إلى عادة.</p>
         <div class="wird-plan-field">
           <span class="wird-plan-label">متى؟</span>
@@ -443,6 +461,7 @@
           <button id="btn-wird-plan-cancel" class="btn hidden">إلغاء</button>
         </div>
       </div>
+      </details>
     </div>
 
     <div class="panel meaning-day-card hidden" id="meaning-day-card">
