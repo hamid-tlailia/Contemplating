@@ -29,11 +29,11 @@ const THEMES = [
   { id: "default", name: "أخضر هادئ", points: 0 },
   { id: "sepia", name: "صحراوي دافئ", points: 50 },
   { id: "night", name: "أزرق ليلي", points: 150 },
+  // Darkness with one lamp, a moon and a handful of stars - for the hour it
+  // is named after. Listed by price, so it sits with the other 300.
+  { id: "lastthird", name: "ثلث الليل", points: 300 },
   { id: "forest", name: "أخضر داكن مريح", points: 300 },
   { id: "embroidered", name: "مطرز فاخر", points: 400 },
-  // Darkness with a moon and a handful of stars, and nothing else lighting
-  // it - for the hour it is named after.
-  { id: "lastthird", name: "ثلث الليل", points: 0 },
 ];
 
 // Ayah text font - a purely typographic choice, unlocked and applied the
@@ -195,6 +195,18 @@ function loadState() {
       parsed.unlockedThemes = parsed.unlockedThemes || [THEMES[0].id, parsed.theme];
       parsed.unlockedFonts = parsed.unlockedFonts || [FONTS[0].id];
       parsed.unlockedBackgrounds = parsed.unlockedBackgrounds || [BACKGROUNDS[0].id];
+      // Whatever you are using, you own. Something can only become the
+      // active choice by being chosen, and a price set afterwards must not
+      // reach back and take it away - which is precisely what would happen
+      // to anyone who picked a theme while it was free and then found it
+      // priced. The rule is general because the problem is: this will not
+      // be the last time something's price changes.
+      [["theme", "unlockedThemes"], ["font", "unlockedFonts"],
+       ["background", "unlockedBackgrounds"], ["reciter", "unlockedReciters"]]
+        .forEach(([active, owned]) => {
+          const id = parsed[active];
+          if (id && Array.isArray(parsed[owned]) && !parsed[owned].includes(id)) parsed[owned].push(id);
+        });
       parsed.mushafPointer = parsed.mushafPointer || null; // {surah, ayah} - where the Mushaf reader should resume next
       parsed.reviewDailyCap = parsed.reviewDailyCap == null ? REVIEW_DAILY_CAP_DEFAULT : parsed.reviewDailyCap;
       parsed.reviewCounts = parsed.reviewCounts || {};
