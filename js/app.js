@@ -98,6 +98,7 @@ const ICONS = {
   pencil: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
   optionsList: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="2"/><path d="M11 6h9"/><circle cx="5" cy="12" r="2"/><path d="M11 12h9"/><circle cx="5" cy="18" r="2"/><path d="M11 18h9"/></svg>',
   coin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/></svg>',
+  headphones: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15v-3a9 9 0 0 1 18 0v3"/><path d="M3 16a2 2 0 0 1 2-2h1v6H5a2 2 0 0 1-2-2Z"/><path d="M21 16a2 2 0 0 0-2-2h-1v6h1a2 2 0 0 0 2-2Z"/></svg>',
 };
 function iconLabel(iconKey, text) {
   return `<span class="icon-label">${ICONS[iconKey]}<span>${text}</span></span>`;
@@ -173,6 +174,7 @@ function loadState() {
       parsed.wirdPlan = parsed.wirdPlan || null;
       parsed.wirdNotifiedOn = parsed.wirdNotifiedOn || null;
       parsed.lastBackupOn = parsed.lastBackupOn || null;
+      parsed.listenMode = parsed.listenMode === true;
       parsed.backupNudgedOn = parsed.backupNudgedOn || null;
       parsed.autoVaryModes = parsed.autoVaryModes !== false;
       parsed.ageMode = parsed.ageMode || "adult";
@@ -222,6 +224,7 @@ function loadState() {
     reviewCounts: {}, // "YYYY-MM-DD" -> ayahs graded in a review session that day
     wirdPlan: null, // {anchor, time:"HH:MM", place, notify} - the when/where commitment
     wirdNotifiedOn: null, // "YYYY-MM-DD" - the day the reminder last went out, so it goes out once
+    listenMode: false, // review by ear: the ayah veiled, its opening played, you continue
     lastBackupOn: null, // "YYYY-MM-DD" - the day a backup file was last saved
     backupNudgedOn: null, // "YYYY-MM-DD" - the day we last suggested saving one
     autoVaryModes: true, // rotate the test mode across an ayah's three rounds
@@ -6086,6 +6089,13 @@ function loadReviewItem() {
   const audio = document.getElementById("review-audio");
   audio.src = audioSrcFor(item.globalNumber);
 
+  // Sticky across the queue: turning the mode on once should carry through
+  // the whole session rather than being re-chosen at every ayah.
+  listenPrimed = false;
+  listenCutAt = null;
+  if (listenModeOn()) primeListening();
+  else applyListenVeil();
+
   fitReviewAyahHeight();
   scheduleAnswerDockUpdate();
   closeInfoModal();
@@ -6221,6 +6231,140 @@ function suggestFromChoices() {
   hint.classList.remove("hidden");
 }
 
+// ---------- Reviewing by ear ----------
+//
+// Every mode here so far is a reading mode: the ayah is on the screen with
+// some of it covered, and the test is whether you can fill the gaps. But a
+// great deal of real revision happens with nothing to look at - walking,
+// driving, lying down, eyes shut - and it is a different test. Hearing the
+// opening of an ayah and carrying on from memory is closer to how the
+// Qur'an is actually held than uncovering words with a thumb.
+//
+// So: the text goes behind a veil, the reciter plays the opening and stops,
+// and you continue aloud from memory. Then you hear the rest, or lift the
+// veil, and grade yourself as usual. The grading is unchanged - this is a
+// different way of being asked, not a different schedule.
+
+let listenPrimed = false;   // the opening is queued for this ayah
+let listenCutAt = null;     // seconds at which to stop, once we know the length
+
+function listenModeOn() {
+  return state.listenMode === true;
+}
+
+// About a third of the way in, bounded either side: less than a second and
+// a half is not a prompt, more than six gives the ayah away.
+function listenCutPoint(duration) {
+  if (!duration || !isFinite(duration)) return 3;
+  return Math.min(6, Math.max(1.5, duration * 0.35));
+}
+
+function setListenLead(text) {
+  const el = document.getElementById("listen-lead");
+  if (el) el.textContent = text;
+}
+
+function renderListenButton() {
+  const btn = document.getElementById("btn-review-listen");
+  if (!btn) return;
+  btn.innerHTML = iconLabel("headphones", listenModeOn() ? "أغلق وضع السمع" : "راجع بالسمع");
+  btn.classList.toggle("active", listenModeOn());
+}
+
+// The veil hides the ayah without unmounting it: the masked words, the
+// height fitting and the grade gate all keep working underneath, so
+// lifting it mid-ayah lands on exactly the state that was already there.
+function applyListenVeil() {
+  const veil = document.getElementById("listen-veil");
+  const scroll = document.getElementById("review-ayah-scroll");
+  if (!veil || !scroll) return;
+  const on = listenModeOn() && listenPrimed;
+  veil.classList.toggle("hidden", !on);
+  scroll.classList.toggle("veiled", on);
+}
+
+function primeListening() {
+  const audio = document.getElementById("review-audio");
+  if (!audio) return;
+  listenPrimed = true;
+  listenCutAt = null;
+  setListenLead("استمع لأول الآية، ثم أكملها من حفظك.");
+  applyListenVeil();
+  // The grade buttons belong after the recall, not before it.
+  document.getElementById("grade-controls").classList.add("hidden");
+  playListenPrompt();
+}
+
+function playListenPrompt() {
+  const audio = document.getElementById("review-audio");
+  if (!audio) return;
+  const start = () => {
+    listenCutAt = listenCutPoint(audio.duration);
+    audio.currentTime = 0;
+    audio.play().catch(() => {
+      // Autoplay refused (no gesture yet on this page): the ▶ button is
+      // right there, so say so instead of failing silently.
+      setListenLead("اضغط ▶ لسماع أول الآية.");
+    });
+  };
+  if (audio.readyState >= 1) start();
+  else audio.addEventListener("loadedmetadata", start, { once: true });
+}
+
+function stopAtCutPoint() {
+  const audio = document.getElementById("review-audio");
+  if (!audio || !listenModeOn() || !listenPrimed || listenCutAt === null) return;
+  if (audio.currentTime >= listenCutAt) {
+    audio.pause();
+    listenCutAt = null; // spent: "أكمل الآية" must play through to the end
+    setListenLead("أكملها من حفظك… ثم اسمع البقية أو أظهر النص.");
+  }
+}
+
+function listenContinue() {
+  const audio = document.getElementById("review-audio");
+  if (!audio) return;
+  listenCutAt = null;
+  setListenLead("استمع إلى بقيتها وقارنها بما قلت.");
+  audio.play().catch(() => {});
+}
+
+function listenFromStart() {
+  setListenLead("استمع لأول الآية، ثم أكملها من حفظك.");
+  playListenPrompt();
+}
+
+// Lifting the veil ends the hidden part of the exercise, so the grade
+// buttons come out with it - the recall has already happened, out loud.
+function listenReveal() {
+  const audio = document.getElementById("review-audio");
+  if (audio) audio.pause();
+  listenPrimed = false;
+  applyListenVeil();
+  maskLevel = 0;
+  renderMaskedText();
+  document.getElementById("grade-controls").classList.remove("hidden");
+  const hint = document.getElementById("review-reveal-hint");
+  if (hint) hint.classList.add("hidden");
+}
+
+function toggleListenMode() {
+  state.listenMode = !listenModeOn();
+  saveState();
+  renderListenButton();
+  if (listenModeOn()) {
+    primeListening();
+    showToast("🎧 وضع السمع: اسمع أول الآية وأكملها من حفظك", "success");
+  } else {
+    const audio = document.getElementById("review-audio");
+    if (audio) audio.pause();
+    listenPrimed = false;
+    applyListenVeil();
+    maskLevel = 1;
+    renderMaskedText();
+  }
+}
+
 function renderMaskedText() {
   resetReviewChoices();
   const gate = makeRevealGate({
@@ -6249,6 +6393,15 @@ setupAudioControls("review-audio-controls", "review-audio");
 document.getElementById("btn-mask-more").innerHTML = iconLabel("eyeOff", "إخفاء المزيد");
 document.getElementById("btn-review-tafsir").innerHTML = iconLabel("book", "التفسير");
 document.getElementById("btn-review-voice").innerHTML = iconLabel("mic", "اختبر بالتسميع");
+renderListenButton();
+document.getElementById("btn-review-listen").addEventListener("click", toggleListenMode);
+document.getElementById("btn-listen-continue").addEventListener("click", listenContinue);
+document.getElementById("btn-listen-again").addEventListener("click", listenFromStart);
+document.getElementById("btn-listen-reveal").addEventListener("click", listenReveal);
+// The cut is enforced on the clock rather than with a timer: a timer set
+// when play() is called drifts with buffering, and on a slow connection it
+// would cut before the reciter had said anything.
+document.getElementById("review-audio").addEventListener("timeupdate", stopAtCutPoint);
 document.getElementById("btn-learn-tafsir").innerHTML = iconLabel("book", "التفسير");
 document.getElementById("btn-learn-meanings").innerHTML = iconLabel("bulb", "معاني الكلمات");
 document.getElementById("btn-learn-mask-more").innerHTML = iconLabel("eyeOff", "إخفاء المزيد");
