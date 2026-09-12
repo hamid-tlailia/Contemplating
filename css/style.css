@@ -121,63 +121,129 @@
   --good: #6fbf8a;
   --shadow: 0 1px 3px rgba(0,0,0,0.5);
 }
+/* ثلث الليل - the last third of the night.
+   ---------------------------------------------------------------------
+   Not a dark palette but a lit room, and the lighting is the feature. Two
+   kinds of light, which is what makes it read as a place rather than a
+   colour scheme: a cold crescent high on the right, and warm lanterns hung
+   low on chains. The cold and the warm arguing with each other is the whole
+   effect - a uniformly dark screen has no light in it at all.
 
-/* ثلث الليل - the last third of the night. Not "a dark theme" but a dark
-   *room*: the page is nearly black, and what light there is comes from one
-   moon in the corner and a scattering of stars. Every colour here is a
-   colour something could plausibly be under moonlight - no saturated blues,
-   no white - so the ayah text reads as lit rather than as glowing. */
+   Four layers, and which layer a thing lives on is the design:
+
+     body::before   the sky, the arch, and the lanterns themselves - all
+                    BEHIND the cards
+     html::after    the falloff: everything multiplied by how much light
+                    actually reaches it
+     body::after    moon, stars and the glow pools, added on top
+
+   The lanterns hang behind the content on purpose. Hung in front they would
+   sit across the text - which is what they do in every illustration of this
+   idea - and there is no gap between the cards wide enough to thread them
+   through. Behind, they glow through the dark glass the cards are made of,
+   so they light the card they hang over and never cover a letter of it. */
+
 :root[data-theme="lastthird"] {
-  --bg: #050507;
-  --surface: #0c0d11;
-  --border: #1e2026;
-  --text: #c2c5cc;
-  --muted: #8a8e98;
-  --primary: #a6abb5;
-  --primary-dark: #838892;
-  --accent: #d8caa4;
-  --accent-light: #e9ddbd;
-  --danger: #b8756c;
-  --warn: #bda66a;
-  --good: #74a38a;
+  /* The sky is cold and the lamps are warm, so the surfaces sit between:
+     indigo-black grounds, brass for anything interactive, and text that is
+     warm off-white rather than blue-white - which is the other half of not
+     being أزرق ليلي. */
+  --bg: #05060e;
+  --surface: #0c0e19;
+  --border: #262433;
+  --text: #cbc6bd;
+  --muted: #938d83;
+  --primary: #b99a5e;
+  --primary-dark: #94794a;
+  --accent: #e8c98a;
+  --accent-light: #f5e2b8;
+  --danger: #bb7566;
+  --warn: #c2a266;
+  --good: #78a58b;
   --shadow: 0 1px 3px rgba(0,0,0,0.8);
 }
 
-/* The sky itself. Fixed and behind everything (html paints its pattern
-   under this; the cards sit over it), and inert to the pointer. Two
-   gradients: the moon's own halo, and the wash of light it throws down and
-   across the page - which is what makes the corner it hangs in read as
-   brighter than the far side. */
+/* The wallpaper stands down: this theme brings its own sky, and a green
+   mushaf tile over a night sky is two skies at once. (:root[data-bg=...]
+   is (0,2,0) and comes later in the file, so the element takes this to
+   (0,2,1) rather than reaching for !important.) */
+html:root[data-theme="lastthird"] { background-image: none; }
+
+
+/* ---- the sky, and the lanterns hanging in it ---- */
 :root[data-theme="lastthird"] body::before {
   content: "";
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background:
-    radial-gradient(circle 200px at 86% 15%, rgba(216,202,164,0.16), rgba(216,202,164,0.05) 44%, transparent 72%),
-    radial-gradient(ellipse 150% 85% at 86% 0%, rgba(190,193,200,0.07), transparent 60%);
+  background-repeat: no-repeat;
+  background-image:
+    /* Three lanterns, hung at three depths so they read as hung rather than
+       as a row of icons. One drawing at three sizes: scaling it shortens
+       the chain and shrinks the lamp together, which is how a lantern
+       further into the room actually looks. */
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='300' viewBox='0 0 60 300'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23ffd894' stop-opacity='0.30'/%3E%3Cstop offset='0.45' stop-color='%23ffc266' stop-opacity='0.78'/%3E%3Cstop offset='1' stop-color='%23ff9d3c' stop-opacity='0.42'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M30 0v146' stroke='%23c9a86a' stroke-opacity='0.5' stroke-width='1.6' fill='none'/%3E%3Ccircle cx='30' cy='150' r='4.5' fill='none' stroke='%23c9a86a' stroke-opacity='0.75' stroke-width='2'/%3E%3Cpath d='M30 156l15 13H15Z' fill='%23a8894f'/%3E%3Crect x='13' y='169' width='34' height='5' rx='2.5' fill='%23c9a86a'/%3E%3Cpath d='M17 174h26l4 48H13Z' fill='url(%23g)'/%3E%3Cellipse cx='30' cy='200' rx='5.5' ry='10' fill='%23fff1c9' fill-opacity='0.95'/%3E%3Cellipse cx='30' cy='203' rx='9' ry='14' fill='%23ffd894' fill-opacity='0.35'/%3E%3Cpath d='M17 174l-4 48M43 174l4 48M30 174v48' stroke='%23a8894f' stroke-opacity='0.85' stroke-width='1.6' fill='none'/%3E%3Crect x='11' y='222' width='38' height='6' rx='3' fill='%23c9a86a'/%3E%3Cpath d='M30 228v7' stroke='%23a8894f' stroke-width='2'/%3E%3Ccircle cx='30' cy='237' r='3' fill='%23c9a86a'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='300' viewBox='0 0 60 300'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23ffd894' stop-opacity='0.30'/%3E%3Cstop offset='0.45' stop-color='%23ffc266' stop-opacity='0.78'/%3E%3Cstop offset='1' stop-color='%23ff9d3c' stop-opacity='0.42'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M30 0v146' stroke='%23c9a86a' stroke-opacity='0.5' stroke-width='1.6' fill='none'/%3E%3Ccircle cx='30' cy='150' r='4.5' fill='none' stroke='%23c9a86a' stroke-opacity='0.75' stroke-width='2'/%3E%3Cpath d='M30 156l15 13H15Z' fill='%23a8894f'/%3E%3Crect x='13' y='169' width='34' height='5' rx='2.5' fill='%23c9a86a'/%3E%3Cpath d='M17 174h26l4 48H13Z' fill='url(%23g)'/%3E%3Cellipse cx='30' cy='200' rx='5.5' ry='10' fill='%23fff1c9' fill-opacity='0.95'/%3E%3Cellipse cx='30' cy='203' rx='9' ry='14' fill='%23ffd894' fill-opacity='0.35'/%3E%3Cpath d='M17 174l-4 48M43 174l4 48M30 174v48' stroke='%23a8894f' stroke-opacity='0.85' stroke-width='1.6' fill='none'/%3E%3Crect x='11' y='222' width='38' height='6' rx='3' fill='%23c9a86a'/%3E%3Cpath d='M30 228v7' stroke='%23a8894f' stroke-width='2'/%3E%3Ccircle cx='30' cy='237' r='3' fill='%23c9a86a'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='300' viewBox='0 0 60 300'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23ffd894' stop-opacity='0.30'/%3E%3Cstop offset='0.45' stop-color='%23ffc266' stop-opacity='0.78'/%3E%3Cstop offset='1' stop-color='%23ff9d3c' stop-opacity='0.42'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M30 0v146' stroke='%23c9a86a' stroke-opacity='0.5' stroke-width='1.6' fill='none'/%3E%3Ccircle cx='30' cy='150' r='4.5' fill='none' stroke='%23c9a86a' stroke-opacity='0.75' stroke-width='2'/%3E%3Cpath d='M30 156l15 13H15Z' fill='%23a8894f'/%3E%3Crect x='13' y='169' width='34' height='5' rx='2.5' fill='%23c9a86a'/%3E%3Cpath d='M17 174h26l4 48H13Z' fill='url(%23g)'/%3E%3Cellipse cx='30' cy='200' rx='5.5' ry='10' fill='%23fff1c9' fill-opacity='0.95'/%3E%3Cellipse cx='30' cy='203' rx='9' ry='14' fill='%23ffd894' fill-opacity='0.35'/%3E%3Cpath d='M17 174l-4 48M43 174l4 48M30 174v48' stroke='%23a8894f' stroke-opacity='0.85' stroke-width='1.6' fill='none'/%3E%3Crect x='11' y='222' width='38' height='6' rx='3' fill='%23c9a86a'/%3E%3Cpath d='M30 228v7' stroke='%23a8894f' stroke-width='2'/%3E%3Ccircle cx='30' cy='237' r='3' fill='%23c9a86a'/%3E%3C/svg%3E"),
+    /* The arch, above the sky and below the lamps. It has to sit inside
+       this same stack: the sky gradient below is opaque, so an arch on a
+       lower layer was painted over and invisible. */
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='320' viewBox='0 0 400 320' preserveAspectRatio='none'%3E%3Cpath d='M0 0h400v320h-30V160c0-72-76-118-170-118S30 88 30 160v160H0Z' fill='%23090a14'/%3E%3Cpath d='M30 250V160c0-72 76-118 170-118s170 46 170 118v90' fill='none' stroke='%23b99a5e' stroke-opacity='0.26' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E"),
+    /* the moon's own halo, and the sky */
+    radial-gradient(circle 200px at 86% 13%, rgba(216,202,164,0.15), rgba(216,202,164,0.04) 44%, transparent 72%),
+    radial-gradient(ellipse 160% 90% at 50% 0%, #101430, #070914 52%, #05060e 100%);
+  background-position: 15% 0, 63% 0, 37% 0, top center, 0 0, 0 0;
+  background-size: 60px 300px, 46px 230px, 38px 190px, 100% 320px, 100% 100%, 100% 100%;
 }
 
-/* The moon and the stars. One non-repeating layer: a tiled sky reads as
-   wallpaper, and the whole point is that there are only a few of them.
-   The moon is a crescent cut by masking one disc out of another - a waning
-   crescent, lit from the left, which is the shape the sky actually has at
-   this hour. */
+/* ---- the falloff ---- */
+/* A page cannot turn the phone's brightness down - nothing on the web can -
+   but it can multiply the whole interface by how much light reaches it.
+   White means untouched, and each light source punches its own bright spot
+   through: `lighten` keeps whichever source reaches a given pixel most, so
+   three lamps and a moon light the room together rather than the last one
+   in the list winning. The floor is 0.72 because past that the ayah text
+   stops being readable, which is where the simulation has to give way. */
+:root[data-theme="lastthird"]::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+  background-image:
+    radial-gradient(circle 210px at 86% 12%, #ffffff, #cfd0d4 55%, #b7b9bf 100%),
+    radial-gradient(circle 190px at 15% 24%, #ffffff, #cfcabf 55%, #b7b9bf 100%),
+    radial-gradient(circle 170px at 63% 18%, #f7f5f0, #c9c5bb 55%, #b7b9bf 100%),
+    radial-gradient(circle 150px at 37% 15%, #f2f0ea, #c6c2b9 55%, #b7b9bf 100%),
+    linear-gradient(#b7b9bf, #b7b9bf);
+  background-blend-mode: lighten, lighten, lighten, lighten, normal;
+}
+
+/* ---- the light that reaches the front ---- */
+/* Moon, stars and the lamps' glow, added rather than painted: `screen` only
+   ever brightens, and the sky behind is black, so nothing outside the light
+   itself is touched. This layer is exempt from the falloff below it - these
+   are the sources the falloff is measured from. The glows are diffuse light
+   and not objects, so they pass over text without hiding it; the lantern
+   bodies stay behind the cards where they belong. */
 :root[data-theme="lastthird"] body::after {
   content: "";
   position: fixed;
   inset: 0;
-  /* Above everything and blended by addition: the moon is the light in the
-     room, so it must not be dimmed by the falloff below - it is what the
-     falloff is measured from. `screen` only ever brightens, and the sky is
-     black, so nothing outside the moon and the stars is touched. */
   z-index: 9999;
   mix-blend-mode: screen;
   pointer-events: none;
   background-repeat: no-repeat;
   background-image:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Cdefs%3E%3Cmask id='m'%3E%3Crect width='120' height='120' fill='white'/%3E%3Ccircle cx='74' cy='48' r='40' fill='black'/%3E%3C/mask%3E%3C/defs%3E%3Ccircle cx='58' cy='58' r='40' fill='%23efe4bd' fill-opacity='0.62' mask='url(%23m)'/%3E%3C/svg%3E"),
+    radial-gradient(circle 26px at 15% 24%, rgba(255,226,168,0.55), rgba(255,206,122,0.18) 55%, transparent 80%),
+    radial-gradient(circle 120px at 15% 24%, rgba(255,196,110,0.20), rgba(255,196,110,0.05) 48%, transparent 76%),
+    radial-gradient(circle 20px at 63% 18%, rgba(255,226,168,0.46), rgba(255,206,122,0.15) 55%, transparent 80%),
+    radial-gradient(circle 96px at 63% 18%, rgba(255,196,110,0.16), rgba(255,196,110,0.04) 48%, transparent 76%),
+    radial-gradient(circle 16px at 37% 15%, rgba(255,226,168,0.40), rgba(255,206,122,0.13) 55%, transparent 80%),
+    radial-gradient(circle 80px at 37% 15%, rgba(255,196,110,0.13), rgba(255,196,110,0.035) 48%, transparent 76%),
     radial-gradient(circle at 12% 16%, rgba(238,234,214,0.85) 1.3px, transparent 1.6px),
     radial-gradient(circle at 33% 7%,  rgba(238,234,214,0.55) 1px,   transparent 1.3px),
     radial-gradient(circle at 58% 22%, rgba(238,234,214,0.7) 1.2px,  transparent 1.5px),
@@ -188,117 +254,81 @@
     radial-gradient(circle at 8%  74%, rgba(238,234,214,0.4) 1px,    transparent 1.3px),
     radial-gradient(circle at 37% 88%, rgba(238,234,214,0.3) 1px,    transparent 1.3px),
     radial-gradient(circle at 86% 92%, rgba(238,234,214,0.45) 1.1px, transparent 1.4px);
-  background-position: 88% 11%, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0;
-  background-size: 92px 92px, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%;
-  /* Not a blink: real stars breathe. Slow, shallow, and the whole layer at
-     once, so it costs one composited opacity change per frame. */
+  background-position: 88% 11%, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0;
+  background-size: 92px 92px, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%;
+  /* Not a blink - flames and stars breathe. One composited opacity change
+     per frame for the whole layer. */
   animation: nightBreath 7s ease-in-out infinite alternate;
 }
 @keyframes nightBreath {
-  from { opacity: 0.78; }
+  from { opacity: 0.82; }
   to { opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
   :root[data-theme="lastthird"] body::after { animation: none; opacity: 1; }
 }
 
-/* The actual simulation. A page cannot turn the phone's brightness down -
-   nothing on the web can - but it can do the thing that would look like:
-   multiply the whole interface by how much moonlight reaches it. White at
-   the moon means untouched; the far corner is multiplied to about two
-   thirds, so the bottom-left of the screen genuinely sits in shadow and
-   the top-right genuinely catches the light. It is one gradient, composited
-   on the GPU, and it covers modals and toasts too - they are in the same
-   room. The floor is 0.62 rather than lower because past that the ayah text
-   stops being readable, which is where the simulation has to give way. */
-:root[data-theme="lastthird"]::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 9998;
-  pointer-events: none;
-  mix-blend-mode: multiply;
-  background: radial-gradient(ellipse 135% 105% at 86% 13%,
-    #ffffff 0%, #eceded 20%, #d2d3d7 46%, #bcbec4 72%, #b7b9bf 100%);
-}
-
-/* The cards are the one lit thing in the room, so they need an edge the
-   near-black ground cannot give them, and no heavy drop shadow - nothing
-   casts a shadow by moonlight. */
-:root[data-theme="lastthird"] .panel,
-:root[data-theme="lastthird"] .challenge-card {
-  box-shadow: inset 0 1px 0 rgba(207,216,232,0.07), 0 1px 2px rgba(0,0,0,0.6);
-}
-/* The header and the tab bar are glass over the sky rather than slabs on top
-   of it - otherwise two opaque bands crop the night to a strip.
-   backdrop-filter goes on .tabs and NOT on .app-header: any value but none
-   makes an element a containing block for its fixed-position descendants,
-   and on phones .tabs is `position: fixed; bottom: 0` *inside* the header -
-   so blurring the header re-anchored the tab bar to the header's own 55px
-   box and parked the whole bar at the top of the screen. */
-:root[data-theme="lastthird"] .app-header {
-  background: color-mix(in srgb, var(--bg) 82%, transparent);
-}
-:root[data-theme="lastthird"] .tabs {
-  background: color-mix(in srgb, var(--surface) 78%, transparent);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-}
-/* Whichever decorative tile the person owns, it is daylight furniture, and
-   a green mushaf pattern over a night sky is two skies at once. This one
-   theme brings its own, so the wallpaper stands down. */
-html:root[data-theme="lastthird"] { background-image: none; }
-
-/* And the cards become dark glass. This is the whole idea working or not
-   working: the moon and the stars live behind the content, and on a phone
-   the content is nearly the entire screen - so with opaque panels the sky
-   is a two-centimetre strip at the top and the theme is just "very dark".
-   Letting the night through them is what makes one moon light the room. */
+/* ---- the surfaces ---- */
+/* Dark glass, and this is the idea working or not working: the lanterns and
+   the moon live behind the content, and on a phone the content is nearly
+   the whole screen - opaque cards would bury every one of them and leave a
+   two-centimetre strip of sky at the top. Letting the night through is what
+   makes the lamps light anything. */
 :root[data-theme="lastthird"] .panel,
 :root[data-theme="lastthird"] .stat-card,
 :root[data-theme="lastthird"] .settings-group {
-  background: color-mix(in srgb, var(--surface) 62%, transparent);
+  background: color-mix(in srgb, var(--surface) 58%, transparent);
 }
-
-/* The challenge card is painted in --primary so it matches whatever theme
-   is on. Here that made it the brightest thing on a black page - a pale
-   blue slab with the moon behind it. Under moonlight it has to be dark
-   like everything else, and lit only at its edge. */
+:root[data-theme="lastthird"] .panel,
 :root[data-theme="lastthird"] .challenge-card {
-  background: linear-gradient(150deg, rgba(13,19,32,0.62), rgba(7,11,19,0.62));
-  border: 1px solid color-mix(in srgb, var(--primary) 34%, transparent);
+  box-shadow: inset 0 1px 0 rgba(232,201,138,0.10), 0 1px 2px rgba(0,0,0,0.6);
+}
+/* backdrop-filter goes on .tabs and NEVER on .app-header: any value but
+   none makes an element a containing block for its fixed descendants, and
+   on phones .tabs is `position: fixed; bottom: 0` *inside* the header - so
+   blurring the header re-anchored the whole tab bar to the header's 55px
+   box and parked it at the top of the screen. */
+:root[data-theme="lastthird"] .app-header {
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+}
+:root[data-theme="lastthird"] .tabs {
+  background: color-mix(in srgb, var(--surface) 74%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+/* The challenge card is painted in --primary to match whatever theme is on.
+   Here that made it the brightest thing on a black page. */
+:root[data-theme="lastthird"] .challenge-card {
+  background: linear-gradient(150deg, rgba(20,18,30,0.6), rgba(9,10,18,0.6));
+  border: 1px solid color-mix(in srgb, var(--primary) 36%, transparent);
   color: var(--text);
-  box-shadow: inset 0 1px 0 rgba(207,216,232,0.08), 0 0 30px rgba(143,166,201,0.06);
 }
 :root[data-theme="lastthird"] .challenge-card.done {
-  background: linear-gradient(150deg, #101a16, #070d0b);
+  background: linear-gradient(150deg, rgba(16,26,22,0.6), rgba(7,13,11,0.6));
   border-color: color-mix(in srgb, var(--good) 40%, transparent);
 }
 :root[data-theme="lastthird"] .challenge-card h2,
 :root[data-theme="lastthird"] .challenge-card p { color: var(--text); }
 :root[data-theme="lastthird"] .challenge-card .btn.accent,
 :root[data-theme="lastthird"] .btn.accent {
-  /* Nothing man-made out-shines the moon in this room. */
-  background: color-mix(in srgb, var(--accent) 62%, #0c0d11);
-  color: #0d0b06;
+  /* Nothing man-made out-shines the lamps in this room. */
+  background: color-mix(in srgb, var(--accent) 60%, #0c0e19);
+  color: #100c04;
   border-color: transparent;
 }
-
-/* The ayah panel is the page's lamp: the text should look lit from behind
-   the paper rather than printed on it. */
+/* The ayah panel is what the lamps are for. The gold mushaf watermark is
+   drawn for a lit page; on near-black it stops being a watermark and starts
+   being a picture behind the ayah. */
 :root[data-theme="lastthird"] .ayah-display {
-  background-color: rgba(7,11,19,0.72);
-  box-shadow: 0 0 40px rgba(143,166,201,0.10) inset;
-  /* The gold mushaf watermark is drawn for a lit page; on near-black it
-     stops being a watermark and becomes a picture behind the ayah. */
+  background-color: rgba(8,10,20,0.7);
   background-image: none;
-  outline-color: color-mix(in srgb, var(--accent) 32%, transparent);
+  box-shadow: 0 0 42px rgba(232,201,138,0.10) inset;
+  outline-color: color-mix(in srgb, var(--accent) 34%, transparent);
 }
-/* Same for the corner marks: present, not gleaming. */
 :root[data-theme="lastthird"] .ayah-display::before,
 :root[data-theme="lastthird"] .ayah-display::after {
-  border-color: color-mix(in srgb, var(--accent) 38%, transparent);
-  opacity: 0.55;
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  opacity: 0.6;
 }
 
 * { box-sizing: border-box; }
@@ -2812,12 +2842,12 @@ main#app {
    and a couple of stars rather than just the two darkest hex values. */
 .swatch.theme-lastthird {
   background:
-    radial-gradient(circle at 78% 26%, rgba(239,228,189,0.22), transparent 55%),
-    radial-gradient(circle at 22% 30%, rgba(238,234,214,0.75) 1.1px, transparent 1.4px),
-    radial-gradient(circle at 40% 72%, rgba(238,234,214,0.5) 1px, transparent 1.3px),
-    radial-gradient(circle at 62% 82%, rgba(238,234,214,0.4) 1px, transparent 1.3px),
-    linear-gradient(160deg, #070c16, #04060c);
-  color: #d7e0ee;
+    radial-gradient(circle at 78% 26%, rgba(239,228,189,0.20), transparent 55%),
+    radial-gradient(circle at 26% 58%, rgba(255,206,122,0.30), transparent 48%),
+    radial-gradient(circle at 22% 26%, rgba(238,234,214,0.75) 1.1px, transparent 1.4px),
+    radial-gradient(circle at 45% 78%, rgba(238,234,214,0.45) 1px, transparent 1.3px),
+    linear-gradient(160deg, #101430, #05060e);
+  color: #d9d2c6;
   position: relative;
 }
 .swatch.theme-lastthird::after {
@@ -2828,7 +2858,7 @@ main#app {
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Cdefs%3E%3Cmask id='s'%3E%3Crect width='120' height='120' fill='white'/%3E%3Ccircle cx='74' cy='48' r='40' fill='black'/%3E%3C/mask%3E%3C/defs%3E%3Ccircle cx='58' cy='58' r='40' fill='%23efe4bd' mask='url(%23s)'/%3E%3C/svg%3E") center/contain no-repeat;
   pointer-events: none;
 }
-.swatch.theme-lastthird .swatch-sub { color: #9fb0c8; }
+.swatch.theme-lastthird .swatch-sub { color: #a89f90; }
 
 /* Each swatch shows the pattern it is offering, drawn over the theme's own
    surface. The gold one used to be a fixed cream gradient - on a dark theme
