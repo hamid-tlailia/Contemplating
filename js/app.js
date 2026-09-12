@@ -171,6 +171,7 @@ function loadState() {
       parsed.reviewDailyCap = parsed.reviewDailyCap == null ? REVIEW_DAILY_CAP_DEFAULT : parsed.reviewDailyCap;
       parsed.reviewCounts = parsed.reviewCounts || {};
       parsed.wirdPlan = parsed.wirdPlan || null;
+      parsed.wirdNotifiedOn = parsed.wirdNotifiedOn || null;
       parsed.autoVaryModes = parsed.autoVaryModes !== false;
       parsed.ageMode = parsed.ageMode || "adult";
       parsed.wirdRewardedDate = parsed.wirdRewardedDate || null;
@@ -217,7 +218,8 @@ function loadState() {
     mushafPointer: null, // {surah, ayah} - where the Mushaf reader should resume next
     reviewDailyCap: REVIEW_DAILY_CAP_DEFAULT, // 0 = no cap
     reviewCounts: {}, // "YYYY-MM-DD" -> ayahs graded in a review session that day
-    wirdPlan: null, // {anchor, time:"HH:MM", place} - the when/where commitment
+    wirdPlan: null, // {anchor, time:"HH:MM", place, notify} - the when/where commitment
+    wirdNotifiedOn: null, // "YYYY-MM-DD" - the day the reminder last went out, so it goes out once
     autoVaryModes: true, // rotate the test mode across an ayah's three rounds
     ageMode: "adult", // which age profile's defaults are in force
     wirdRewardedDate: null, // the day the wird-completion reward was last paid
@@ -1459,9 +1461,7 @@ function renderWirdPlanCard() {
 
   // Held to today only, and phrased as a nudge rather than a scolding: a
   // missed commitment that greets you as a failure is one you stop making.
-  const type = state.wirdTargetType || "ayahs";
-  const counts = type === "pages" ? state.dailyPageCounts : state.dailyCounts;
-  const done = (counts[todayISO()] || 0) >= (state.wirdTarget || 5);
+  const done = wirdDoneToday();
   const now = new Date();
   const nowHM = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
   const statusEl = document.getElementById("wird-plan-status");
@@ -1481,6 +1481,7 @@ function renderWirdPlanCard() {
   document.getElementById("btn-wird-plan-start").classList.toggle("hidden", done);
   document.getElementById("btn-wird-plan-new").classList.toggle("hidden", !done);
   document.getElementById("btn-wird-plan-edit").textContent = done ? "عدّل موعد الغد" : "تعديل العهد";
+  renderWirdNotifyRow();
   renderWirdPlanAnchors();
 }
 
@@ -1504,9 +1505,13 @@ function openWirdPlanForm(fresh = false) {
 function saveWirdPlan() {
   const time = document.getElementById("wird-plan-time").value || "05:30";
   const place = document.getElementById("wird-plan-place").value.trim();
-  state.wirdPlan = { anchor: wirdPlanDraftAnchor, time, place, created: todayISO() };
+  // Editing the hour must move the reminder with it - a commitment changed
+  // to 6am that still buzzes at 5:30 is worse than no reminder at all.
+  const notify = !!(state.wirdPlan && state.wirdPlan.notify);
+  state.wirdPlan = { anchor: wirdPlanDraftAnchor, time, place, created: todayISO(), notify };
   saveState();
   renderWirdPlanCard();
+  scheduleWirdReminder();
   showToast(`🤝 ${wirdPlanSentence(state.wirdPlan)}`, "success");
 }
 
@@ -1560,11 +1565,190 @@ function downloadWirdPlanICS() {
   showToast("افتح الملف الذي نُزّل لإضافة التذكير اليومي إلى تقويم جوالك 📅", "success");
 }
 
+// ---------- The reminder itself ----------
+//
+// The commitment card has always known *when*, and could hand that when to
+// the phone's calendar - but the app itself never said a word at the hour
+// it named, which is the one moment the whole feature exists for.
+//
+// What the web can honestly do here is narrower than a native app, and the
+// card says so rather than implying otherwise:
+//   - while the app is running (foreground, or backgrounded and not yet
+//     evicted) a timer fires at the appointed minute;
+//   - in the foreground that's a toast, since a system notification for an
+//     app you are already looking at is just noise;
+//   - once the browser has thrown the page away, nothing of ours runs, so
+//     the calendar entry stays the guaranteed path and is named as such.
+// Notification Triggers (a real scheduled notification) is still behind a
+// flag in Chromium and absent from Safari, so there is nothing better to
+// reach for yet.
+
+let wirdReminderTimer = null;
+
+function notifyState() {
+  if (typeof Notification === "undefined" || !navigator.serviceWorker) return "unsupported";
+  return Notification.permission; // "granted" | "denied" | "default"
+}
+
+// iOS only exposes notifications to a PWA that has been added to the Home
+// Screen; in a Safari tab the API is simply missing, and saying "your
+// browser doesn't support this" to an iPhone owner who could have it in two
+// taps is the wrong answer.
+function isIOS() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+function isStandalone() {
+  return window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+}
+
+function wirdDoneToday() {
+  const type = state.wirdTargetType || "ayahs";
+  const counts = type === "pages" ? state.dailyPageCounts : state.dailyCounts;
+  return (counts[todayISO()] || 0) >= (state.wirdTarget || 5);
+}
+
+// The next time this clock-time comes round: today if it hasn't passed,
+// tomorrow otherwise. Built from a Date rather than string arithmetic so
+// midnight, month ends and DST are the platform's problem, not ours.
+function nextWirdOccurrence(plan, from = new Date()) {
+  const [h, m] = (plan.time || "05:30").split(":").map(Number);
+  const at = new Date(from);
+  at.setHours(h || 0, m || 0, 0, 0);
+  if (at <= from) at.setDate(at.getDate() + 1);
+  return at;
+}
+
+function cancelWirdReminder() {
+  if (wirdReminderTimer) clearTimeout(wirdReminderTimer);
+  wirdReminderTimer = null;
+}
+
+async function fireWirdReminder() {
+  wirdReminderTimer = null;
+  const plan = state.wirdPlan;
+  if (!plan || !plan.notify) return;
+  // Done already, or today's reminder has been given: say nothing. A
+  // reminder for something you have finished is the fastest way to teach
+  // someone to switch reminders off.
+  if (!wirdDoneToday() && state.wirdNotifiedOn !== todayISO()) {
+    state.wirdNotifiedOn = todayISO();
+    saveState();
+    const body = plan.place ? `ورد اليوم ينتظرك ${plan.place} 🌿` : "ورد اليوم ينتظرك 🌿";
+    if (document.visibilityState === "visible") {
+      showToast(`🤝 حان موعد عهدك — ${body}`, "success");
+      renderWirdPlanCard();
+    } else {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        await reg.showNotification("🤝 حان موعد وردك", {
+          body,
+          icon: "icons/icon-192.png",
+          badge: "icons/icon-192.png",
+          tag: "tadabbur-wird",       // one reminder, replaced - never a stack
+          lang: "ar",
+          dir: "rtl",
+          renotify: true,
+        });
+      } catch (e) {
+        /* permission revoked mid-session, or no worker: nothing to do */
+      }
+    }
+  }
+  scheduleWirdReminder();
+}
+
+function scheduleWirdReminder() {
+  cancelWirdReminder();
+  const plan = state.wirdPlan;
+  if (!plan || !plan.notify) return;
+  if (notifyState() !== "granted") return;
+  const ms = nextWirdOccurrence(plan) - new Date();
+  // setTimeout is 32-bit: anything past ~24.8 days silently fires at once.
+  // A daily appointment is never more than a day out, so this is a guard
+  // against a corrupt time rather than a real case.
+  if (ms < 0 || ms > 86400000) return;
+  wirdReminderTimer = setTimeout(fireWirdReminder, ms);
+}
+
+async function requestWirdNotifications() {
+  if (notifyState() === "unsupported") return false;
+  if (Notification.permission === "granted") return true;
+  if (Notification.permission === "denied") return false;
+  try {
+    return (await Notification.requestPermission()) === "granted";
+  } catch (e) {
+    return false;
+  }
+}
+
+// Said plainly, including what it cannot do: a reminder someone believes in
+// and doesn't get is worse than one they were never offered.
+function wirdNotifyNote() {
+  const plan = state.wirdPlan;
+  const st = notifyState();
+  if (st === "unsupported") {
+    return isIOS() && !isStandalone()
+      ? "لتفعيل التنبيه على الآيفون، ثبّت التطبيق أولًا: زر المشاركة ← «إضافة إلى الشاشة الرئيسية»، ثم افتحه من هناك."
+      : "هذا المتصفح لا يدعم التنبيهات. استخدم «تذكير يومي في التقويم» — وهو يعمل في كل الحالات.";
+  }
+  if (st === "denied") return "التنبيهات محجوبة لهذا الموقع في إعدادات متصفحك. اسمح بها من هناك ثم أعد المحاولة.";
+  if (!plan || !plan.notify) return "تنبيه على هذا الجهاز عند موعدك — ما دام التطبيق مفتوحًا أو في الخلفية.";
+  return "سيصلك التنبيه عند موعدك ما دام التطبيق يعمل أو في الخلفية. وإذا أُغلق التطبيق تمامًا فلن يصل — لذلك أضِف «تذكير يومي في التقويم» أيضًا، فهو الوحيد المضمون.";
+}
+
+function renderWirdNotifyRow() {
+  const row = document.getElementById("wird-notify-row");
+  const toggle = document.getElementById("wird-notify-toggle");
+  const note = document.getElementById("wird-notify-note");
+  if (!row || !toggle || !note) return;
+  const st = notifyState();
+  toggle.checked = !!(state.wirdPlan && state.wirdPlan.notify) && st === "granted";
+  toggle.disabled = st === "unsupported" || st === "denied";
+  row.classList.toggle("disabled", toggle.disabled);
+  note.textContent = wirdNotifyNote();
+}
+
+async function toggleWirdNotifications(on) {
+  if (!state.wirdPlan) return;
+  if (on) {
+    const ok = await requestWirdNotifications();
+    if (!ok) {
+      state.wirdPlan.notify = false;
+      saveState();
+      renderWirdNotifyRow();
+      showToast("لم يُسمح بالتنبيهات. يمكنك دائمًا استخدام تذكير التقويم 📅", "error");
+      return;
+    }
+    state.wirdPlan.notify = true;
+    saveState();
+    renderWirdNotifyRow();
+    scheduleWirdReminder();
+    const at = nextWirdOccurrence(state.wirdPlan);
+    const when = at.toDateString() === new Date().toDateString() ? "اليوم" : "غدًا";
+    showToast(`🔔 سأذكّرك ${when} الساعة ${state.wirdPlan.time}`, "success");
+  } else {
+    state.wirdPlan.notify = false;
+    saveState();
+    renderWirdNotifyRow();
+    cancelWirdReminder();
+  }
+}
+
+// A backgrounded page has its timers throttled, and a frozen one has them
+// stopped outright - so the appointment is recomputed every time the app
+// comes back to the front rather than trusted to a timer set an hour ago.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") scheduleWirdReminder();
+});
+
 document.getElementById("btn-wird-plan-save").addEventListener("click", saveWirdPlan);
 document.getElementById("btn-wird-plan-edit").addEventListener("click", () => openWirdPlanForm());
 document.getElementById("btn-wird-plan-new").addEventListener("click", () => openWirdPlanForm(true));
 document.getElementById("btn-wird-plan-cancel").addEventListener("click", renderWirdPlanCard);
 document.getElementById("btn-wird-plan-ics").addEventListener("click", downloadWirdPlanICS);
+const wirdNotifyToggle = document.getElementById("wird-notify-toggle");
+if (wirdNotifyToggle) wirdNotifyToggle.addEventListener("change", (e) => toggleWirdNotifications(e.target.checked));
 document.getElementById("btn-wird-plan-start").addEventListener("click", () => openTodaysWirdReading());
 
 // One word from the ayah being learned, with its meaning, on the dashboard.
@@ -6512,6 +6696,9 @@ startUp("الإعدادات", initSettingsPanel);
 startUp("بطاقة الورد", initWirdCard);
 startUp("بطاقة المصحف", initMushafCard);
 startUp("تبويب التصفح", initBrowseTab);
+// Set on every launch, not only when the toggle is touched: the timer lives
+// in the page, and the page is new.
+startUp("تذكير الورد", scheduleWirdReminder);
 
 // Opens whatever the address bar asks for. The tab's panel is already the
 // visible one (the head script saw the same URL), so this only runs its own

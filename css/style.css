@@ -2634,6 +2634,32 @@ main#app {
   color: var(--text);
 }
 .wird-plan-field input[type="text"] { min-width: 220px; text-align: center; }
+/* The reminder switch. A whole-row <label> so the text is part of the hit
+   target - a 16px checkbox alone is a poor thing to aim a thumb at. */
+.wird-notify-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+.wird-notify-row input { width: 18px; height: 18px; accent-color: var(--primary); cursor: pointer; }
+/* Unavailable, not invisible: the note underneath is what explains why, so
+   the row has to stay readable enough to be read next to it. */
+.wird-notify-row.disabled { opacity: 0.55; cursor: not-allowed; }
+.wird-notify-row.disabled input { cursor: not-allowed; }
+.wird-notify-note {
+  margin-top: 8px;
+  font-size: 0.82rem;
+  line-height: 1.7;
+  text-align: center;
+}
 .wird-plan-actions {
   display: flex;
   flex-wrap: wrap;

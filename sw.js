@@ -19,7 +19,7 @@
 // Anything an ayah's data was never fetched for can't be shown offline, so
 // the settings panel offers a prefetch for the surahs actually in use.
 
-const VERSION = "v5";
+const VERSION = "v6";
 const SHELL_CACHE = `tadabbur-shell-${VERSION}`;
 const DATA_CACHE = `tadabbur-data-${VERSION}`;
 const FONT_CACHE = `tadabbur-fonts-${VERSION}`;
@@ -59,6 +59,23 @@ self.addEventListener("install", (event) => {
 // not on the next time the person happens to pull-to-refresh.
 self.addEventListener("message", (event) => {
   if (event.data && event.data.type === "SKIP_WAITING") self.skipWaiting();
+});
+
+// A notification is only useful if tapping it lands you in the app. Focus a
+// window that is already open rather than opening a second one - an
+// installed app reopened into a duplicate window loses whatever the person
+// had on screen.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+      for (const client of list) {
+        if ("focus" in client) return client.focus();
+      }
+      if (self.clients.openWindow) return self.clients.openWindow("./");
+      return undefined;
+    })
+  );
 });
 
 self.addEventListener("activate", (event) => {
