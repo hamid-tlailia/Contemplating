@@ -2722,6 +2722,26 @@ main#app {
 }
 #btn-protect-storage { margin-top: 10px; width: 100%; }
 
+/* The one visible sign that a startup load failed. Warning-coloured rather
+   than muted: the whole problem was that the failure was invisible. */
+.connection-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  border: 1px solid color-mix(in srgb, #b45309 45%, var(--border));
+  background: color-mix(in srgb, #b45309 12%, var(--surface));
+  font-size: 0.9rem;
+  line-height: 1.7;
+}
+.connection-banner.hidden { display: none; }
+.connection-banner .btn { flex: 0 0 auto; }
+.connection-banner.busy { opacity: 0.6; pointer-events: none; }
+
 /* Reviewing by ear. The ayah stays mounted underneath - masked words,
    fitted height, grade gate and all - and is simply covered, so lifting
    the veil lands on the state that was already there rather than

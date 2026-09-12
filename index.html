@@ -293,6 +293,13 @@
 </div>
 
 <main id="app">
+  <!-- Shown only when a startup load failed: without it the app just looks
+       broken, with three unrelated-looking symptoms and no way back. -->
+  <div class="connection-banner hidden" id="connection-banner">
+    <span id="connection-banner-text"></span>
+    <button class="btn" id="btn-connection-retry">أعد المحاولة</button>
+  </div>
+
 
   <!-- DASHBOARD -->
   <section id="tab-dashboard" class="tab-panel">

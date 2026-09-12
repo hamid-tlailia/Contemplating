@@ -2121,19 +2121,100 @@ document.querySelectorAll(".mushaf-mode-btn").forEach((btn) => {
   });
 });
 
+// ---------- Recovering from a load that failed ----------
+//
+// The surah list is fetched once, at startup, by both the Mushaf card and
+// the browse tab. If that one fetch failed, nothing ever tried again - and
+// every control downstream of it then failed *silently*:
+//
+//   · the browse tab had no surahs and no ayahs;
+//   · "ورد اليوم" found no selected surah and scrolled to the Mushaf card
+//     instead, which reads as the button throwing you to the bottom of the
+//     page for no reason;
+//   · "عرض للقراءة" hit `if (!surahNumber) return;` and did nothing at all.
+//
+// Three symptoms, one cause. It shows up after the app has sat in the
+// background because that is exactly when the page gets discarded and
+// reloaded while the phone is still bringing its connection back: the
+// startup fetch lands in that window, fails, and the app stays broken until
+// it is killed and reopened on a working network - which is the workaround
+// people were having to find for themselves.
+//
+// So: remember what failed, say so where it can be seen, and try again on
+// every signal that the network might be back.
+
+const pendingInits = new Map(); // name -> the async loader to run again
+
+function markInitFailed(name, fn) {
+  pendingInits.set(name, fn);
+  renderConnectionBanner();
+}
+
+function markInitOk(name) {
+  if (pendingInits.delete(name)) renderConnectionBanner();
+}
+
+let retryingInits = false;
+async function retryFailedInits() {
+  if (retryingInits || !pendingInits.size) return;
+  if (navigator.onLine === false) return;
+  retryingInits = true;
+  const banner = document.getElementById("connection-banner");
+  if (banner) banner.classList.add("busy");
+  try {
+    // A copy: a loader that succeeds removes itself from the map as it runs.
+    for (const [, fn] of [...pendingInits.entries()]) {
+      try { await fn(); } catch (e) { /* still down; it stays registered */ }
+    }
+  } finally {
+    retryingInits = false;
+    if (banner) banner.classList.remove("busy");
+    renderConnectionBanner();
+  }
+}
+
+function renderConnectionBanner() {
+  const banner = document.getElementById("connection-banner");
+  if (!banner) return;
+  const broken = pendingInits.size > 0;
+  banner.classList.toggle("hidden", !broken);
+  if (broken) {
+    const text = document.getElementById("connection-banner-text");
+    if (text) {
+      text.textContent = navigator.onLine === false
+        ? "لا يوجد اتصال — بعض أجزاء التطبيق لم تُحمَّل."
+        : "تعذّر تحميل قائمة السور. الآيات والقراءة لن تعمل حتى تُحمَّل.";
+    }
+  }
+}
+
+// Every signal that the network may have come back. The visibility one is
+// the important one on a phone: the app is brought to the front long before
+// anyone thinks to press a retry button.
+window.addEventListener("online", retryFailedInits);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") retryFailedInits();
+});
+
 async function initMushafCard() {
   const loadBtn = document.getElementById("btn-mushaf-load");
   loadBtn.innerHTML = iconLabel("book", "عرض للقراءة");
 
-  try {
+  const loadSurahs = async () => {
     const surahs = await fetchSurahList();
     const startSurah = defaultMushafSurah(surahs);
     setupSurahCombo("mushaf-surah-combo", "mushaf-surah-combo-input", "mushaf-surah-combo-list", surahs, (surahNumber) => {
       updateMushafDefaultRange(surahNumber);
     }).setValue(startSurah);
     await updateMushafDefaultRange(startSurah);
+    document.getElementById("mushaf-surah-combo-input").placeholder = "ابحث عن سورة...";
+    markInitOk("mushaf-surahs");
+  };
+  try {
+    await loadSurahs();
   } catch (e) {
     document.getElementById("mushaf-surah-combo-input").placeholder = "تعذّر تحميل قائمة السور";
+    markInitFailed("mushaf-surahs", loadSurahs);
   }
 
   document.getElementById("mushaf-from").addEventListener("input", async () => {
@@ -2182,7 +2263,15 @@ async function openTodaysWirdReading() {
   const surahNumber = selectedMushafSurah;
   const from = Number(document.getElementById("mushaf-from").value) || 1;
   const to = Number(document.getElementById("mushaf-to").value) || from;
-  if (!surahNumber || from > to) return;
+  if (!surahNumber) {
+    showToast("اختر سورة أولًا.", "error");
+    if (pendingInits.has("mushaf-surahs")) retryFailedInits();
+    return;
+  }
+  if (from > to) {
+    showToast("رقم آية البداية أكبر من النهاية.", "error");
+    return;
+  }
   try {
     const ayahs = await fetchSurahAyahs(surahNumber);
     const matches = ayahs
@@ -2673,6 +2762,15 @@ document.getElementById("btn-start-challenge").addEventListener("click", startDa
 // back to bringing it into view rather than doing nothing.
 document.getElementById("btn-quick-wird").addEventListener("click", () => {
   if (mushafInputMode === "range" && !selectedMushafSurah) {
+    // Two different reasons to have no surah, and they need different
+    // answers. If the list never loaded, scrolling the person to a card
+    // they cannot use reads as the button hurling them down the page for
+    // no reason - which is exactly how it was being reported.
+    if (pendingInits.has("mushaf-surahs")) {
+      showToast("لم تُحمَّل قائمة السور بعد. جارٍ إعادة المحاولة…", "error");
+      retryFailedInits();
+      return;
+    }
     document.querySelector(".mushaf-card").scrollIntoView({ behavior: "smooth", block: "center" });
     return;
   }
@@ -2750,7 +2848,7 @@ function setupSurahCombo(containerId, inputId, listId, surahs, onSelect) {
 }
 
 async function initBrowseTab() {
-  try {
+  const loadSurahs = async () => {
     const surahs = await fetchSurahList();
     setupSurahCombo("surah-combo", "surah-combo-input", "surah-combo-list", surahs, (surahNumber, meta) => {
       selectedBrowseSurah = surahNumber;
@@ -2761,8 +2859,13 @@ async function initBrowseTab() {
     selectedBrowseSurah = surahs[0].number;
     selectedBrowseSurahName = surahs[0].name;
     loadBrowseSurah(selectedBrowseSurah);
+    markInitOk("browse-surahs");
+  };
+  try {
+    await loadSurahs();
   } catch (e) {
     document.getElementById("surah-meta-info").textContent = "تعذّر تحميل قائمة السور. تحقق من الاتصال بالإنترنت.";
+    markInitFailed("browse-surahs", loadSurahs);
   }
 }
 
@@ -7183,6 +7286,11 @@ startUp("تبويب التصفح", initBrowseTab);
 // Set on every launch, not only when the toggle is touched: the timer lives
 // in the page, and the page is new.
 startUp("تذكير الورد", scheduleWirdReminder);
+startUp("شريط الاتصال", () => {
+  const btn = document.getElementById("btn-connection-retry");
+  if (btn) btn.addEventListener("click", retryFailedInits);
+  renderConnectionBanner();
+});
 
 // Opens whatever the address bar asks for. The tab's panel is already the
 // visible one (the head script saw the same URL), so this only runs its own
