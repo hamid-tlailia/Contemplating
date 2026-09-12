@@ -1664,18 +1664,34 @@ function applyNumerals() {
   applyNumeralsTo(document.body);
 }
 
-// Everything drawn after the first pass goes through the same shaping.
+// Everything drawn after the first pass goes through the same shaping - but
+// only while there IS a shaping to apply. On the default setting the app
+// already writes the digits it means, so nothing watches the document at
+// all: no observer, no per-render walk, nothing to go wrong for the people
+// who never opened the setting.
+let numeralsObserver = null;
 function watchNumerals() {
-  const observer = new MutationObserver((records) => {
+  const needed = numeralsStyle() === "arabic";
+  if (!needed) {
+    if (numeralsObserver) { numeralsObserver.disconnect(); numeralsObserver = null; }
+    return;
+  }
+  if (numeralsObserver) return;
+  numeralsObserver = new MutationObserver((records) => {
     if (numeralsPassRunning) return;
-    const roots = new Set();
-    records.forEach((r) => {
-      if (r.type === "characterData") { if (r.target.parentElement) roots.add(r.target.parentElement); }
-      else r.addedNodes.forEach((n) => roots.add(n.nodeType === 1 ? n : n.parentElement));
-    });
-    roots.forEach((el) => el && applyNumeralsTo(el));
+    try {
+      const roots = new Set();
+      records.forEach((r) => {
+        if (r.type === "characterData") { if (r.target.parentElement) roots.add(r.target.parentElement); }
+        else r.addedNodes.forEach((n) => roots.add(n.nodeType === 1 ? n : n.parentElement));
+      });
+      roots.forEach((el) => el && applyNumeralsTo(el));
+    } catch (e) {
+      // Never let a shaping failure escape into the page's own work.
+      console.error("تعذّر تنسيق الأرقام", e);
+    }
   });
-  observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+  numeralsObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
 }
 
 // A way to log the daily wird from reading the Mushaf directly, instead of
@@ -6175,6 +6191,7 @@ function initSettingsPanel() {
     state.numerals = numeralsSelect.value;
     saveState();
     applyNumerals(); // converts what is already on screen, in both directions
+    watchNumerals(); // and starts or stops watching for what comes next
     syncSettingsSummaries();
   });
 
@@ -6357,47 +6374,33 @@ function showTerms() {
 // screen is the one from last time, and nothing in it goes looking for a
 // newer build - which is why a deployed change could sit unseen until the
 // person happened to pull-to-refresh. So the app asks whenever it comes back
-// to the foreground, and takes the new version itself when one arrives.
+// to the foreground, and OFFERS the new version when one arrives.
+//
+// It offers rather than takes. Reloading on its own meant the app could go
+// away under a finger mid-tap - and on a slow connection the reload leaves a
+// page that is neither the old one nor the new one for as long as the
+// network takes. A line the person taps when they are ready costs one tap
+// and can't do that.
 // Tested for truthiness, not with `in`: a browser (or a test) can have the
 // property present and empty, and this block reads from it immediately - a
 // throw here would take the app's whole init section below with it.
 if (navigator.serviceWorker) {
   // Whether a worker was already serving this page when it loaded. The very
-  // first registration also fires controllerchange, and reloading for that
-  // would be a pointless reload on someone's first ever visit.
+  // first registration also fires controllerchange, and announcing an update
+  // for that would be announcing an update on someone's first ever visit.
   const hadController = !!navigator.serviceWorker.controller;
-  const RELOADED_FOR_UPDATE = "tadabbur_update_reload";
-  let reloading = false;
+  let offered = false;
 
-  const flag = {
-    set: () => { try { sessionStorage.setItem(RELOADED_FOR_UPDATE, "1"); } catch (e) { /* private mode */ } },
-    isSet: () => { try { return sessionStorage.getItem(RELOADED_FOR_UPDATE) === "1"; } catch (e) { return false; } },
-    clear: () => { try { sessionStorage.removeItem(RELOADED_FOR_UPDATE); } catch (e) { /* private mode */ } },
-  };
-
-  // Never in the middle of something: a reload during a recitation or a
-  // confirm dialog would take the round with it. Nothing is lost by waiting -
-  // the new worker is installed already and serves whatever loads next.
-  function reloadWhenIdle() {
-    if (document.documentElement.classList.contains("modal-open")) {
-      setTimeout(reloadWhenIdle, 4000);
-      return;
-    }
-    location.reload();
+  function offerUpdate() {
+    if (offered) return;
+    offered = true;
+    showUpdateToast();
   }
 
-  function reloadOnce(delay) {
-    if (reloading) return;
-    reloading = true;
-    setTimeout(reloadWhenIdle, delay || 0);
-  }
-
-  // The new worker activated and took this page over: everything on screen is
-  // from the previous build, so the page has to come again to match it.
+  // The new worker took this page over: what is on screen is from the
+  // previous build. Say so - and let the person choose the moment.
   navigator.serviceWorker.addEventListener("controllerchange", () => {
-    if (!hadController) return;
-    flag.set();
-    reloadOnce(0);
+    if (hadController) offerUpdate();
   });
 
   window.addEventListener("load", () => {
@@ -6409,27 +6412,14 @@ if (navigator.serviceWorker) {
 
       // A worker that has installed sits in "waiting" until every page using
       // the old one is gone - which, for an app that is resumed rather than
-      // reopened, can be days. Ask it to take over; and reload regardless a
-      // moment later, because a reload is the other thing that lets a waiting
-      // worker through (it is why refreshing by hand fixed this) and because
-      // the page would otherwise stay on the build it was loaded with. The
-      // flag keeps that to one reload per update: if the worker is still
-      // waiting after it - another tab holding the old one open - the app
-      // stays usable on the old build rather than reloading in a circle.
-      const takeNewVersion = (worker) => {
-        if (worker) worker.postMessage({ type: "SKIP_WAITING" });
-        if (flag.isSet()) return;
-        flag.set();
-        reloadOnce(1200); // long enough for skipWaiting to land first
-      };
-
-      if (reg.waiting && navigator.serviceWorker.controller) takeNewVersion(reg.waiting);
-      else if (!reg.waiting) flag.clear(); // nothing pending: the next update may reload again
+      // reopened, can be days. So when one is waiting, say a new version is
+      // ready; taking it is a reload, and the reload is the person's to make.
+      if (reg.waiting && navigator.serviceWorker.controller) offerUpdate();
       reg.addEventListener("updatefound", () => {
         const incoming = reg.installing;
         if (!incoming) return;
         incoming.addEventListener("statechange", () => {
-          if (incoming.state === "installed" && navigator.serviceWorker.controller) takeNewVersion(incoming);
+          if (incoming.state === "installed" && navigator.serviceWorker.controller) offerUpdate();
         });
       });
 
@@ -6445,6 +6435,75 @@ if (navigator.serviceWorker) {
       window.addEventListener("focus", check);
     }).catch(() => {});
   });
+}
+
+// An error nobody sees leaves a screen that is half drawn and answers no
+// taps - which is exactly what a page in that state looks like from the
+// outside: "the settings button doesn't press". One line, once, with the way
+// out on it.
+let brokeAlready = false;
+function reportBreakage() {
+  if (brokeAlready) return;
+  brokeAlready = true;
+  const container = document.getElementById("toast-container");
+  if (!container) return;
+  const el = document.createElement("div");
+  el.className = "toast toast-update show";
+  const main = document.createElement("div");
+  main.textContent = "⚠️ حدث خلل في هذه الشاشة";
+  const row = document.createElement("div");
+  row.className = "toast-update-actions";
+  const go = document.createElement("button");
+  go.className = "btn primary";
+  go.textContent = "أعد التحميل";
+  go.addEventListener("click", () => location.reload());
+  const later = document.createElement("button");
+  later.className = "btn";
+  later.textContent = "تجاهل";
+  later.addEventListener("click", () => el.remove());
+  row.appendChild(go);
+  row.appendChild(later);
+  el.appendChild(main);
+  el.appendChild(row);
+  container.appendChild(el);
+}
+window.addEventListener("error", reportBreakage);
+window.addEventListener("unhandledrejection", reportBreakage);
+
+// The offer itself: a toast that stays until it is answered, with the reload
+// on the button rather than on a timer.
+function showUpdateToast() {
+  const container = document.getElementById("toast-container");
+  if (!container) return;
+  if (container.querySelector(".toast-update")) return;
+  const el = document.createElement("div");
+  el.className = "toast toast-update show";
+  const main = document.createElement("div");
+  main.textContent = "✨ نسخة جديدة من تدبر جاهزة";
+  const row = document.createElement("div");
+  row.className = "toast-update-actions";
+  const go = document.createElement("button");
+  go.className = "btn primary";
+  go.textContent = "حدّث الآن";
+  go.addEventListener("click", () => {
+    // The waiting worker takes over on this reload either way; asking it to
+    // skip only saves it a wait.
+    try {
+      navigator.serviceWorker.getRegistration().then((reg) => {
+        if (reg && reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });
+      }).catch(() => {});
+    } catch (e) { /* nothing to ask */ }
+    setTimeout(() => location.reload(), 150);
+  });
+  const later = document.createElement("button");
+  later.className = "btn";
+  later.textContent = "لاحقًا";
+  later.addEventListener("click", () => el.remove());
+  row.appendChild(go);
+  row.appendChild(later);
+  el.appendChild(main);
+  el.appendChild(row);
+  container.appendChild(el);
 }
 
 // ---------- Init ----------

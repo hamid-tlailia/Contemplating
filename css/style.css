@@ -958,6 +958,17 @@ main#app {
    a person, not a preference buried in a dropdown. */
 /* The points figure, wherever it is reported: last, small and quiet, so the
    headline stays the thing that was actually accomplished. */
+/* The update offer: a toast that waits to be answered rather than one that
+   fades, so its two buttons can be reached. */
+.toast-update { pointer-events: auto; }
+.toast-update-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  justify-content: center;
+}
+.toast-update-actions .btn { padding: 6px 14px; font-size: 0.82rem; }
+
 .toast-note, .reward-note {
   margin-top: 4px;
   font-size: 0.75rem;
