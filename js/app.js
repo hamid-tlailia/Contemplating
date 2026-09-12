@@ -31,6 +31,9 @@ const THEMES = [
   { id: "night", name: "أزرق ليلي", points: 150 },
   { id: "forest", name: "أخضر داكن مريح", points: 300 },
   { id: "embroidered", name: "مطرز فاخر", points: 400 },
+  // Darkness with a moon and a handful of stars, and nothing else lighting
+  // it - for the hour it is named after.
+  { id: "lastthird", name: "ثلث الليل", points: 0 },
 ];
 
 // Ayah text font - a purely typographic choice, unlocked and applied the

@@ -122,6 +122,185 @@
   --shadow: 0 1px 3px rgba(0,0,0,0.5);
 }
 
+/* ثلث الليل - the last third of the night. Not "a dark theme" but a dark
+   *room*: the page is nearly black, and what light there is comes from one
+   moon in the corner and a scattering of stars. Every colour here is a
+   colour something could plausibly be under moonlight - no saturated blues,
+   no white - so the ayah text reads as lit rather than as glowing. */
+:root[data-theme="lastthird"] {
+  --bg: #050507;
+  --surface: #0c0d11;
+  --border: #1e2026;
+  --text: #c2c5cc;
+  --muted: #8a8e98;
+  --primary: #a6abb5;
+  --primary-dark: #838892;
+  --accent: #d8caa4;
+  --accent-light: #e9ddbd;
+  --danger: #b8756c;
+  --warn: #bda66a;
+  --good: #74a38a;
+  --shadow: 0 1px 3px rgba(0,0,0,0.8);
+}
+
+/* The sky itself. Fixed and behind everything (html paints its pattern
+   under this; the cards sit over it), and inert to the pointer. Two
+   gradients: the moon's own halo, and the wash of light it throws down and
+   across the page - which is what makes the corner it hangs in read as
+   brighter than the far side. */
+:root[data-theme="lastthird"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle 200px at 86% 15%, rgba(216,202,164,0.16), rgba(216,202,164,0.05) 44%, transparent 72%),
+    radial-gradient(ellipse 150% 85% at 86% 0%, rgba(190,193,200,0.07), transparent 60%);
+}
+
+/* The moon and the stars. One non-repeating layer: a tiled sky reads as
+   wallpaper, and the whole point is that there are only a few of them.
+   The moon is a crescent cut by masking one disc out of another - a waning
+   crescent, lit from the left, which is the shape the sky actually has at
+   this hour. */
+:root[data-theme="lastthird"] body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  /* Above everything and blended by addition: the moon is the light in the
+     room, so it must not be dimmed by the falloff below - it is what the
+     falloff is measured from. `screen` only ever brightens, and the sky is
+     black, so nothing outside the moon and the stars is touched. */
+  z-index: 9999;
+  mix-blend-mode: screen;
+  pointer-events: none;
+  background-repeat: no-repeat;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Cdefs%3E%3Cmask id='m'%3E%3Crect width='120' height='120' fill='white'/%3E%3Ccircle cx='74' cy='48' r='40' fill='black'/%3E%3C/mask%3E%3C/defs%3E%3Ccircle cx='58' cy='58' r='40' fill='%23efe4bd' fill-opacity='0.62' mask='url(%23m)'/%3E%3C/svg%3E"),
+    radial-gradient(circle at 12% 16%, rgba(238,234,214,0.85) 1.3px, transparent 1.6px),
+    radial-gradient(circle at 33% 7%,  rgba(238,234,214,0.55) 1px,   transparent 1.3px),
+    radial-gradient(circle at 58% 22%, rgba(238,234,214,0.7) 1.2px,  transparent 1.5px),
+    radial-gradient(circle at 22% 38%, rgba(238,234,214,0.45) 1px,   transparent 1.3px),
+    radial-gradient(circle at 91% 34%, rgba(238,234,214,0.6) 1.1px,  transparent 1.4px),
+    radial-gradient(circle at 46% 52%, rgba(238,234,214,0.35) 1px,   transparent 1.3px),
+    radial-gradient(circle at 72% 67%, rgba(238,234,214,0.5) 1.1px,  transparent 1.4px),
+    radial-gradient(circle at 8%  74%, rgba(238,234,214,0.4) 1px,    transparent 1.3px),
+    radial-gradient(circle at 37% 88%, rgba(238,234,214,0.3) 1px,    transparent 1.3px),
+    radial-gradient(circle at 86% 92%, rgba(238,234,214,0.45) 1.1px, transparent 1.4px);
+  background-position: 88% 11%, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0;
+  background-size: 92px 92px, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%;
+  /* Not a blink: real stars breathe. Slow, shallow, and the whole layer at
+     once, so it costs one composited opacity change per frame. */
+  animation: nightBreath 7s ease-in-out infinite alternate;
+}
+@keyframes nightBreath {
+  from { opacity: 0.78; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme="lastthird"] body::after { animation: none; opacity: 1; }
+}
+
+/* The actual simulation. A page cannot turn the phone's brightness down -
+   nothing on the web can - but it can do the thing that would look like:
+   multiply the whole interface by how much moonlight reaches it. White at
+   the moon means untouched; the far corner is multiplied to about two
+   thirds, so the bottom-left of the screen genuinely sits in shadow and
+   the top-right genuinely catches the light. It is one gradient, composited
+   on the GPU, and it covers modals and toasts too - they are in the same
+   room. The floor is 0.62 rather than lower because past that the ayah text
+   stops being readable, which is where the simulation has to give way. */
+:root[data-theme="lastthird"]::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+  background: radial-gradient(ellipse 135% 105% at 86% 13%,
+    #ffffff 0%, #eceded 20%, #d2d3d7 46%, #bcbec4 72%, #b7b9bf 100%);
+}
+
+/* The cards are the one lit thing in the room, so they need an edge the
+   near-black ground cannot give them, and no heavy drop shadow - nothing
+   casts a shadow by moonlight. */
+:root[data-theme="lastthird"] .panel,
+:root[data-theme="lastthird"] .challenge-card {
+  box-shadow: inset 0 1px 0 rgba(207,216,232,0.07), 0 1px 2px rgba(0,0,0,0.6);
+}
+/* The header and the tab bar are glass over the sky rather than slabs on top
+   of it - otherwise two opaque bands crop the night to a strip.
+   backdrop-filter goes on .tabs and NOT on .app-header: any value but none
+   makes an element a containing block for its fixed-position descendants,
+   and on phones .tabs is `position: fixed; bottom: 0` *inside* the header -
+   so blurring the header re-anchored the tab bar to the header's own 55px
+   box and parked the whole bar at the top of the screen. */
+:root[data-theme="lastthird"] .app-header {
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+}
+:root[data-theme="lastthird"] .tabs {
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+/* Whichever decorative tile the person owns, it is daylight furniture, and
+   a green mushaf pattern over a night sky is two skies at once. This one
+   theme brings its own, so the wallpaper stands down. */
+html:root[data-theme="lastthird"] { background-image: none; }
+
+/* And the cards become dark glass. This is the whole idea working or not
+   working: the moon and the stars live behind the content, and on a phone
+   the content is nearly the entire screen - so with opaque panels the sky
+   is a two-centimetre strip at the top and the theme is just "very dark".
+   Letting the night through them is what makes one moon light the room. */
+:root[data-theme="lastthird"] .panel,
+:root[data-theme="lastthird"] .stat-card,
+:root[data-theme="lastthird"] .settings-group {
+  background: color-mix(in srgb, var(--surface) 62%, transparent);
+}
+
+/* The challenge card is painted in --primary so it matches whatever theme
+   is on. Here that made it the brightest thing on a black page - a pale
+   blue slab with the moon behind it. Under moonlight it has to be dark
+   like everything else, and lit only at its edge. */
+:root[data-theme="lastthird"] .challenge-card {
+  background: linear-gradient(150deg, rgba(13,19,32,0.62), rgba(7,11,19,0.62));
+  border: 1px solid color-mix(in srgb, var(--primary) 34%, transparent);
+  color: var(--text);
+  box-shadow: inset 0 1px 0 rgba(207,216,232,0.08), 0 0 30px rgba(143,166,201,0.06);
+}
+:root[data-theme="lastthird"] .challenge-card.done {
+  background: linear-gradient(150deg, #101a16, #070d0b);
+  border-color: color-mix(in srgb, var(--good) 40%, transparent);
+}
+:root[data-theme="lastthird"] .challenge-card h2,
+:root[data-theme="lastthird"] .challenge-card p { color: var(--text); }
+:root[data-theme="lastthird"] .challenge-card .btn.accent,
+:root[data-theme="lastthird"] .btn.accent {
+  /* Nothing man-made out-shines the moon in this room. */
+  background: color-mix(in srgb, var(--accent) 62%, #0c0d11);
+  color: #0d0b06;
+  border-color: transparent;
+}
+
+/* The ayah panel is the page's lamp: the text should look lit from behind
+   the paper rather than printed on it. */
+:root[data-theme="lastthird"] .ayah-display {
+  background-color: rgba(7,11,19,0.72);
+  box-shadow: 0 0 40px rgba(143,166,201,0.10) inset;
+  /* The gold mushaf watermark is drawn for a lit page; on near-black it
+     stops being a watermark and becomes a picture behind the ayah. */
+  background-image: none;
+  outline-color: color-mix(in srgb, var(--accent) 32%, transparent);
+}
+/* Same for the corner marks: present, not gleaming. */
+:root[data-theme="lastthird"] .ayah-display::before,
+:root[data-theme="lastthird"] .ayah-display::after {
+  border-color: color-mix(in srgb, var(--accent) 38%, transparent);
+  opacity: 0.55;
+}
+
 * { box-sizing: border-box; }
 
 /* No grey/blue flash box over a button when it's tapped - the browser's
@@ -2629,6 +2808,27 @@ main#app {
 .swatch.theme-forest .swatch-sub { color: #b9d6c2; }
 .swatch.theme-embroidered { background: linear-gradient(135deg, #2b1416, #6e1620); color: #f3e3c8; }
 .swatch.theme-embroidered .swatch-sub { color: #d8bd8f; }
+/* The swatch has to be the theme in miniature, so it carries its own moon
+   and a couple of stars rather than just the two darkest hex values. */
+.swatch.theme-lastthird {
+  background:
+    radial-gradient(circle at 78% 26%, rgba(239,228,189,0.22), transparent 55%),
+    radial-gradient(circle at 22% 30%, rgba(238,234,214,0.75) 1.1px, transparent 1.4px),
+    radial-gradient(circle at 40% 72%, rgba(238,234,214,0.5) 1px, transparent 1.3px),
+    radial-gradient(circle at 62% 82%, rgba(238,234,214,0.4) 1px, transparent 1.3px),
+    linear-gradient(160deg, #070c16, #04060c);
+  color: #d7e0ee;
+  position: relative;
+}
+.swatch.theme-lastthird::after {
+  content: "";
+  position: absolute;
+  top: 9px; left: 12px;
+  width: 20px; height: 20px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Cdefs%3E%3Cmask id='s'%3E%3Crect width='120' height='120' fill='white'/%3E%3Ccircle cx='74' cy='48' r='40' fill='black'/%3E%3C/mask%3E%3C/defs%3E%3Ccircle cx='58' cy='58' r='40' fill='%23efe4bd' mask='url(%23s)'/%3E%3C/svg%3E") center/contain no-repeat;
+  pointer-events: none;
+}
+.swatch.theme-lastthird .swatch-sub { color: #9fb0c8; }
 
 /* Each swatch shows the pattern it is offering, drawn over the theme's own
    surface. The gold one used to be a fixed cream gradient - on a dark theme
