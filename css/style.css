@@ -478,6 +478,26 @@ main#app {
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* A swiped tab arrives from the edge the finger pulled it in from, rather
+   than fading up in place: the four tabs read as a row you walk along. Named
+   by the physical side, since the whole point is which way the thumb went.
+   Anyone who has asked for less motion gets the plain fade. */
+@keyframes slideFromLeft {
+  from { opacity: 0; transform: translateX(-28px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes slideFromRight {
+  from { opacity: 0; transform: translateX(28px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.tab-panel.active.slide-from-left { animation: slideFromLeft .24s cubic-bezier(.22,.61,.36,1); }
+.tab-panel.active.slide-from-right { animation: slideFromRight .24s cubic-bezier(.22,.61,.36,1); }
+@media (prefers-reduced-motion: reduce) {
+  .tab-panel.active,
+  .tab-panel.active.slide-from-left,
+  .tab-panel.active.slide-from-right { animation: none; }
+}
+
 .panel {
   background: var(--surface);
   border: 1px solid var(--border);

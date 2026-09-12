@@ -177,6 +177,16 @@ function loadState() {
       parsed.masteredCounts = parsed.masteredCounts || {};
       parsed.colorScheme = parsed.colorScheme || "system";
       parsed.mushafReader = parsed.mushafReader || null;
+      // Ayahs added out of sequence used to be filed as "temporary": they
+      // cost points, and never counted toward anything. Both of those are
+      // gone, and the person did memorize them - so they join the plan
+      // properly, keeping the day they were added as the day they started.
+      Object.values(parsed.ayahs || {}).forEach((item) => {
+        if (item && item.temporary) {
+          item.temporary = false;
+          if (!item.memorizedOn) item.memorizedOn = item.added || null;
+        }
+      });
       return parsed;
     }
   } catch (e) {
@@ -1038,6 +1048,7 @@ document.querySelectorAll("button[data-tab]").forEach((btn) => {
 //
 // Each tab also keeps its own scroll position, the way separate pages would.
 const TAB_ROUTES = ["dashboard", "learn", "browse", "review"];
+let slideDirection = null; // "next" | "prev" while a swipe is switching tabs
 
 // Two of the overlays are pages of their own rather than passing dialogs:
 // they have an address, a refresh reopens them where they were, and the
@@ -1171,8 +1182,11 @@ function closeOverlay(name) {
   writeRoute(currentTabName, next, true);
 }
 
-function switchTab(tab, { fromHistory = false } = {}) {
+function switchTab(tab, { fromHistory = false, from = null } = {}) {
   tabScrollPositions[currentTabName] = window.scrollY;
+  // Where it came from, so the panel can arrive from that side. Set by the
+  // swipe; a tap on the bar arrives the way it always did.
+  slideDirection = from;
   // Replacing rather than pushing when the tab hasn't changed: a session
   // restarted in place (finishing a review, say) is not a second page to
   // press back through.
@@ -1180,7 +1194,20 @@ function switchTab(tab, { fromHistory = false } = {}) {
   currentTabName = tab;
   document.documentElement.dataset.route = tab;
   document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
-  document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === `tab-${tab}`));
+  document.querySelectorAll(".tab-panel").forEach((p) => {
+    p.classList.remove("slide-from-left", "slide-from-right");
+    const on = p.id === `tab-${tab}`;
+    p.classList.toggle("active", on);
+    if (on && slideDirection) {
+      // Reading the offset forces the class change to land as a restart of
+      // the animation rather than as no change at all. A finger dragged to
+      // the right pulls the next tab in from the left, and the other way
+      // round - the panel follows the hand.
+      void p.offsetWidth;
+      p.classList.add(slideDirection === "next" ? "slide-from-left" : "slide-from-right");
+    }
+  });
+  slideDirection = null;
   if (tab === "dashboard") renderDashboard();
   if (tab === "review" && !isChallengeMode && !isEphemeralReview) startReviewSession();
   if (tab === "learn") loadLearnAyah();
@@ -2077,6 +2104,46 @@ document.getElementById("btn-mushaf-reader-close").addEventListener("click", clo
   });
 })();
 
+// ---------- Swiping between tabs ----------
+// The four tabs are a row, and a phone should let a thumb walk along it.
+// Dragging the page to the right brings in the tab that sits to its left in
+// the bar - the next one, reading right to left - and dragging left goes
+// back. It stays out of the way of everything else a finger does here: it
+// asks for a mostly-horizontal travel of some length, it ignores gestures
+// that begin on something that scrolls sideways or that takes a drag of its
+// own, and it does nothing at all while a full-screen layer is open (the
+// reader has its own page-turning swipe).
+(() => {
+  const SWIPE_MIN = 70;        // px of travel before it counts as a swipe
+  const SWIPE_MAX_OFF_AXIS = 0.5; // |dy| may be at most half of |dx|
+  const NO_SWIPE = "input, textarea, select, [contenteditable], .swatch-grid, .mode-switch, .ayah-scroll, .mushaf-map-grid, .combo-list, [data-no-swipe]";
+  let startX = null, startY = null, startedOn = null;
+
+  const overlayOpen = () => document.documentElement.classList.contains("modal-open");
+
+  document.addEventListener("touchstart", (e) => {
+    if (e.touches.length !== 1 || overlayOpen()) { startX = null; return; }
+    const t = e.touches[0];
+    startX = t.clientX; startY = t.clientY;
+    startedOn = e.target instanceof Element ? e.target.closest(NO_SWIPE) : null;
+  }, { passive: true });
+
+  document.addEventListener("touchend", (e) => {
+    if (startX === null || startedOn || overlayOpen()) { startX = null; return; }
+    const t = e.changedTouches[0];
+    const dx = t.clientX - startX;
+    const dy = t.clientY - startY;
+    startX = null;
+    if (Math.abs(dx) < SWIPE_MIN) return;
+    if (Math.abs(dy) > Math.abs(dx) * SWIPE_MAX_OFF_AXIS) return;
+    const here = TAB_ROUTES.indexOf(currentTabName);
+    if (here < 0) return;
+    const next = here + (dx > 0 ? 1 : -1);
+    if (next < 0 || next >= TAB_ROUTES.length) return;
+    switchTab(TAB_ROUTES[next], { from: dx > 0 ? "next" : "prev" });
+  }, { passive: true });
+})();
+
 function initWirdCard() {
   const input = document.getElementById("wird-target-input");
   if (!input) return;
@@ -2344,27 +2411,21 @@ async function loadBrowseSurah(surahNumber) {
 }
 
 // The add button's icon/label tells the person what will happen before they
-// click it, instead of both paths looking like a plain "+ أضف": a contiguous
-// ayah joins the memorization plan for real, while a jump ahead only opens a
-// one-off practice round (see handleAddAyahClick / startEphemeralReview).
+// click it: an ayah is either in your plan already or one tap from being in
+// it. Nothing here costs anything - points buy a reciter's voice or a colour,
+// and the settings sheet says so plainly; standing between a person and an
+// ayah they want to memorize is the one thing they must never buy.
 function buildAyahRow(surahNumber, surahName, ayahObj, showSurahBadge) {
   const key = `${surahNumber}:${ayahObj.numberInSurah}`;
   const already = !!state.ayahs[key];
-  const contiguous = isContiguousAddition(surahNumber, ayahObj.numberInSurah);
-  let btnClass = "btn ayah-add-btn";
+  const btnClass = "btn ayah-add-btn";
   let btnHTML, btnTitle;
   if (already) {
     btnHTML = iconLabel("checkDone", "أُضيفت");
     btnTitle = "أُضيفت بالفعل إلى خطتك";
-  } else if (contiguous) {
-    btnHTML = iconLabel("plus", "أضف للخطة");
-    btnTitle = "تُضاف بشكل دائم إلى خطة حفظك";
   } else {
-    btnClass += " jump";
-    btnHTML = iconLabel("flash", `جرّب الآن (${JUMP_REVIEW_COST}🪙)`);
-    btnTitle = state.points >= JUMP_REVIEW_COST
-      ? `مراجعة مؤقتة لآية واحدة فقط مقابل ${JUMP_REVIEW_COST} نقطة - لن تُضاف إلى خطتك`
-      : `يتطلب ${JUMP_REVIEW_COST} نقطة ولا تملك ما يكفي (تملك ${state.points})`;
+    btnHTML = iconLabel("plus", "أضف للخطة");
+    btnTitle = "تُضاف إلى خطة حفظك";
   }
   const row = document.createElement("div");
   row.className = "ayah-browse-item";
@@ -2384,36 +2445,13 @@ function buildAyahRow(surahNumber, surahName, ayahObj, showSurahBadge) {
   return row;
 }
 
-// A single ayah reaches the review queue in one of two ways: it's the next
-// one in this surah's memorization sequence (added for real, free), or it's
-// a jump the person found through search/browsing - a detour outside their
-// memorization plan, so it costs points and opens as a one-off practice
-// round that's never written to state.ayahs, so it can never clutter the
-// dashboard no matter how many times it's used.
-const JUMP_REVIEW_COST = 5;
-
+// One way in, whatever the ayah and wherever it was found: into the plan.
 function handleAddAyahClick(surahNumber, surahName, ayahObj, buttonEl) {
-  if (isContiguousAddition(surahNumber, ayahObj.numberInSurah)) {
-    addAyahDirectlyToSrs(surahNumber, surahName, ayahObj);
-    buttonEl.innerHTML = iconLabel("checkDone", "أُضيفت");
-    buttonEl.disabled = true;
-    renderDashboard();
-    updateAddRangeButton(); // the range may be fully in the plan now
-  } else if (state.points >= JUMP_REVIEW_COST) {
-    showConfirmModal(
-      "قفزة عن تسلسل حفظك",
-      `هذه الآية ليست ضمن تسلسل حفظك الحالي. تجربتها الآن كمراجعة مؤقتة تكلّف ${JUMP_REVIEW_COST} 🪙 (رصيدك: ${state.points}).`,
-      `أنفق ${JUMP_REVIEW_COST} 🪙 وجرّبها`,
-      () => {
-        state.points -= JUMP_REVIEW_COST;
-        saveState();
-        renderPointsDisplay();
-        startEphemeralReview(surahNumber, surahName, ayahObj);
-      }
-    );
-  } else {
-    showToast(`🪙 تجربة هذه الآية تتطلب ${JUMP_REVIEW_COST} نقطة ولا تملك ما يكفي (رصيدك: ${state.points}). أكمل حفظك بالتسلسل لتجمع المزيد.`, "error");
-  }
+  addAyahDirectlyToSrs(surahNumber, surahName, ayahObj);
+  buttonEl.innerHTML = iconLabel("checkDone", "أُضيفت");
+  buttonEl.disabled = true;
+  renderDashboard();
+  updateAddRangeButton(); // the range may be fully in the plan now
 }
 
 // Browsing a surah range sits behind an accordion (it's the default view
@@ -2454,10 +2492,9 @@ function renderBrowsePreview() {
   updateAddRangeButton();
 }
 
-// The button says what pressing it would actually do - how many ayahs are
-// really left to add, and what the jumps among them cost - and steps aside
-// when the range is already in the plan, which is most of the time once a
-// surah has been added.
+// The button says what pressing it would actually do - how many ayahs of the
+// range are not in the plan yet - and steps aside when they all already are,
+// which is most of the time once a surah has been added.
 function updateAddRangeButton() {
   const btn = document.getElementById("btn-add-range");
   if (!btn) return;
@@ -2468,16 +2505,13 @@ function updateAddRangeButton() {
     return;
   }
   const plan = planRangeAddition(selectedBrowseSurah, list);
-  const toAdd = plan.contiguous.length + plan.jumps.length;
-  if (!toAdd) {
+  if (!plan.toAdd.length) {
     btn.disabled = true;
     btn.textContent = list.length === 1 ? "هذه الآية في خطتك بالفعل" : "كل آيات هذا النطاق في خطتك";
     return;
   }
   btn.disabled = false;
-  btn.textContent = plan.cost
-    ? `إضافة ${ayahCountLabel(toAdd)} إلى الخطة — ${plan.cost} 🪙`
-    : `إضافة ${ayahCountLabel(toAdd)} إلى الخطة`;
+  btn.textContent = `إضافة ${ayahCountLabel(plan.toAdd.length)} إلى الخطة`;
 }
 
 // Searches the whole Quran (not just the pre-selected surah) via
@@ -2535,17 +2569,6 @@ document.getElementById("ayah-search").addEventListener("input", () => {
   browseSearchDebounceTimer = setTimeout(() => performGlobalAyahSearch(val), 450);
 });
 
-// An ayah only counts toward real sequential progress in a surah if it
-// immediately follows the last non-temporary ayah already memorized there.
-// Anything else (jumping from ayah 6 to ayah 100) is still reviewable, but
-// flagged "temporary" so it never inflates the surah's progress percentage.
-function isContiguousAddition(surahNumber, ayahNumber) {
-  const existingMax = Object.values(state.ayahs)
-    .filter((i) => i.surah === surahNumber && i.learningStage === "srs" && !i.temporary)
-    .reduce((m, i) => Math.max(m, i.ayah), 0);
-  return ayahNumber === existingMax + 1;
-}
-
 function wordCountLabel(n) {
   if (n === 1) return "كلمة واحدة";
   if (n === 2) return "كلمتان";
@@ -2583,34 +2606,25 @@ function browseRangeAyahs() {
   return { ayahs: ayahs.filter((a) => a.numberInSurah >= from && a.numberInSurah <= to), from, to, count: ayahs.length };
 }
 
-// What adding a range would do, worked out before doing it: which ayahs are
-// already in the plan, which continue the sequence, and which are a jump -
-// each judged against the sequence as it would stand after the ones before
-// it, exactly as adding them one by one would.
+// What a range would actually do: some of it is already in the plan, the rest
+// is what gets added. It used to sort the rest into "contiguous" and "jumps"
+// and price the jumps - and got even that wrong, because the reach it
+// measured ignored ayahs still being learned, so someone who had just started
+// الفاتحة was told that آياتها 2-5 were a jump and cost 20 points on their
+// first day. Nothing is priced now, so nothing has to be classified.
 function planRangeAddition(surahNumber, list) {
-  let reach = Object.values(state.ayahs)
-    .filter((i) => i.surah === surahNumber && i.learningStage === "srs" && !i.temporary)
-    .reduce((m, i) => Math.max(m, i.ayah), 0);
   const already = [];
-  const contiguous = [];
-  const jumps = [];
+  const toAdd = [];
   list.forEach((a) => {
-    if (state.ayahs[`${surahNumber}:${a.numberInSurah}`]) {
-      already.push(a);
-    } else if (a.numberInSurah === reach + 1) {
-      contiguous.push(a);
-      reach = a.numberInSurah;
-    } else {
-      jumps.push(a);
-    }
+    if (state.ayahs[`${surahNumber}:${a.numberInSurah}`]) already.push(a);
+    else toAdd.push(a);
   });
-  return { already, contiguous, jumps, cost: jumps.length * JUMP_REVIEW_COST };
+  return { already, toAdd };
 }
 
 function addAyahDirectlyToSrs(surahNumber, surahName, ayahObj, { quiet = false } = {}) {
   const key = `${surahNumber}:${ayahObj.numberInSurah}`;
   if (state.ayahs[key]) return;
-  const temporary = !isContiguousAddition(surahNumber, ayahObj.numberInSurah);
   state.ayahs[key] = {
     surah: surahNumber,
     surahName,
@@ -2625,16 +2639,12 @@ function addAyahDirectlyToSrs(surahNumber, surahName, ayahObj, { quiet = false }
     added: todayISO(),
     learningStage: "srs",
     roundStreak: 0,
-    temporary,
-    // A contiguous addition counts as memorized from the moment it is added;
-    // a temporary one never counts at all, so it carries no date.
-    memorizedOn: temporary ? null : todayISO(),
+    // Whatever order they were added in, these are ayahs the person chose to
+    // memorize: they count, and they count from today.
+    temporary: false,
+    memorizedOn: todayISO(),
   };
   saveState();
-  // Adding a range says it once, about the range, instead of once per ayah.
-  if (temporary && !quiet) {
-    showToast("أُضيفت كمراجعة مؤقتة فقط (فيها قفزة عن تسلسل حفظك في هذه السورة) — لن تُحتسب ضمن نسبة التقدم.");
-  }
 }
 
 document.getElementById("btn-add-range").addEventListener("click", async () => {
@@ -2645,28 +2655,7 @@ document.getElementById("btn-add-range").addEventListener("click", async () => {
     const meta = surahs.find((s) => s.number === surahNumber);
     const { ayahs: list } = browseRangeAyahs();
     const plan = planRangeAddition(surahNumber, list);
-    const toAdd = plan.contiguous.length + plan.jumps.length;
-    if (!toAdd) return;
-
-    // Adding one ayah out of sequence costs points here, so adding twenty of
-    // them at once has to cost the same - otherwise this button is simply the
-    // cheaper way to do what the ayah's own button charges for.
-    if (plan.cost) {
-      if (state.points < plan.cost) {
-        showToast(
-          `🪙 ${ayahCountLabel(plan.jumps.length)} في هذا النطاق تمثّل قفزة عن تسلسل حفظك، وتكلفتها ${plan.cost} نقطة ولا تملك ما يكفي (رصيدك: ${state.points}).`,
-          "error"
-        );
-        return;
-      }
-      showConfirmModal(
-        "قفزة عن تسلسل حفظك",
-        `${ayahCountLabel(plan.jumps.length)} من هذا النطاق خارج تسلسل حفظك في ${meta.name}، فتُضاف كمراجعة مؤقتة ولا تُحتسب ضمن نسبة تقدّمك — وتكلفتها ${plan.cost} 🪙 (رصيدك: ${state.points}).`,
-        `أنفق ${plan.cost} 🪙 وأضِف`,
-        () => commitRangeAddition(surahNumber, meta.name, plan)
-      );
-      return;
-    }
+    if (!plan.toAdd.length) return;
     commitRangeAddition(surahNumber, meta.name, plan);
   } catch (e) {
     showToast("حدث خطأ أثناء الإضافة. تحقق من الاتصال بالإنترنت.", "error");
@@ -2676,24 +2665,16 @@ document.getElementById("btn-add-range").addEventListener("click", async () => {
 // Says what was actually added rather than what the two boxes said: a range
 // asking for 20 ayahs of a surah that has 7 added seven of them.
 function commitRangeAddition(surahNumber, surahName, plan) {
-  if (plan.cost) {
-    state.points -= plan.cost;
-    saveState();
-    renderPointsDisplay();
-  }
-  plan.contiguous.concat(plan.jumps).forEach((a) => addAyahDirectlyToSrs(surahNumber, surahName, a, { quiet: true }));
-  const added = plan.contiguous.length + plan.jumps.length;
-  const numbers = plan.contiguous.concat(plan.jumps).map((a) => a.numberInSurah).sort((x, y) => x - y);
+  plan.toAdd.forEach((a) => addAyahDirectlyToSrs(surahNumber, surahName, a, { quiet: true }));
+  const added = plan.toAdd.length;
+  const numbers = plan.toAdd.map((a) => a.numberInSurah).sort((x, y) => x - y);
   const span = numbers.length > 1 ? ` (${numbers[0]}–${numbers[numbers.length - 1]})` : ` (${numbers[0]})`;
   renderBrowsePreview();
   renderDashboard();
   showToast(
     `تمت إضافة ${ayahCountLabel(added)} من ${surahName}${span} إلى خطة المراجعة.`,
     "success",
-    [
-      plan.already.length ? `${ayahCountLabel(plan.already.length)} كانت مضافة` : "",
-      plan.jumps.length ? `${ayahCountLabel(plan.jumps.length)} مراجعة مؤقتة · −${plan.cost} 🪙` : "",
-    ].filter(Boolean).join(" · ") || undefined
+    plan.already.length ? `${ayahCountLabel(plan.already.length)} كانت مضافة` : undefined
   );
 }
 
@@ -4379,6 +4360,10 @@ document.getElementById("btn-voice-round-start").addEventListener("click", () =>
 // ---------- Daily Ta'ahud challenge ----------
 
 let isChallengeMode = false;
+// A review that isn't written to the plan. Nothing starts one today - adding
+// an ayah is free, so "show me this one without adding it" stopped being a
+// thing anyone needed - but grading and finishing still honour the flag, so
+// a future one-off review has somewhere to plug in.
 let isEphemeralReview = false;
 let isSingleItemReview = false;
 
@@ -4386,28 +4371,6 @@ let isSingleItemReview = false;
 // practice round instead of being written to state.ayahs - so it never
 // persists, never counts toward progress, and can be reviewed as many times
 // as the person likes without ever showing up in the dashboard.
-function startEphemeralReview(surahNumber, surahName, ayahObj) {
-  reviewQueue = [{
-    surah: surahNumber,
-    surahName,
-    ayah: ayahObj.numberInSurah,
-    globalNumber: ayahObj.number,
-    text: ayahObj.text,
-  }];
-  reviewIndex = 0;
-  isChallengeMode = false;
-  isEphemeralReview = true;
-  isSingleItemReview = false;
-  switchTab("review");
-  document.getElementById("challenge-banner").classList.add("hidden");
-  document.getElementById("review-empty").classList.add("hidden");
-  hideReviewSurahList();
-  hideReviewSurahBanner();
-  document.getElementById("review-session").classList.remove("hidden");
-  loadReviewItem();
-  showToast("🔎 هذه مراجعة مؤقتة لآية واحدة فقط ولن تُضاف إلى خطتك أو تُحسب ضمن تقدّمك.");
-}
-
 // Opening a single due ayah straight from its dashboard row, instead of
 // only being reachable through the full due-queue review session - and
 // once graded, returning to the exact dashboard scroll position instead of
