@@ -300,12 +300,27 @@ html:root[data-theme="lastthird"] { background-image: none; }
 /* The challenge card is painted in --primary to match whatever theme is on.
    Here that made it the brightest thing on a black page. */
 :root[data-theme="lastthird"] .challenge-card {
-  background: linear-gradient(150deg, rgba(20,18,30,0.6), rgba(9,10,18,0.6));
+  /* Its own gradient goes at the BACK of the same stack rather than in a
+     `background` shorthand, which would reset background-image and take the
+     lamp and its pool with it. */
+  background-color: transparent;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='64' viewBox='0 0 24 64'%3E%3Cdefs%3E%3ClinearGradient id='f' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23ffe0a4' stop-opacity='0.55'/%3E%3Cstop offset='0.5' stop-color='%23ffc266' stop-opacity='0.95'/%3E%3Cstop offset='1' stop-color='%23ff9d3c' stop-opacity='0.6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M12 0v26' stroke='%23c9a86a' stroke-opacity='0.6' stroke-width='1.3' fill='none'/%3E%3Cpath d='M12 28l6 6H6Z' fill='%23c9a86a'/%3E%3Crect x='4.5' y='34' width='15' height='2.6' rx='1.3' fill='%23d9b878'/%3E%3Cpath d='M6.5 36.6h11l1.6 19H4.9Z' fill='url(%23f)'/%3E%3Cellipse cx='12' cy='45' rx='3.1' ry='5.6' fill='%23fff3d2' fill-opacity='0.95'/%3E%3Cpath d='M6.5 36.6L4.9 55.6M17.5 36.6l1.6 19' stroke='%23a8894f' stroke-opacity='0.9' stroke-width='1.1' fill='none'/%3E%3Crect x='3.4' y='55.6' width='17.2' height='3' rx='1.5' fill='%23d9b878'/%3E%3Ccircle cx='12' cy='61' r='1.7' fill='%23c9a86a'/%3E%3C/svg%3E"),
+    radial-gradient(ellipse 62% 48% at 16% 0%,
+      rgba(255,198,116,0.17), rgba(255,198,116,0.05) 45%, transparent 78%),
+    linear-gradient(150deg, rgba(20,18,30,0.6), rgba(9,10,18,0.6));
+  background-repeat: no-repeat, no-repeat, no-repeat;
+  background-position: left 14px top 0, 0 0, 0 0;
+  background-size: 20px 46px, auto, auto;
   border: 1px solid color-mix(in srgb, var(--primary) 36%, transparent);
   color: var(--text);
 }
 :root[data-theme="lastthird"] .challenge-card.done {
-  background: linear-gradient(150deg, rgba(16,26,22,0.6), rgba(7,13,11,0.6));
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='64' viewBox='0 0 24 64'%3E%3Cdefs%3E%3ClinearGradient id='f' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23ffe0a4' stop-opacity='0.55'/%3E%3Cstop offset='0.5' stop-color='%23ffc266' stop-opacity='0.95'/%3E%3Cstop offset='1' stop-color='%23ff9d3c' stop-opacity='0.6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M12 0v26' stroke='%23c9a86a' stroke-opacity='0.6' stroke-width='1.3' fill='none'/%3E%3Cpath d='M12 28l6 6H6Z' fill='%23c9a86a'/%3E%3Crect x='4.5' y='34' width='15' height='2.6' rx='1.3' fill='%23d9b878'/%3E%3Cpath d='M6.5 36.6h11l1.6 19H4.9Z' fill='url(%23f)'/%3E%3Cellipse cx='12' cy='45' rx='3.1' ry='5.6' fill='%23fff3d2' fill-opacity='0.95'/%3E%3Cpath d='M6.5 36.6L4.9 55.6M17.5 36.6l1.6 19' stroke='%23a8894f' stroke-opacity='0.9' stroke-width='1.1' fill='none'/%3E%3Crect x='3.4' y='55.6' width='17.2' height='3' rx='1.5' fill='%23d9b878'/%3E%3Ccircle cx='12' cy='61' r='1.7' fill='%23c9a86a'/%3E%3C/svg%3E"),
+    radial-gradient(ellipse 62% 48% at 16% 0%,
+      rgba(255,198,116,0.17), rgba(255,198,116,0.05) 45%, transparent 78%),
+    linear-gradient(150deg, rgba(16,26,22,0.6), rgba(7,13,11,0.6));
   border-color: color-mix(in srgb, var(--good) 40%, transparent);
 }
 :root[data-theme="lastthird"] .challenge-card h2,
@@ -336,32 +351,25 @@ html:root[data-theme="lastthird"] { background-image: none; }
 :root[data-theme="lastthird"] .panel,
 :root[data-theme="lastthird"] .stat-card,
 :root[data-theme="lastthird"] .challenge-card {
-  position: relative;
-  /* isolation, so the lamp below can be given a negative z-index: inside a
-     stacking context, a negative child paints ABOVE the element's own
-     background but BELOW its in-flow text. That one line is what lets a
-     lamp sit inside the card and still be physically incapable of covering
-     a word. (isolation makes a stacking context, not a containing block -
-     unlike backdrop-filter, so it cannot strand a fixed child the way
-     blurring the header stranded the tab bar.) */
-  isolation: isolate;
-  background-image: radial-gradient(ellipse 62% 48% at 16% 0%,
-    rgba(255,198,116,0.17), rgba(255,198,116,0.05) 45%, transparent 78%);
-}
-:root[data-theme="lastthird"] .panel::before,
-:root[data-theme="lastthird"] .stat-card::before,
-:root[data-theme="lastthird"] .challenge-card::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 14px;          /* physical left - the app is RTL, so this is the
-                          corner an Arabic line ends at, the emptiest part
-                          of a card's first row */
-  width: 20px;
-  height: 46px;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='64' viewBox='0 0 24 64'%3E%3Cdefs%3E%3ClinearGradient id='f' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23ffe0a4' stop-opacity='0.55'/%3E%3Cstop offset='0.5' stop-color='%23ffc266' stop-opacity='0.95'/%3E%3Cstop offset='1' stop-color='%23ff9d3c' stop-opacity='0.6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M12 0v26' stroke='%23c9a86a' stroke-opacity='0.6' stroke-width='1.3' fill='none'/%3E%3Cpath d='M12 28l6 6H6Z' fill='%23c9a86a'/%3E%3Crect x='4.5' y='34' width='15' height='2.6' rx='1.3' fill='%23d9b878'/%3E%3Cpath d='M6.5 36.6h11l1.6 19H4.9Z' fill='url(%23f)'/%3E%3Cellipse cx='12' cy='45' rx='3.1' ry='5.6' fill='%23fff3d2' fill-opacity='0.95'/%3E%3Cpath d='M6.5 36.6L4.9 55.6M17.5 36.6l1.6 19' stroke='%23a8894f' stroke-opacity='0.9' stroke-width='1.1' fill='none'/%3E%3Crect x='3.4' y='55.6' width='17.2' height='3' rx='1.5' fill='%23d9b878'/%3E%3Ccircle cx='12' cy='61' r='1.7' fill='%23c9a86a'/%3E%3C/svg%3E") center bottom / 20px 46px no-repeat;
-  pointer-events: none;
-  z-index: -1;
+  /* The lamp is a background layer, not a ::before, and that is not a
+     stylistic choice. A background paints behind the element's text by
+     definition - which is the whole requirement - and it needs no stacking
+     context to do it. The ::before version needed `isolation: isolate` on
+     the card to sit under the text, and isolation traps a position:fixed
+     DESCENDANT in the card's stacking context: the typing field pins itself
+     above the keyboard at z-index 45 to clear the tab bar at 40, and once
+     trapped it no longer outranked the bar at all - it was painted under
+     the footer, which is exactly what got reported. No stacking context, no
+     trap. */
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='64' viewBox='0 0 24 64'%3E%3Cdefs%3E%3ClinearGradient id='f' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23ffe0a4' stop-opacity='0.55'/%3E%3Cstop offset='0.5' stop-color='%23ffc266' stop-opacity='0.95'/%3E%3Cstop offset='1' stop-color='%23ff9d3c' stop-opacity='0.6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M12 0v26' stroke='%23c9a86a' stroke-opacity='0.6' stroke-width='1.3' fill='none'/%3E%3Cpath d='M12 28l6 6H6Z' fill='%23c9a86a'/%3E%3Crect x='4.5' y='34' width='15' height='2.6' rx='1.3' fill='%23d9b878'/%3E%3Cpath d='M6.5 36.6h11l1.6 19H4.9Z' fill='url(%23f)'/%3E%3Cellipse cx='12' cy='45' rx='3.1' ry='5.6' fill='%23fff3d2' fill-opacity='0.95'/%3E%3Cpath d='M6.5 36.6L4.9 55.6M17.5 36.6l1.6 19' stroke='%23a8894f' stroke-opacity='0.9' stroke-width='1.1' fill='none'/%3E%3Crect x='3.4' y='55.6' width='17.2' height='3' rx='1.5' fill='%23d9b878'/%3E%3Ccircle cx='12' cy='61' r='1.7' fill='%23c9a86a'/%3E%3C/svg%3E"),
+    radial-gradient(ellipse 62% 48% at 16% 0%,
+      rgba(255,198,116,0.17), rgba(255,198,116,0.05) 45%, transparent 78%);
+  background-repeat: no-repeat, no-repeat;
+  /* physical left - the app is RTL, so this is the corner an Arabic line
+     ends at, the emptiest part of a card's first row */
+  background-position: left 14px top 0, 0 0;
+  background-size: 20px 46px, auto;
 }
 /* The ayah is the one thing in the app the lamps are actually for, so its
    pool is warmer and reaches further down the panel. Its ::before/::after
