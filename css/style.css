@@ -317,12 +317,13 @@ html:root[data-theme="lastthird"] { background-image: none; }
   border-color: transparent;
 }
 
-/* ---- a lantern over every card, and over every door in the footer ---- */
-/* Each card gets its own lamp, hung from the gap above it and centred, and
-   each card is lit from under that lamp.
+/* ---- a lantern inside every card ---- */
+/* Each card carries its own lamp, hung in its top-left corner, and is lit
+   from under it.
    Two separate things, deliberately:
-     ::before  the lamp itself - it hangs in the 18px gap ABOVE the card,
-               never inside it, so it cannot land on a word;
+     ::before  the lamp itself - inside the card, but on the negative layer
+               of the card's own stacking context, so it is painted over
+               the card's face and under every word on it;
      the card's own background-image - a warm pool spilling down from the
                top edge. A background image paints BEHIND the text, which
                is why the light passes through the card and lights it
@@ -332,81 +333,43 @@ html:root[data-theme="lastthird"] { background-image: none; }
    The glass the cards are made of is what lets the light look like it came
    from the lamp and not from inside the card. */
 :root[data-theme="lastthird"] .panel,
-:root[data-theme="lastthird"] .stat-card {
+:root[data-theme="lastthird"] .stat-card,
+:root[data-theme="lastthird"] .challenge-card {
   position: relative;
-  background-image: radial-gradient(ellipse 70% 42% at 50% 0%,
-    rgba(255,198,116,0.15), rgba(255,198,116,0.05) 45%, transparent 78%);
+  /* isolation, so the lamp below can be given a negative z-index: inside a
+     stacking context, a negative child paints ABOVE the element's own
+     background but BELOW its in-flow text. That one line is what lets a
+     lamp sit inside the card and still be physically incapable of covering
+     a word. (isolation makes a stacking context, not a containing block -
+     unlike backdrop-filter, so it cannot strand a fixed child the way
+     blurring the header stranded the tab bar.) */
+  isolation: isolate;
+  background-image: radial-gradient(ellipse 62% 48% at 16% 0%,
+    rgba(255,198,116,0.17), rgba(255,198,116,0.05) 45%, transparent 78%);
 }
 :root[data-theme="lastthird"] .panel::before,
-:root[data-theme="lastthird"] .stat-card::before {
+:root[data-theme="lastthird"] .stat-card::before,
+:root[data-theme="lastthird"] .challenge-card::before {
   content: "";
   position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: 100%;          /* the gap above the card - outside it entirely */
-  width: 22px;
-  height: 58px;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='64' viewBox='0 0 24 64'%3E%3Cdefs%3E%3ClinearGradient id='f' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23ffe0a4' stop-opacity='0.55'/%3E%3Cstop offset='0.5' stop-color='%23ffc266' stop-opacity='0.95'/%3E%3Cstop offset='1' stop-color='%23ff9d3c' stop-opacity='0.6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M12 0v26' stroke='%23c9a86a' stroke-opacity='0.6' stroke-width='1.3' fill='none'/%3E%3Cpath d='M12 28l6 6H6Z' fill='%23c9a86a'/%3E%3Crect x='4.5' y='34' width='15' height='2.6' rx='1.3' fill='%23d9b878'/%3E%3Cpath d='M6.5 36.6h11l1.6 19H4.9Z' fill='url(%23f)'/%3E%3Cellipse cx='12' cy='45' rx='3.1' ry='5.6' fill='%23fff3d2' fill-opacity='0.95'/%3E%3Cpath d='M6.5 36.6L4.9 55.6M17.5 36.6l1.6 19' stroke='%23a8894f' stroke-opacity='0.9' stroke-width='1.1' fill='none'/%3E%3Crect x='3.4' y='55.6' width='17.2' height='3' rx='1.5' fill='%23d9b878'/%3E%3Ccircle cx='12' cy='61' r='1.7' fill='%23c9a86a'/%3E%3C/svg%3E") center bottom / 22px 58px no-repeat;
+  top: 0;
+  left: 14px;          /* physical left - the app is RTL, so this is the
+                          corner an Arabic line ends at, the emptiest part
+                          of a card's first row */
+  width: 20px;
+  height: 46px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='64' viewBox='0 0 24 64'%3E%3Cdefs%3E%3ClinearGradient id='f' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23ffe0a4' stop-opacity='0.55'/%3E%3Cstop offset='0.5' stop-color='%23ffc266' stop-opacity='0.95'/%3E%3Cstop offset='1' stop-color='%23ff9d3c' stop-opacity='0.6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M12 0v26' stroke='%23c9a86a' stroke-opacity='0.6' stroke-width='1.3' fill='none'/%3E%3Cpath d='M12 28l6 6H6Z' fill='%23c9a86a'/%3E%3Crect x='4.5' y='34' width='15' height='2.6' rx='1.3' fill='%23d9b878'/%3E%3Cpath d='M6.5 36.6h11l1.6 19H4.9Z' fill='url(%23f)'/%3E%3Cellipse cx='12' cy='45' rx='3.1' ry='5.6' fill='%23fff3d2' fill-opacity='0.95'/%3E%3Cpath d='M6.5 36.6L4.9 55.6M17.5 36.6l1.6 19' stroke='%23a8894f' stroke-opacity='0.9' stroke-width='1.1' fill='none'/%3E%3Crect x='3.4' y='55.6' width='17.2' height='3' rx='1.5' fill='%23d9b878'/%3E%3Ccircle cx='12' cy='61' r='1.7' fill='%23c9a86a'/%3E%3C/svg%3E") center bottom / 20px 46px no-repeat;
   pointer-events: none;
-  /* Behind every card, not on top of them. A lamp is 58px and the gap
-     between two cards is 18, so it always reaches up into the card above -
-     and painted on top it landed across that card's label, which is the
-     one thing this was meant to avoid. Behind, the overlap is hidden and
-     the lamp reads as hanging from behind the card above it, which is also
-     how a lamp in a room actually looks. */
   z-index: -1;
-  margin-bottom: -2px;
-}
-/* The stat cards sit in a grid whose row gap is 14px, so a full-length lamp
-   over the second row is almost entirely hidden behind the first. A shorter
-   one for those: less chain, same lamp, so what shows in the gap is the
-   lantern rather than the bottom of its base. */
-:root[data-theme="lastthird"] .stat-card::before {
-  width: 18px;
-  height: 38px;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='64' viewBox='0 0 24 64'%3E%3Cdefs%3E%3ClinearGradient id='f' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23ffe0a4' stop-opacity='0.55'/%3E%3Cstop offset='0.5' stop-color='%23ffc266' stop-opacity='0.95'/%3E%3Cstop offset='1' stop-color='%23ff9d3c' stop-opacity='0.6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M12 0v26' stroke='%23c9a86a' stroke-opacity='0.6' stroke-width='1.3' fill='none'/%3E%3Cpath d='M12 28l6 6H6Z' fill='%23c9a86a'/%3E%3Crect x='4.5' y='34' width='15' height='2.6' rx='1.3' fill='%23d9b878'/%3E%3Cpath d='M6.5 36.6h11l1.6 19H4.9Z' fill='url(%23f)'/%3E%3Cellipse cx='12' cy='45' rx='3.1' ry='5.6' fill='%23fff3d2' fill-opacity='0.95'/%3E%3Cpath d='M6.5 36.6L4.9 55.6M17.5 36.6l1.6 19' stroke='%23a8894f' stroke-opacity='0.9' stroke-width='1.1' fill='none'/%3E%3Crect x='3.4' y='55.6' width='17.2' height='3' rx='1.5' fill='%23d9b878'/%3E%3Ccircle cx='12' cy='61' r='1.7' fill='%23c9a86a'/%3E%3C/svg%3E") center bottom / 18px 38px no-repeat;
-}
-/* The challenge card keeps its light but not its own lamp: it is
-   overflow:hidden for its dot pattern, so a lamp hung above it would be
-   sliced off at the top edge - and the three big lanterns already hang
-   over it. */
-:root[data-theme="lastthird"] .challenge-card {
-  background-image: radial-gradient(ellipse 70% 45% at 50% 0%,
-    rgba(255,198,116,0.13), transparent 72%);
 }
 /* The ayah is the one thing in the app the lamps are actually for, so its
    pool is warmer and reaches further down the panel. Its ::before/::after
    are the corner marks, so the lamp hangs off the panel around it. */
 :root[data-theme="lastthird"] .ayah-display {
-  background-image: radial-gradient(ellipse 80% 55% at 50% 0%,
-    rgba(255,198,116,0.16), rgba(255,198,116,0.05) 48%, transparent 80%);
+  background-image: radial-gradient(ellipse 72% 60% at 16% 0%,
+    rgba(255,198,116,0.18), rgba(255,198,116,0.05) 48%, transparent 80%);
 }
 
-/* Every door in the footer gets its own lamp over it. Only where the bar
-   actually is a bar: above 820px .tabs sits inline in the header as a pill,
-   and lamps hanging off a pill would be nonsense. The bar is given the
-   headroom to hang them in rather than leaving them stranded above it over
-   the page, so each lamp is over its own icon and each label sits below its
-   flame - lit by it, never behind it. */
-@media (max-width: 820px) {
-  :root[data-theme="lastthird"] .tabs { padding-top: 26px; }
-  :root[data-theme="lastthird"] .tab-btn {
-    position: relative;
-    background-image: radial-gradient(ellipse 85% 90% at 50% -22%,
-      rgba(255,198,116,0.20), rgba(255,198,116,0.05) 50%, transparent 78%);
-  }
-  :root[data-theme="lastthird"] .tab-btn::before {
-    content: "";
-    position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
-    bottom: 100%;
-    width: 12px;
-    height: 26px;
-    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='64' viewBox='0 0 24 64'%3E%3Cdefs%3E%3ClinearGradient id='f' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23ffe0a4' stop-opacity='0.55'/%3E%3Cstop offset='0.5' stop-color='%23ffc266' stop-opacity='0.95'/%3E%3Cstop offset='1' stop-color='%23ff9d3c' stop-opacity='0.6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M12 0v26' stroke='%23c9a86a' stroke-opacity='0.6' stroke-width='1.3' fill='none'/%3E%3Cpath d='M12 28l6 6H6Z' fill='%23c9a86a'/%3E%3Crect x='4.5' y='34' width='15' height='2.6' rx='1.3' fill='%23d9b878'/%3E%3Cpath d='M6.5 36.6h11l1.6 19H4.9Z' fill='url(%23f)'/%3E%3Cellipse cx='12' cy='45' rx='3.1' ry='5.6' fill='%23fff3d2' fill-opacity='0.95'/%3E%3Cpath d='M6.5 36.6L4.9 55.6M17.5 36.6l1.6 19' stroke='%23a8894f' stroke-opacity='0.9' stroke-width='1.1' fill='none'/%3E%3Crect x='3.4' y='55.6' width='17.2' height='3' rx='1.5' fill='%23d9b878'/%3E%3Ccircle cx='12' cy='61' r='1.7' fill='%23c9a86a'/%3E%3C/svg%3E") center bottom / 12px 26px no-repeat;
-    pointer-events: none;
-  }
-}
 
 /* The ayah panel is what the lamps are for. The gold mushaf watermark is
    drawn for a lit page; on near-black it stops being a watermark and starts
