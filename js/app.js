@@ -172,6 +172,8 @@ function loadState() {
       parsed.reviewCounts = parsed.reviewCounts || {};
       parsed.wirdPlan = parsed.wirdPlan || null;
       parsed.wirdNotifiedOn = parsed.wirdNotifiedOn || null;
+      parsed.lastBackupOn = parsed.lastBackupOn || null;
+      parsed.backupNudgedOn = parsed.backupNudgedOn || null;
       parsed.autoVaryModes = parsed.autoVaryModes !== false;
       parsed.ageMode = parsed.ageMode || "adult";
       parsed.wirdRewardedDate = parsed.wirdRewardedDate || null;
@@ -220,6 +222,8 @@ function loadState() {
     reviewCounts: {}, // "YYYY-MM-DD" -> ayahs graded in a review session that day
     wirdPlan: null, // {anchor, time:"HH:MM", place, notify} - the when/where commitment
     wirdNotifiedOn: null, // "YYYY-MM-DD" - the day the reminder last went out, so it goes out once
+    lastBackupOn: null, // "YYYY-MM-DD" - the day a backup file was last saved
+    backupNudgedOn: null, // "YYYY-MM-DD" - the day we last suggested saving one
     autoVaryModes: true, // rotate the test mode across an ayah's three rounds
     ageMode: "adult", // which age profile's defaults are in force
     wirdRewardedDate: null, // the day the wird-completion reward was last paid
@@ -1280,6 +1284,10 @@ const openPlanGroups = new Set(); // surah numbers currently expanded in the pla
 function renderDashboard() {
   const items = Object.values(state.ayahs);
   const today = todayISO();
+  // Both are self-limiting: persistence is asked for once per session and
+  // only when there is something to protect, the nudge at most weekly.
+  ensurePersistenceOnce();
+  maybeNudgeBackup();
   // The stat shows what's actually being asked of today, not the whole
   // backlog: a four-figure "due" count is a reason to close the app.
   const totalDue = items.filter((i) => i.learningStage === "srs" && i.due <= today).length;
@@ -5046,6 +5054,158 @@ function backupSummary(data) {
   };
 }
 
+// ---------- Keeping the data from evaporating ----------
+//
+// Everything a person has memorized lives in this browser's localStorage
+// and nowhere else, and browsers treat that as disposable:
+//
+//   - any engine may evict a site's storage when the disk gets tight;
+//   - Safari on iOS goes further and wipes a site's data after 7 days
+//     without a visit - unless the app has been added to the Home Screen,
+//     which exempts it. Someone who memorizes for a month, travels for
+//     two weeks and comes back to nothing did not lose a setting, they
+//     lost their مصحف.
+//
+// Three things are done about it: ask the browser to mark the data as
+// persistent, tell the person plainly where they actually stand, and nudge
+// them to keep a file once they have enough to lose.
+
+const BACKUP_NUDGE_MIN_AYAHS = 10;   // below this there is little to mourn
+const BACKUP_NUDGE_AFTER_DAYS = 30;  // since the last file they saved
+const BACKUP_NUDGE_GAP_DAYS = 7;     // and never more often than this
+
+function storageApi() {
+  return navigator.storage && navigator.storage.persist ? navigator.storage : null;
+}
+
+// Chrome grants this silently to a site the person uses (or has installed),
+// Firefox asks, and Safari does not implement it at all - so a false here
+// means "no promise", never "something went wrong".
+async function requestPersistentStorage() {
+  const api = storageApi();
+  if (!api) return false;
+  try {
+    if (await api.persisted()) return true;
+    return await api.persist();
+  } catch (e) {
+    return false;
+  }
+}
+
+async function isStoragePersisted() {
+  const api = navigator.storage && navigator.storage.persisted ? navigator.storage : null;
+  if (!api) return false;
+  try { return await api.persisted(); } catch (e) { return false; }
+}
+
+function daysSinceISO(iso) {
+  if (!iso) return null;
+  const then = new Date(`${iso}T00:00:00`);
+  if (isNaN(then)) return null;
+  return Math.floor((new Date(`${todayISO()}T00:00:00`) - then) / 86400000);
+}
+
+// "srs" is the stage an ayah reaches once it is memorized and only being
+// kept alive by review - the same count the dashboard calls محفوظة.
+function memorizedAyahCount() {
+  return Object.values(state.ayahs || {}).filter((a) => a && a.learningStage === "srs").length;
+}
+
+// The iPhone sentence is the one that matters most here, so it is not
+// buried behind the generic one.
+function storageRiskNote(persisted) {
+  if (isIOS() && !isStandalone()) {
+    return "⚠️ سفاري يمسح بيانات المواقع بعد 7 أيام دون فتحها. ثبّت التطبيق على الشاشة الرئيسية (زر المشاركة ← «إضافة إلى الشاشة الرئيسية») ليتوقف هذا تمامًا.";
+  }
+  if (persisted) return "✅ طلبنا من المتصفّح ألّا يحذف بياناتك تلقائيًا، ووافق. تبقى النسخة الاحتياطية ضروريةً لتغيير الهاتف.";
+  if (!storageApi()) return "هذا المتصفّح لا يتيح تثبيت التخزين. احفظ نسخةً بين الحين والآخر.";
+  return "⚠️ لم يمنح المتصفّح بياناتك حمايةً من الحذف التلقائي بعد — غالبًا يمنحها بعد استخدام التطبيق أيامًا، أو فور تثبيته على الشاشة الرئيسية.";
+}
+
+function lastBackupNote() {
+  const days = daysSinceISO(state.lastBackupOn);
+  if (days === null) return "لم تحفظ نسخةً بعد.";
+  if (days === 0) return "آخر نسخة: اليوم.";
+  if (days === 1) return "آخر نسخة: أمس.";
+  return `آخر نسخة: منذ ${arabicCount(days, "يوم واحد", "يومين", "أيام", "يومًا")}.`;
+}
+
+async function renderStorageStatus() {
+  const el = document.getElementById("storage-status");
+  if (!el) return;
+  const persisted = await isStoragePersisted();
+  el.textContent = `${lastBackupNote()} ${storageRiskNote(persisted)}`;
+  const btn = document.getElementById("btn-protect-storage");
+  if (btn) btn.classList.toggle("hidden", persisted || !storageApi());
+  // The accordion is shut by default, so the warning has to be legible on
+  // its closed summary or it will never be read.
+  const value = document.getElementById("backup-group-value");
+  if (value) {
+    const days = daysSinceISO(state.lastBackupOn);
+    value.textContent = days === null ? "⚠️ بلا نسخة احتياطية"
+      : days > BACKUP_NUDGE_AFTER_DAYS ? `⚠️ آخر نسخة منذ ${days} يومًا`
+      : "نسخة احتياطية · دون إنترنت";
+  }
+}
+
+async function protectStorageFromTap() {
+  const ok = await requestPersistentStorage();
+  showToast(ok ? "🛡️ بياناتك محميّة الآن من الحذف التلقائي" : "لم يمنح المتصفّح الحماية الآن. احفظ نسخةً احتياطية للأمان.", ok ? "success" : "error");
+  renderStorageStatus();
+}
+
+// Asked for once there is something worth keeping rather than on a first
+// launch: an empty app prompting Firefox's permission bar teaches the
+// person to say no before the app has earned a yes.
+let persistenceAsked = false;
+function ensurePersistenceOnce() {
+  if (persistenceAsked) return;
+  if (memorizedAyahCount() < 1) return;
+  persistenceAsked = true;
+  requestPersistentStorage().then(() => renderStorageStatus());
+}
+
+// A nudge, not a nag: only once there is a real amount to lose, only after
+// a month without a file, and never twice in a week.
+function maybeNudgeBackup() {
+  if (memorizedAyahCount() < BACKUP_NUDGE_MIN_AYAHS) return;
+  const sinceBackup = daysSinceISO(state.lastBackupOn);
+  if (sinceBackup !== null && sinceBackup < BACKUP_NUDGE_AFTER_DAYS) return;
+  const sinceNudge = daysSinceISO(state.backupNudgedOn);
+  if (sinceNudge !== null && sinceNudge < BACKUP_NUDGE_GAP_DAYS) return;
+  state.backupNudgedOn = todayISO();
+  saveState();
+  showBackupNudgeToast();
+}
+
+function showBackupNudgeToast() {
+  const container = document.getElementById("toast-container");
+  if (!container || container.querySelector(".toast-update")) return;
+  const el = document.createElement("div");
+  el.className = "toast toast-update show";
+  const main = document.createElement("div");
+  main.textContent = `💾 ${ayahCountLabel(memorizedAyahCount())} محفوظة في هذا المتصفّح وحده`;
+  const sub = document.createElement("div");
+  sub.className = "toast-note";
+  sub.textContent = "احفظ نسخةً حتى لا يضيع تعبك بتغيير هاتف أو مسح بيانات.";
+  const row = document.createElement("div");
+  row.className = "toast-update-actions";
+  const go = document.createElement("button");
+  go.className = "btn primary";
+  go.textContent = "احفظ نسخة";
+  go.addEventListener("click", () => { el.remove(); exportBackup(); });
+  const later = document.createElement("button");
+  later.className = "btn";
+  later.textContent = "لاحقًا";
+  later.addEventListener("click", () => el.remove());
+  row.appendChild(go);
+  row.appendChild(later);
+  el.appendChild(main);
+  el.appendChild(sub);
+  el.appendChild(row);
+  container.appendChild(el);
+}
+
 function exportBackup() {
   const payload = {
     format: BACKUP_FORMAT,
@@ -5064,6 +5224,9 @@ function exportBackup() {
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+    state.lastBackupOn = todayISO();
+    saveState();
+    renderStorageStatus();
     const s = backupSummary(payload);
     showToast("💾 حُفظت نسختك", "success", `${ayahCountLabel(s.ayahs)} · ${s.points} نقطة`);
   } catch (e) {
@@ -6382,6 +6545,10 @@ function initSettingsPanel() {
     fileInput.value = ""; // so choosing the same file twice still fires
     if (file) importBackupFile(file);
   });
+
+  const protectBtn = document.getElementById("btn-protect-storage");
+  if (protectBtn) protectBtn.addEventListener("click", protectStorageFromTap);
+  renderStorageStatus();
 
   const prefetchBtn = document.getElementById("btn-offline-prefetch");
   prefetchBtn.innerHTML = iconLabel("book", "تحميل سور خطتي للاستخدام دون إنترنت");

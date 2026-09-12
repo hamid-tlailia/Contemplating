@@ -225,7 +225,7 @@
     <details class="settings-group" name="settings-accordion">
       <summary class="settings-group-summary">
         <span class="settings-group-title">💾 بياناتك</span>
-        <span class="settings-group-value">نسخة احتياطية · دون إنترنت</span>
+        <span class="settings-group-value" id="backup-group-value">نسخة احتياطية · دون إنترنت</span>
       </summary>
       <div class="settings-group-body">
         <div class="settings-field">
@@ -236,6 +236,8 @@
           </div>
           <input type="file" id="backup-file" accept="application/json,.json" class="hidden">
           <p class="muted">حفظك كلّه يعيش في هذا المتصفّح وحده: مسح بيانات الموقع أو تغيير الهاتف يمحوه. الملف يحفظ كل شيء — الآيات وخطتها ومواعيد مراجعتها، والنقاط، والقارئ والمظهر والخط والخلفية وما فتحته منها، وعهد وردك وسجلّ أيامك.</p>
+          <p class="muted storage-status" id="storage-status"></p>
+          <button id="btn-protect-storage" class="btn hidden">🛡️ احمِ بياناتي من الحذف التلقائي</button>
         </div>
 
         <div class="settings-field">

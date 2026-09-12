@@ -2634,6 +2634,18 @@ main#app {
   color: var(--text);
 }
 .wird-plan-field input[type="text"] { min-width: 220px; text-align: center; }
+/* Where the person actually stands, right under the backup buttons. Given
+   its own colour so a warning in it isn't read as more grey small print. */
+.storage-status {
+  margin-top: 10px;
+  line-height: 1.8;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--primary) 7%, transparent);
+  border: 1px solid var(--border);
+}
+#btn-protect-storage { margin-top: 10px; width: 100%; }
+
 /* The reminder switch. A whole-row <label> so the text is part of the hit
    target - a 16px checkbox alone is a poor thing to aim a thumb at. */
 .wird-notify-row {
