@@ -56,6 +56,30 @@
     firstRun = !parsed || !parsed.ayahs || Object.keys(parsed.ayahs).length === 0;
   } catch (e) { firstRun = false; }
   document.documentElement.setAttribute("data-first-run", firstRun ? "true" : "false");
+
+  // Last line of defence. app.js sets __tadabburBooted at the very end of
+  // itself; if that never happens the app is half-built - which is what a
+  // stale half of the shell used to produce: controls present, tappable and
+  // completely blank. Rather than leave someone to work out that they have
+  // to kill the app from the task switcher, throw away the cached shell and
+  // reload once. Once: the sessionStorage mark makes a boot loop impossible,
+  // and it is cleared the moment a boot succeeds.
+  var HEAL = "tadabbur_selfheal";
+  setTimeout(function () {
+    if (window.__tadabburBooted) {
+      try { sessionStorage.removeItem(HEAL); } catch (e) {}
+      return;
+    }
+    try { if (sessionStorage.getItem(HEAL)) return; sessionStorage.setItem(HEAL, "1"); } catch (e) { return; }
+    var done = function () { location.reload(); };
+    try {
+      if (navigator.onLine !== false && window.caches) {
+        caches.keys()
+          .then(function (ks) { return Promise.all(ks.filter(function (k) { return k.indexOf("tadabbur-shell") === 0; }).map(function (k) { return caches.delete(k); })); })
+          .then(done, done);
+      } else { done(); }
+    } catch (e) { done(); }
+  }, 8000);
 })();
 </script>
 </head>
@@ -290,6 +314,10 @@
       <button class="btn grade-good" id="btn-tasmee-good" data-quality="5">تامّ</button>
     </div>
   </div>
+</div>
+
+<div class="pull-refresh" id="pull-refresh" aria-hidden="true">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M17 2 21 6l-4 4"/><path d="M3 12v-1a4 4 0 0 1 4-4h14"/><path d="M7 22 3 18l4-4"/><path d="M21 12v1a4 4 0 0 1-4 4H3"/></svg>
 </div>
 
 <main id="app">

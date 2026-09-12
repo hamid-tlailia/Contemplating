@@ -103,6 +103,30 @@ const ICONS = {
   coin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/></svg>',
   headphones: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15v-3a9 9 0 0 1 18 0v3"/><path d="M3 16a2 2 0 0 1 2-2h1v6H5a2 2 0 0 1-2-2Z"/><path d="M21 16a2 2 0 0 0-2-2h-1v6h1a2 2 0 0 0 2-2Z"/></svg>',
 };
+// ---------- Wiring that cannot bring the app down ----------
+//
+// Every one of these is a top-level statement, and a top-level throw does
+// not just lose that one line - it abandons the rest of the file. That is
+// how a half-updated cache turned into the blank-looking app people kept
+// reporting: an index.html from one deploy served next to an app.js from
+// another, the script reaches for a control the old markup has not got,
+// `null.addEventListener` throws, and every label and handler written
+// below that point is silently never applied. The buttons are still there,
+// still tappable, and completely blank.
+//
+// So the wiring goes through these two instead. A control that is missing
+// is simply not wired, and the next line still runs.
+function on(id, event, handler, options) {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener(event, handler, options);
+  return el;
+}
+function setHTML(id, html) {
+  const el = document.getElementById(id);
+  if (el) el.innerHTML = html;
+  return el;
+}
+
 function iconLabel(iconKey, text) {
   return `<span class="icon-label">${ICONS[iconKey]}<span>${text}</span></span>`;
 }
@@ -1920,14 +1944,14 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") scheduleWirdReminder();
 });
 
-document.getElementById("btn-wird-plan-save").addEventListener("click", saveWirdPlan);
-document.getElementById("btn-wird-plan-edit").addEventListener("click", () => openWirdPlanForm());
-document.getElementById("btn-wird-plan-new").addEventListener("click", () => openWirdPlanForm(true));
-document.getElementById("btn-wird-plan-cancel").addEventListener("click", renderWirdPlanCard);
-document.getElementById("btn-wird-plan-ics").addEventListener("click", downloadWirdPlanICS);
+on("btn-wird-plan-save", "click", saveWirdPlan);
+on("btn-wird-plan-edit", "click", () => openWirdPlanForm());
+on("btn-wird-plan-new", "click", () => openWirdPlanForm(true));
+on("btn-wird-plan-cancel", "click", renderWirdPlanCard);
+on("btn-wird-plan-ics", "click", downloadWirdPlanICS);
 const wirdNotifyToggle = document.getElementById("wird-notify-toggle");
 if (wirdNotifyToggle) wirdNotifyToggle.addEventListener("change", (e) => toggleWirdNotifications(e.target.checked));
-document.getElementById("btn-wird-plan-start").addEventListener("click", () => openTodaysWirdReading());
+on("btn-wird-plan-start", "click", () => openTodaysWirdReading());
 
 // One word from the ayah being learned, with its meaning, on the dashboard.
 // The point is what the visible daily "reward" is: the app's own answer to
@@ -2559,9 +2583,9 @@ function rememberMushafPage() {
   if (state.mushafReader) { state.mushafReader.index = mushafPageIndex; saveState(); }
 }
 
-document.getElementById("btn-mushaf-reader-next").addEventListener("click", goToNextMushafPage);
-document.getElementById("btn-mushaf-reader-prev").addEventListener("click", goToPrevMushafPage);
-document.getElementById("btn-mushaf-reader-close").addEventListener("click", closeMushafReader);
+on("btn-mushaf-reader-next", "click", goToNextMushafPage);
+on("btn-mushaf-reader-prev", "click", goToPrevMushafPage);
+on("btn-mushaf-reader-close", "click", closeMushafReader);
 
 // Swipe right (finger moves toward the right) turns to the next page, to
 // match how a physical Mushaf/RTL reading app turns pages forward.
@@ -2757,13 +2781,13 @@ async function renderSurahProgress() {
   });
 }
 
-document.getElementById("btn-start-challenge").addEventListener("click", startDailyChallenge);
+on("btn-start-challenge", "click", startDailyChallenge);
 
 // Straight into today's reading from the top of the dashboard, instead of
 // scrolling down to the reading card to press its button. If that card
 // hasn't managed to load a surah yet (offline on a first run, say), fall
 // back to bringing it into view rather than doing nothing.
-document.getElementById("btn-quick-wird").addEventListener("click", () => {
+on("btn-quick-wird", "click", () => {
   if (mushafInputMode === "range" && !selectedMushafSurah) {
     // Two different reasons to have no surah, and they need different
     // answers. If the list never loaded, scrolling the person to a card
@@ -2785,7 +2809,7 @@ document.getElementById("btn-quick-wird").addEventListener("click", () => {
 let selectedBrowseSurah = 1;
 let selectedBrowseSurahName = "";
 
-document.getElementById("ayah-search-icon").innerHTML = ICONS.search;
+setHTML("ayah-search-icon", ICONS.search);
 
 // A searchable surah combobox - replaces a native <select>, which on
 // mobile browsers (especially Android Chrome) takes over the whole screen
@@ -3033,8 +3057,8 @@ async function performGlobalAyahSearch(query) {
 }
 
 let browseSearchDebounceTimer = null;
-document.getElementById("ayah-from").addEventListener("input", renderBrowsePreview);
-document.getElementById("ayah-to").addEventListener("input", renderBrowsePreview);
+on("ayah-from", "input", renderBrowsePreview);
+on("ayah-to", "input", renderBrowsePreview);
 // Written back once the field is left rather than on every keystroke, so
 // typing "12" in a surah of 20 isn't cut to "1" halfway through - but a
 // number the surah doesn't have never survives being looked at.
@@ -3048,7 +3072,7 @@ document.getElementById("ayah-to").addEventListener("input", renderBrowsePreview
     renderBrowsePreview();
   });
 });
-document.getElementById("ayah-search").addEventListener("input", () => {
+on("ayah-search", "input", () => {
   clearTimeout(browseSearchDebounceTimer);
   const val = document.getElementById("ayah-search").value.trim();
   if (!val || /^\d+$/.test(val)) {
@@ -3136,7 +3160,7 @@ function addAyahDirectlyToSrs(surahNumber, surahName, ayahObj, { quiet = false }
   saveState();
 }
 
-document.getElementById("btn-add-range").addEventListener("click", async () => {
+on("btn-add-range", "click", async () => {
   const surahNumber = selectedBrowseSurah;
   if (!surahNumber) return;
   try {
@@ -3841,14 +3865,14 @@ function verifyVoiceModal() {
 // The mic button toggles: first tap starts listening, second tap stops it
 // (recognition.stop() finalizes whatever was captured and fires onend) -
 // needed now that continuous recognition won't stop on its own.
-document.getElementById("btn-voice-mic").addEventListener("click", () => {
+on("btn-voice-mic", "click", () => {
   if (voiceModalRecognition) stopVoiceModalRecording();
   else startVoiceModalRecording();
 });
-document.getElementById("btn-voice-retry").addEventListener("click", startVoiceModalRecording);
-document.getElementById("btn-voice-verify").addEventListener("click", verifyVoiceModal);
-document.getElementById("btn-voice-close").addEventListener("click", closeVoiceModal);
-document.getElementById("voice-modal-overlay").addEventListener("click", (e) => {
+on("btn-voice-retry", "click", startVoiceModalRecording);
+on("btn-voice-verify", "click", verifyVoiceModal);
+on("btn-voice-close", "click", closeVoiceModal);
+on("voice-modal-overlay", "click", (e) => {
   if (e.target.id === "voice-modal-overlay") closeVoiceModal();
 });
 
@@ -3869,10 +3893,10 @@ let lastVoiceAttempt = null;
 let learnMode = "mcq"; // 'mcq' | 'type' | 'partial'
 let learnMaskLevel = 1; // only used in 'partial' mode - 0 = none masked ... up to full mask
 
-document.getElementById("mode-btn-partial").innerHTML = iconLabel("eyeOff", "اخفاء");
-document.getElementById("mode-btn-mcq").innerHTML = iconLabel("optionsList", "اختيار");
-document.getElementById("mode-btn-type").innerHTML = iconLabel("pencil", "كتابة");
-document.getElementById("mode-btn-voice").innerHTML = iconLabel("mic", "تسميع");
+setHTML("mode-btn-partial", iconLabel("eyeOff", "اخفاء"));
+setHTML("mode-btn-mcq", iconLabel("optionsList", "اختيار"));
+setHTML("mode-btn-type", iconLabel("pencil", "كتابة"));
+setHTML("mode-btn-voice", iconLabel("mic", "تسميع"));
 
 // Round 1 recognizes the word among four, round 2 recalls it with the rest
 // of the ayah in front of you, round 3 produces it from nothing: the
@@ -4039,8 +4063,8 @@ function renderBalanceBanner() {
     `⚖️ حفظت ${learned} اليوم وراجعت ${reviewed}. القاعدة: خمس مراجعات مقابل كل آية جديدة — ${pending} مراجعة تنتظرك.`;
 }
 
-document.getElementById("btn-balance-review").addEventListener("click", () => switchTab("review"));
-document.getElementById("btn-balance-dismiss").addEventListener("click", () => {
+on("btn-balance-review", "click", () => switchTab("review"));
+on("btn-balance-dismiss", "click", () => {
   balanceBannerDismissed = true;
   renderBalanceBanner();
 });
@@ -4590,21 +4614,21 @@ function handleLearnAnswer(isCorrect, sourceEl) {
   }
 }
 
-document.getElementById("btn-type-submit").addEventListener("click", submitTypedAnswer);
+on("btn-type-submit", "click", submitTypedAnswer);
 // The sticky ayah panel (see the CSS) handles most of the keyboard-covers-it
 // case, but some mobile browsers resize the visual viewport in a way sticky
 // positioning doesn't react to - explicitly re-surfacing it once the
 // keyboard has finished animating in covers those too.
-document.getElementById("type-input").addEventListener("focus", () => {
+on("type-input", "focus", () => {
   document.getElementById("type-answer").classList.add("keyboard-active");
   document.getElementById("type-area").classList.add("pinned");
   setTimeout(() => scrollIntoViewIfNeeded(".learn-ayah-display"), 350);
 });
-document.getElementById("type-input").addEventListener("blur", () => {
+on("type-input", "blur", () => {
   document.getElementById("type-answer").classList.remove("keyboard-active");
   document.getElementById("type-area").classList.remove("pinned");
 });
-document.getElementById("type-input").addEventListener("keydown", (e) => {
+on("type-input", "keydown", (e) => {
   if (e.key === "Enter") submitTypedAnswer();
 });
 
@@ -4786,9 +4810,9 @@ function closeInfoModal() {
   document.getElementById("info-modal-overlay").classList.add("modal-closed");
   document.getElementById("info-modal-actions").classList.add("hidden");
 }
-document.getElementById("btn-info-close").addEventListener("click", closeInfoModal);
-document.getElementById("info-modal-cancel").addEventListener("click", closeInfoModal);
-document.getElementById("info-modal-overlay").addEventListener("click", (e) => {
+on("btn-info-close", "click", closeInfoModal);
+on("info-modal-cancel", "click", closeInfoModal);
+on("info-modal-overlay", "click", (e) => {
   if (e.target.id === "info-modal-overlay") closeInfoModal();
 });
 
@@ -4807,7 +4831,7 @@ function showConfirmModal(title, message, confirmLabel, onConfirm) {
   document.getElementById("info-modal-overlay").classList.remove("modal-closed");
 }
 
-document.getElementById("btn-learn-meanings").addEventListener("click", async () => {
+on("btn-learn-meanings", "click", async () => {
   openInfoModal("معاني الكلمات", `<p class="muted">جاري تحميل المعاني...</p>`);
   const pointer = state.learningPointer;
   try {
@@ -4824,7 +4848,7 @@ document.getElementById("btn-learn-meanings").addEventListener("click", async ()
 
 // The تسميع round's own button. Same path as the standalone تسميع button
 // below it: a clean recitation completes the round.
-document.getElementById("btn-voice-round-start").addEventListener("click", () => {
+on("btn-voice-round-start", "click", () => {
   const item = state.ayahs[learnCurrentKey];
   if (!item) return;
   openVoiceModal(
@@ -5923,13 +5947,13 @@ function answerSeam(btn, isCorrect, correct) {
   next.classList.remove("hidden");
 }
 
-document.getElementById("btn-seam-next").addEventListener("click", () => {
+on("btn-seam-next", "click", () => {
   seamIndex++;
   if (seamIndex >= seamQueue.length) closeSeamSession();
   else renderSeamQuestion();
 });
-document.getElementById("btn-seam-close").addEventListener("click", closeSeamSession);
-document.getElementById("btn-open-seam").addEventListener("click", openSeamSession);
+on("btn-seam-close", "click", closeSeamSession);
+on("btn-open-seam", "click", openSeamSession);
 
 function renderTasmeeEntry() {
   const entry = document.getElementById("tasmee-entry");
@@ -6000,9 +6024,9 @@ function gradeTasmeeItem(quality) {
   else renderTasmeeItem();
 }
 
-document.getElementById("btn-share-progress").addEventListener("click", shareProgress);
-document.getElementById("btn-open-tasmee").addEventListener("click", openTasmeeSession);
-document.getElementById("btn-tasmee-close").addEventListener("click", closeTasmeeSession);
+on("btn-share-progress", "click", shareProgress);
+on("btn-open-tasmee", "click", openTasmeeSession);
+on("btn-tasmee-close", "click", closeTasmeeSession);
 ["btn-tasmee-wrong", "btn-tasmee-hesitant", "btn-tasmee-good"].forEach((id) => {
   const btn = document.getElementById(id);
   btn.addEventListener("click", () => gradeTasmeeItem(Number(btn.dataset.quality)));
@@ -6496,23 +6520,23 @@ function renderMaskedText() {
 }
 
 setupAudioControls("review-audio-controls", "review-audio");
-document.getElementById("btn-mask-more").innerHTML = iconLabel("eyeOff", "إخفاء المزيد");
-document.getElementById("btn-review-tafsir").innerHTML = iconLabel("book", "التفسير");
-document.getElementById("btn-review-voice").innerHTML = iconLabel("mic", "اختبر بالتسميع");
+setHTML("btn-mask-more", iconLabel("eyeOff", "إخفاء المزيد"));
+setHTML("btn-review-tafsir", iconLabel("book", "التفسير"));
+setHTML("btn-review-voice", iconLabel("mic", "اختبر بالتسميع"));
 renderListenButton();
-document.getElementById("btn-review-listen").addEventListener("click", toggleListenMode);
-document.getElementById("btn-listen-continue").addEventListener("click", listenContinue);
-document.getElementById("btn-listen-again").addEventListener("click", listenFromStart);
-document.getElementById("btn-listen-reveal").addEventListener("click", listenReveal);
+on("btn-review-listen", "click", toggleListenMode);
+on("btn-listen-continue", "click", listenContinue);
+on("btn-listen-again", "click", listenFromStart);
+on("btn-listen-reveal", "click", listenReveal);
 // The cut is enforced on the clock rather than with a timer: a timer set
 // when play() is called drifts with buffering, and on a slow connection it
 // would cut before the reciter had said anything.
-document.getElementById("review-audio").addEventListener("timeupdate", stopAtCutPoint);
-document.getElementById("btn-learn-tafsir").innerHTML = iconLabel("book", "التفسير");
-document.getElementById("btn-learn-meanings").innerHTML = iconLabel("bulb", "معاني الكلمات");
-document.getElementById("btn-learn-mask-more").innerHTML = iconLabel("eyeOff", "إخفاء المزيد");
-document.getElementById("btn-learn-partial-wrong").innerHTML = iconLabel("xCircle", "أخطأت في كلمة");
-document.getElementById("btn-learn-partial-correct").innerHTML = iconLabel("check", "تذكرتها جيدًا");
+on("review-audio", "timeupdate", stopAtCutPoint);
+setHTML("btn-learn-tafsir", iconLabel("book", "التفسير"));
+setHTML("btn-learn-meanings", iconLabel("bulb", "معاني الكلمات"));
+setHTML("btn-learn-mask-more", iconLabel("eyeOff", "إخفاء المزيد"));
+setHTML("btn-learn-partial-wrong", iconLabel("xCircle", "أخطأت في كلمة"));
+setHTML("btn-learn-partial-correct", iconLabel("check", "تذكرتها جيدًا"));
 
 // ---------- Tafsir (persistent per-ayah button, reuses the whole-ayah fallback API) ----------
 // Shown in the shared info modal instead of an inline panel, so opening it
@@ -6552,20 +6576,20 @@ setupTafsirButton("btn-review-tafsir", () => {
   return item ? { surah: item.surah, ayah: item.ayah } : null;
 });
 
-document.getElementById("btn-mask-more").addEventListener("click", () => {
+on("btn-mask-more", "click", () => {
   maskLevel = Math.min(maskLevel + 1, 3);
   renderMaskedText();
 });
 
-document.getElementById("btn-learn-mask-more").addEventListener("click", () => {
+on("btn-learn-mask-more", "click", () => {
   learnMaskLevel = Math.min(learnMaskLevel + 1, 3);
   renderLearnPartialMask();
 });
 
-document.getElementById("btn-learn-partial-correct").addEventListener("click", () => finishPartialRound(true));
-document.getElementById("btn-learn-partial-wrong").addEventListener("click", () => finishPartialRound(false));
+on("btn-learn-partial-correct", "click", () => finishPartialRound(true));
+on("btn-learn-partial-wrong", "click", () => finishPartialRound(false));
 
-document.getElementById("btn-review-voice").addEventListener("click", () => {
+on("btn-review-voice", "click", () => {
   const item = reviewQueue[reviewIndex];
   if (!item) return;
   openVoiceModal(item.text, revealForGrading, { continueOnLowAccuracy: true });
@@ -7273,6 +7297,86 @@ function showUpdateToast() {
 // failure in one is no reason for the rest of the app not to start - the
 // alternative is what a single missing element produced: a page of empty
 // cards with nothing wired to anything.
+// ---------- Pull down to reload ----------
+//
+// The browser's own pull-to-refresh is off (overscroll-behavior-y: none,
+// which is what stops the page bouncing away under a modal), and an
+// installed app has no address bar to reload from - so when the app came
+// back wrong there was no way out of it but killing it from the task
+// switcher. This is that way out, in the gesture people already reach for.
+//
+// It clears the shell cache before reloading, not just the page: the
+// failure it exists for is a stale half of the shell, and a plain reload
+// would be answered from the very cache that is wrong. Only when online,
+// though - deleting the offline copy and then failing to fetch a new one
+// would leave nothing at all.
+
+const PULL_TRIGGER = 78;   // px of travel before the release does anything
+const PULL_MAX = 120;      // the indicator stops following the thumb here
+
+async function hardReload() {
+  try {
+    if (navigator.onLine !== false && window.caches) {
+      const keys = await caches.keys();
+      await Promise.all(keys.filter((k) => k.startsWith("tadabbur-shell")).map((k) => caches.delete(k)));
+    }
+  } catch (e) { /* no cache access; the reload below is still worth doing */ }
+  location.reload();
+}
+
+(function setupPullToRefresh() {
+  const el = document.getElementById("pull-refresh");
+  if (!el) return;
+  let startY = null, startX = 0, pulling = false, dist = 0;
+
+  const overlayOpen = () => document.documentElement.classList.contains("modal-open");
+  // Only from the very top, and never out of something that scrolls itself -
+  // dragging down inside the ayah box or a combo list means to scroll it.
+  const atTop = () => (window.scrollY || document.documentElement.scrollTop || 0) <= 0;
+  const inScroller = (target) =>
+    !!(target && target.closest && target.closest(".ayah-scroll, .combo-list, .mushaf-map-grid, .wird-week, .mode-switch, [data-no-swipe]"));
+
+  const reset = () => {
+    startY = null; pulling = false; dist = 0;
+    el.classList.remove("visible", "ready");
+    el.style.transform = "";
+  };
+
+  document.addEventListener("touchstart", (e) => {
+    if (e.touches.length !== 1 || overlayOpen() || !atTop() || inScroller(e.target)) { startY = null; return; }
+    startY = e.touches[0].clientY;
+    startX = e.touches[0].clientX;
+  }, { passive: true });
+
+  document.addEventListener("touchmove", (e) => {
+    if (startY === null || e.touches.length !== 1) return;
+    const dy = e.touches[0].clientY - startY;
+    const dx = Math.abs(e.touches[0].clientX - startX);
+    // A mostly sideways drag is the tab swipe, not this.
+    if (dy <= 0 || dx > Math.abs(dy)) { if (!pulling) startY = null; return; }
+    pulling = true;
+    // Resisted, so it feels like pulling against something rather than
+    // dragging a free object.
+    dist = Math.min(PULL_MAX, dy * 0.55);
+    el.classList.add("visible");
+    el.classList.toggle("ready", dist >= PULL_TRIGGER);
+    el.style.transform = `translateX(-50%) translateY(${dist}px)`;
+  }, { passive: true });
+
+  document.addEventListener("touchend", () => {
+    if (!pulling) { reset(); return; }
+    if (dist >= PULL_TRIGGER) {
+      el.classList.add("spinning");
+      el.style.transform = `translateX(-50%) translateY(${PULL_TRIGGER}px)`;
+      hardReload();
+      return;   // leave it showing; the page is on its way out
+    }
+    reset();
+  }, { passive: true });
+
+  document.addEventListener("touchcancel", reset, { passive: true });
+})();
+
 function startUp(name, fn) {
   try { fn(); } catch (e) { console.error(`تعذّر تهيئة ${name}`, e); }
 }
@@ -7311,3 +7415,9 @@ startUp("العنوان", () => {
 // The markup that shipped with the page carries digits too, and it was drawn
 // before the observer existed: one sweep now covers it.
 applyNumerals();
+
+// The head script armed a timer against this. Reaching it means every init
+// step ran; not reaching it means the app is half-built, and the timer will
+// clear the shell cache and reload once rather than leaving someone staring
+// at blank buttons.
+window.__tadabburBooted = true;

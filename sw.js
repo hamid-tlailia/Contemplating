@@ -19,7 +19,7 @@
 // Anything an ayah's data was never fetched for can't be shown offline, so
 // the settings panel offers a prefetch for the surahs actually in use.
 
-const VERSION = "v6";
+const VERSION = "v7";
 const SHELL_CACHE = `tadabbur-shell-${VERSION}`;
 const DATA_CACHE = `tadabbur-data-${VERSION}`;
 const FONT_CACHE = `tadabbur-fonts-${VERSION}`;
@@ -40,6 +40,7 @@ const DATA_HOSTS = ["api.alquran.cloud", "api.quran.com"];
 const FONT_HOSTS = ["fonts.googleapis.com", "fonts.gstatic.com"];
 const AUDIO_HOSTS = ["cdn.islamic.network"];
 const AUDIO_MAX_ENTRIES = 400;
+const SHELL_TIMEOUT = 4000;
 
 self.addEventListener("install", (event) => {
   // cache: "reload" so the shell is taken from the server, not from the
@@ -91,10 +92,28 @@ function isCacheable(res) {
   return res && (res.ok || res.type === "opaque");
 }
 
-async function networkFirst(request, cacheName) {
+// A phone waking from the background often has a connection that is up but
+// not yet carrying anything, and fetch has no timeout of its own: the
+// request simply hangs. For the shell that is the worst case - the page sits
+// there half-built waiting for a script that never arrives - and the cached
+// copy we would have used is right here. So the shell gets a deadline and
+// falls back rather than waiting forever. Data and media are left alone;
+// they have their own handling and a slow ayah is not a broken app.
+function fetchWithDeadline(request, ms) {
+  if (!ms) return fetch(request);
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("timeout")), ms);
+    fetch(request).then(
+      (res) => { clearTimeout(timer); resolve(res); },
+      (err) => { clearTimeout(timer); reject(err); }
+    );
+  });
+}
+
+async function networkFirst(request, cacheName, timeoutMs) {
   const cache = await caches.open(cacheName);
   try {
-    const res = await fetch(request);
+    const res = await fetchWithDeadline(request, timeoutMs);
     // Not awaited so the response isn't held up by the write, but a put can
     // legitimately reject (a Vary:* or partial response), and unhandled it
     // would surface as an error in the worker.
@@ -135,7 +154,7 @@ self.addEventListener("fetch", (event) => {
     // so it falls back to the cached shell rather than the browser's
     // offline error page.
     event.respondWith(
-      networkFirst(event.request, SHELL_CACHE).catch(() =>
+      networkFirst(event.request, SHELL_CACHE, SHELL_TIMEOUT).catch(() =>
         event.request.mode === "navigate"
           ? caches.match("index.html", { ignoreSearch: true })
           : Response.error()
