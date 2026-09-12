@@ -836,10 +836,26 @@ async function fetchWithTimeout(url, ms = 8000) {
   }
 }
 
+// A reply that parses as JSON is not the same as a reply that carries what
+// we asked for: the API answers an internal error with a perfectly valid
+// {code, status, data:"..."} whose data is a *string*, and a captive portal
+// or a proxy can answer with something else entirely. Reading .ayahs off
+// that yields undefined rather than throwing, so the failure used to travel
+// silently down to the caller and blow up there, past the try/catch that
+// was meant to catch it - leaving the screen half-drawn. Checking the shape
+// here turns it back into an ordinary network failure, which every caller
+// already knows how to report.
+function requireAyahArray(json, what) {
+  const ayahs = json && json.data && json.data.ayahs;
+  if (!Array.isArray(ayahs)) throw new Error(`Unexpected response shape for ${what}`);
+  return ayahs;
+}
+
 async function fetchSurahList() {
   if (surahListCache) return surahListCache;
   const res = await fetchWithTimeout(`${API_BASE}/surah`);
   const json = await res.json();
+  if (!Array.isArray(json && json.data)) throw new Error("Unexpected response shape for surah list");
   surahListCache = json.data;
   return surahListCache;
 }
@@ -848,7 +864,7 @@ async function fetchSurahAyahs(surahNumber) {
   if (surahAyahsCache[surahNumber]) return surahAyahsCache[surahNumber];
   const res = await fetchWithTimeout(`${API_BASE}/surah/${surahNumber}/quran-uthmani`);
   const json = await res.json();
-  surahAyahsCache[surahNumber] = json.data.ayahs;
+  surahAyahsCache[surahNumber] = requireAyahArray(json, `surah ${surahNumber}`);
   return surahAyahsCache[surahNumber];
 }
 
@@ -1795,7 +1811,7 @@ async function openTodaysWirdReading() {
       for (let p = pageNumber; p < pageNumber + pageCount && p <= 604; p++) {
         const res = await fetchWithTimeout(`${API_BASE}/page/${p}/quran-uthmani`, 8000);
         const json = await res.json();
-        (json.data.ayahs || []).forEach((a) => ayahs.push({ ...a, surahNumberForReader: a.surah.number }));
+        requireAyahArray(json, `page ${p}`).forEach((a) => ayahs.push({ ...a, surahNumberForReader: a.surah.number }));
       }
       if (ayahs.length === 0) return;
       openMushafReader(ayahs);
