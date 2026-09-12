@@ -2985,14 +2985,18 @@ main#app {
 .wird-plan-card { text-align: center; }
 .wird-plan-sentence {
   font-family: var(--ayah-font-family, 'Amiri', serif);
-  font-size: 1.35rem;
-  line-height: 1.9;
-  margin: 6px 0 4px;
+  /* It was set at ayah scale, and it is not an ayah - it is a sentence
+     about an appointment, and at 1.35rem/1.9 it took two tall lines at the
+     top of a card that has six other things to say. */
+  font-size: 1.12rem;
+  line-height: 1.75;
+  margin: 4px 0 2px;
   color: var(--primary);
 }
-.wird-plan-card .muted { margin: 0 0 12px; }
+.wird-plan-sentence.hidden { display: none; }
+.wird-plan-card .muted { margin: 0 0 8px; }
 .wird-plan-next {
-  margin: 0 0 12px;
+  margin: 0 0 10px;
   font-size: 0.85rem;
   color: var(--primary);
   background: color-mix(in srgb, var(--primary) 10%, transparent);
@@ -3121,8 +3125,8 @@ main#app {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  margin-top: 14px;
-  padding: 10px 14px;
+  margin-top: 10px;
+  padding: 8px 14px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--surface);
@@ -3135,18 +3139,26 @@ main#app {
 .wird-notify-row.disabled { opacity: 0.55; cursor: not-allowed; }
 .wird-notify-row.disabled input { cursor: not-allowed; }
 .wird-notify-note {
-  margin-top: 8px;
-  font-size: 0.82rem;
-  line-height: 1.7;
+  margin-top: 6px;
+  font-size: 0.8rem;
+  line-height: 1.6;
   text-align: center;
+}
+.wird-ics-link {
+  display: block;
+  margin: 2px auto 0;
+  font-size: 0.82rem;
 }
 .wird-plan-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
   justify-content: center;
-  margin-top: 12px;
+  margin-top: 10px;
 }
+/* Three buttons on a 390px card wrap to 2 + 1, which is two rows for what
+   is really one row of choices. Slightly tighter and they fit on one. */
+.wird-plan-actions .btn { padding-inline: 14px; font-size: 0.88rem; }
 .wird-header {
   display: flex;
   align-items: center;

@@ -467,11 +467,13 @@
           <span>🔔 ذكّرني على هذا الجهاز</span>
         </label>
         <p class="muted wird-notify-note" id="wird-notify-note"></p>
+        <!-- The calendar entry belongs with the bell, not with the day's
+             actions: both are reminder plumbing, set up once and never
+             touched again, while ابدأ الآن is what you press every day. -->
+        <button id="btn-wird-plan-ics" class="link-btn wird-ics-link">📅 أضِفه إلى تقويم جوالك</button>
         <div class="wird-plan-actions">
           <button id="btn-wird-plan-start" class="btn primary">ابدأ الآن</button>
-          <button id="btn-wird-plan-ics" class="btn">تذكير يومي في التقويم</button>
           <button id="btn-wird-plan-edit" class="btn">تعديل العهد</button>
-          <button id="btn-wird-plan-new" class="btn hidden">عهد جديد</button>
         </div>
       </div>
 

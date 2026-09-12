@@ -1688,10 +1688,14 @@ function renderWirdPlanCard() {
   const anchor = WIRD_ANCHORS.find((a) => a.id === plan.anchor) || WIRD_ANCHORS[0];
   const when = plan.anchor === "custom" ? `الساعة ${plan.time}` : `${anchor.label} (${plan.time})`;
   const nextEl = document.getElementById("wird-plan-next");
-  nextEl.textContent = `🗓️ موعدك القادم: غدًا ${when}${plan.place ? ` ${plan.place}` : ""}`;
+  nextEl.textContent = `🗓️ غدًا ${when}${plan.place ? ` ${plan.place}` : ""}`;
   nextEl.classList.toggle("hidden", !done);
+  // Two shapes for one fact, stacked: "سأحفظ وردي بعد الفجر (05:30) في
+  // البيت" and then "موعدك القادم: غدًا بعد الفجر (05:30) في البيت". Once
+  // the day is kept the pill carries everything the sentence did and adds
+  // غدًا, so the sentence steps aside rather than repeating itself.
+  document.getElementById("wird-plan-sentence").classList.toggle("hidden", done);
   document.getElementById("btn-wird-plan-start").classList.toggle("hidden", done);
-  document.getElementById("btn-wird-plan-new").classList.toggle("hidden", !done);
   document.getElementById("btn-wird-plan-edit").textContent = done ? "عدّل موعد الغد" : "تعديل العهد";
   renderWirdNotifyRow();
   renderWirdPlanAnchors();
@@ -1904,11 +1908,14 @@ function wirdNotifyNote() {
   if (st === "unsupported") {
     return isIOS() && !isStandalone()
       ? "لتفعيل التنبيه على الآيفون، ثبّت التطبيق أولًا: زر المشاركة ← «إضافة إلى الشاشة الرئيسية»، ثم افتحه من هناك."
-      : "هذا المتصفح لا يدعم التنبيهات. استخدم «تذكير يومي في التقويم» — وهو يعمل في كل الحالات.";
+      : "هذا المتصفح لا يدعم التنبيهات. أضِف العهد إلى تقويم جوالك — وهو يعمل في كل الحالات.";
   }
   if (st === "denied") return "التنبيهات محجوبة لهذا الموقع في إعدادات متصفحك. اسمح بها من هناك ثم أعد المحاولة.";
-  if (!plan || !plan.notify) return "تنبيه على هذا الجهاز عند موعدك — ما دام التطبيق مفتوحًا أو في الخلفية.";
-  return "سيصلك التنبيه عند موعدك ما دام التطبيق يعمل أو في الخلفية. وإذا أُغلق التطبيق تمامًا فلن يصل — لذلك أضِف «تذكير يومي في التقويم» أيضًا، فهو الوحيد المضمون.";
+  if (!plan || !plan.notify) return "تنبيه على هذا الجهاز عند موعدك.";
+  // One line, because it lives on the card permanently. The full caveat is
+  // still said - once, out loud, at the moment the switch is turned on -
+  // and the calendar link sits directly beneath this.
+  return "يعمل والتطبيق مفتوح أو في الخلفية.";
 }
 
 function renderWirdNotifyRow() {
@@ -1940,7 +1947,8 @@ async function toggleWirdNotifications(on) {
     scheduleWirdReminder();
     const at = nextWirdOccurrence(state.wirdPlan);
     const when = at.toDateString() === new Date().toDateString() ? "اليوم" : "غدًا";
-    showToast(`🔔 سأذكّرك ${when} الساعة ${state.wirdPlan.time}`, "success");
+    showToast(`🔔 سأذكّرك ${when} الساعة ${state.wirdPlan.time}`, "success",
+      "ما دام التطبيق يعمل أو في الخلفية. وإن أُغلق تمامًا فلن يصل — تذكير التقويم وحده مضمون.");
   } else {
     state.wirdPlan.notify = false;
     saveState();
@@ -1958,7 +1966,6 @@ document.addEventListener("visibilitychange", () => {
 
 on("btn-wird-plan-save", "click", saveWirdPlan);
 on("btn-wird-plan-edit", "click", () => openWirdPlanForm());
-on("btn-wird-plan-new", "click", () => openWirdPlanForm(true));
 on("btn-wird-plan-cancel", "click", renderWirdPlanCard);
 on("btn-wird-plan-ics", "click", downloadWirdPlanICS);
 const wirdNotifyToggle = document.getElementById("wird-notify-toggle");
