@@ -43,6 +43,19 @@
   // The reader draws from stored state the app has not read yet, so it opens
   // a moment later rather than as an empty page.
   if (overlays.length) document.documentElement.setAttribute("data-overlay", overlays.join(" "));
+
+  // Same reason, for the same frame: the dashboard's markup carries every
+  // card, and a first-run visitor would see all of them flash by before
+  // renderDashboard folded them away. Reading the saved ayahs here decides
+  // it before the first paint. Defensive throughout - a corrupt or missing
+  // store just means the full dashboard, which is the safe way to be wrong.
+  var firstRun = false;
+  try {
+    var raw = localStorage.getItem("tadabbur_state_v1");
+    var parsed = raw ? JSON.parse(raw) : null;
+    firstRun = !parsed || !parsed.ayahs || Object.keys(parsed.ayahs).length === 0;
+  } catch (e) { firstRun = false; }
+  document.documentElement.setAttribute("data-first-run", firstRun ? "true" : "false");
 })();
 </script>
 </head>
@@ -284,7 +297,16 @@
   <!-- DASHBOARD -->
   <section id="tab-dashboard" class="tab-panel">
 
-    <div class="challenge-card" id="challenge-card">
+    <div class="panel onboarding-panel" id="onboarding-panel">
+      <h2>🌱 ابدأ رحلة الحفظ</h2>
+      <p class="muted">اختر لمن هذا الحفظ، ليضبط التطبيق طول الجلسة وطريقتها وحجم الخط ووتيرة المراجعة بما يناسبه — ويمكنك تغيير كل ذلك لاحقًا.</p>
+      <div class="age-mode-grid" id="onboarding-age-grid"></div>
+      <button class="btn primary onboarding-start" data-tab="learn">ابدأ الآن بسورة الفاتحة</button>
+      <p class="muted onboarding-alt">أو انزل قليلًا لتقرأ من المصحف دون حفظ.</p>
+    </div>
+
+
+    <div class="challenge-card needs-data" id="challenge-card">
       <div class="challenge-text">
         <h2>⚡ تحدي تعاهد اليوم</h2>
         <p class="muted" id="challenge-desc">اختبر نفسك بآيات عشوائية مما حفظت — «تعاهدوا هذا القرآن فوالذي نفسي بيده لهو أشد تفلتًا من الإبل في عقلها»</p>
@@ -295,9 +317,9 @@
       </div>
     </div>
 
-    <div class="ornament" aria-hidden="true">۞</div>
+    <div class="ornament needs-data" aria-hidden="true">۞</div>
 
-    <div class="stats-grid">
+    <div class="stats-grid needs-data">
       <div class="stat-card">
         <div class="stat-value" id="stat-due">0</div>
         <div class="stat-label">مستحقة اليوم</div>
@@ -320,11 +342,11 @@
 
     <p class="balance-note hidden" id="balance-note"></p>
 
-    <div class="share-row">
+    <div class="share-row needs-data">
       <button class="btn" id="btn-share-progress">🌿 شارك تقدّمي</button>
     </div>
 
-    <div class="panel overall-progress-card">
+    <div class="panel overall-progress-card needs-data">
       <div class="overall-progress-header">
         <h2>📈 تقدمك في حفظ القرآن</h2>
         <span id="overall-progress-text" class="muted">0 / 6236 (0%)</span>
@@ -345,18 +367,18 @@
       </details>
     </div>
 
-    <div class="panel">
+    <div class="panel needs-data">
       <h2>خطة المراجعة الحالية</h2>
       <p class="muted">مرتبة حسب أقرب موعد مراجعة (التكرار المتباعد الذكي) — اضغط على اسم السورة لعرض آياتها</p>
       <div id="plan-list" class="plan-list"></div>
     </div>
 
-    <div class="panel">
+    <div class="panel needs-data">
       <h2>التقدم حسب السورة</h2>
       <div id="surah-progress" class="surah-progress-list"></div>
     </div>
 
-    <div class="panel wird-card">
+    <div class="panel wird-card needs-data">
       <div class="wird-header">
         <div>
           <h2>🌙 ورد اليوم</h2>
@@ -382,7 +404,7 @@
       </div>
     </div>
 
-    <div class="panel wird-plan-card" id="wird-plan-card">
+    <div class="panel wird-plan-card needs-data" id="wird-plan-card">
       <h2>🤝 عهد الورد</h2>
 
       <div id="wird-plan-view" class="hidden">
@@ -467,12 +489,6 @@
       <button id="btn-mushaf-load" class="btn primary mushaf-load-btn"></button>
     </div>
 
-    <div class="panel" id="onboarding-panel">
-      <h2>🌱 لم تبدأ رحلة الحفظ بعد</h2>
-      <p class="muted">اختر لمن هذا الحفظ، ليضبط التطبيق طول الجلسة وطريقتها وحجم الخط ووتيرة المراجعة بما يناسبه — ويمكنك تغيير كل ذلك لاحقًا.</p>
-      <div class="age-mode-grid" id="onboarding-age-grid"></div>
-      <button class="btn primary" data-tab="learn">ابدأ الآن بسورة الفاتحة</button>
-    </div>
   </section>
 
   <!-- LEARN (guided sequential memorization) -->

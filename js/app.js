@@ -1342,7 +1342,11 @@ function renderDashboard() {
     ? `تحفظ منذ ${formatArabicDate(firstMemorized)} (${formatDurationSince(firstMemorized)})`
     : "";
 
-  document.getElementById("onboarding-panel").classList.toggle("show", items.length === 0);
+  // Nothing added at all, not merely nothing memorized: an ayah part-way
+  // through its rounds is still a reason to see the whole dashboard.
+  const firstRun = items.length === 0;
+  document.documentElement.dataset.firstRun = firstRun ? "true" : "false";
+  document.getElementById("onboarding-panel").classList.toggle("show", firstRun);
 
   renderChallengeCard();
 

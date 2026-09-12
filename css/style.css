@@ -633,8 +633,30 @@ main#app {
    the same card, settled. */
 .challenge-card.done { background: linear-gradient(135deg, var(--primary-dark), var(--primary)); }
 
+/* First run. Someone who has memorized nothing was being shown the whole
+   dashboard - four zeros, an empty plan, an empty progress bar, an empty
+   Mushaf map, a 0/5 ring, a commitment form - about seven screens of it,
+   with the one button that actually starts anything sitting at the very
+   bottom. Until there is a single ayah, every card that only means
+   something once there is data is out of the way, and the starting card is
+   first instead of last. The moment an ayah exists they all come back. */
+:root[data-first-run="true"] .needs-data { display: none !important; }
+
 #onboarding-panel { display: none; }
-#onboarding-panel.show { display: block; text-align: center; }
+/* Both routes to the same thing: the attribute so it is there in the first
+   frame, the class because renderDashboard is the authority once it runs. */
+#onboarding-panel.show,
+:root[data-first-run="true"] #onboarding-panel { display: block; text-align: center; }
+/* It is the first thing on the screen now, so it carries the weight the
+   stats grid used to. */
+.onboarding-panel h2 { font-size: 1.35rem; margin-bottom: 6px; }
+.onboarding-panel .onboarding-start {
+  width: 100%;
+  margin-top: 14px;
+  padding-block: 13px;
+  font-size: 1.05rem;
+}
+.onboarding-alt { margin-top: 12px; font-size: 0.85rem; }
 
 .stats-grid {
   display: grid;
