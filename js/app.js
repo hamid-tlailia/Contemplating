@@ -1545,7 +1545,6 @@ function renderDashboard() {
   // backlog: a four-figure "due" count is a reason to close the app.
   const totalDue = items.filter((i) => i.learningStage === "srs" && i.due <= today).length;
   const dueCount = Math.min(totalDue, reviewsLeftToday());
-  const learningCount = items.filter((i) => i.learningStage === "learning").length;
   const masteredCount = items.filter((i) => i.learningStage === "srs" && !i.temporary).length;
 
   document.getElementById("stat-due").textContent = dueCount;
@@ -1574,7 +1573,7 @@ function renderDashboard() {
       ? `⚖️ اليوم: ${learned} حفظ جديد · ${reviewed} مراجعة — الميزان يميل نحو الجديد.`
       : `⚖️ اليوم: ${learned} حفظ جديد · ${reviewed} مراجعة — ميزان متّزن.`;
   }
-  document.getElementById("stat-new").textContent = learningCount;
+  document.getElementById("stat-new").textContent = surahsInProgress();
   document.getElementById("stat-mastered").textContent = masteredCount;
   document.getElementById("stat-streak").textContent = computeStreak();
 
@@ -6092,6 +6091,49 @@ function ayahCue(item) {
     text: `${words.slice(0, SEAM_LEAD_WORDS).join(" ")} … ${words.slice(-SEAM_CUE_WORDS).join(" ")}`,
     whole: false,
   };
+}
+
+// How many ayahs each surah has, by surah number. Written out rather than
+// read from the fetched surah list, because the dashboard is drawn before
+// that list arrives - and on a first run, or offline, it may not arrive at
+// all - and a card that says "0 سور قيد الحفظ" to someone in the middle of
+// البقرة is worse than no card. These numbers are fixed for all time; the
+// table sums to 6236, which is the ayah count the rest of the file uses.
+const SURAH_AYAH_COUNTS = [
+  7, 286, 200, 176, 120, 165, 206, 75, 129, 109, 123, 111, 43, 52, 99, 128, 111, 110, 98,
+  135, 112, 78, 118, 64, 77, 227, 93, 88, 69, 60, 34, 30, 73, 54, 45, 83, 182, 88,
+  75, 85, 54, 53, 89, 59, 37, 35, 38, 29, 18, 45, 60, 49, 62, 55, 78, 96, 29,
+  22, 24, 13, 14, 11, 11, 18, 12, 12, 30, 52, 52, 44, 28, 28, 20, 56, 40, 31,
+  50, 40, 46, 42, 29, 19, 36, 25, 22, 17, 19, 26, 30, 20, 15, 21, 11, 8, 8,
+  19, 5, 8, 8, 11, 11, 8, 3, 9, 5, 4, 7, 3, 6, 3, 5, 4, 5, 6
+];
+
+function surahAyahCount(surahNumber) {
+  return SURAH_AYAH_COUNTS[surahNumber - 1] || 0;
+}
+
+// "Which surahs am I on?" - which is what a person means by قيد الحفظ, and
+// not what the card used to answer. It counted ayahs still inside their
+// three rounds, so someone working steadily through البقرة and آل عمران saw
+// a 1: the one ayah in hand at that moment. A surah is under memorization
+// from the first ayah of it entered into the plan until its last one is
+// memorized, however many of its ayahs are mid-round today.
+function surahsInProgress() {
+  const mastered = new Map();
+  Object.values(state.ayahs).forEach((item) => {
+    // Vestigial, like the other `temporary` filters here: the flag is cleared
+    // on load now (see loadState), and kept only so the sums agree if an old
+    // state ever slips through unmigrated.
+    if (item.temporary) return;
+    if (!mastered.has(item.surah)) mastered.set(item.surah, 0);
+    if (item.learningStage === "srs") mastered.set(item.surah, mastered.get(item.surah) + 1);
+  });
+  let count = 0;
+  mastered.forEach((done, surah) => {
+    const total = surahAyahCount(surah);
+    if (!total || done < total) count++;
+  });
+  return count;
 }
 
 // A seam exists where two consecutive ayahs of one surah are BOTH memorized
