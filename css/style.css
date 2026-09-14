@@ -190,18 +190,17 @@ html:root[data-theme="lastthird"] { background-image: none; }
     /* The arch, above the sky and below the lamp. It has to sit in this
        same stack: the sky gradient below is opaque, so an arch on a lower
        layer was painted over and invisible. */
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='320' viewBox='0 0 400 320' preserveAspectRatio='none'%3E%3Cpath d='M0 0h400v320h-30V160c0-72-76-118-170-118S30 88 30 160v160H0Z' fill='%23090a14'/%3E%3Cpath d='M30 250V160c0-72 76-118 170-118s170 46 170 118v90' fill='none' stroke='%23b99a5e' stroke-opacity='0.26' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='320' viewBox='0 0 400 320' preserveAspectRatio='none'%3E%3Cpath d='M0 0h400v320h-30V160c0-72-76-118-170-118S30 88 30 160v160H0Z' fill='%23090a14'/%3E%3C/svg%3E"),
     /* the moon's own halo, and the sky */
     radial-gradient(circle 200px at 86% 13%, rgba(216,202,164,0.15), rgba(216,202,164,0.04) 44%, transparent 72%),
     radial-gradient(ellipse 160% 90% at 50% 0%, #101430, #070914 52%, #05060e 100%);
-  background-position: 50% 42px, 50% 50%, top center, 0 0, 0 0;
-  /* The wire begins at 42px, which is exactly where the arch's curve peaks
-     (the stroked path tops out at y=42 in a 320px-tall arch drawn from the
-     top edge), so it reads as tied to the arch rather than as dropping out
-     of the ceiling. It stops 48px short of centre, where the lamp's hook
-     ring lands once the lamp is centred, so the two meet instead of the
-     wire running down through the glass. */
-  background-size: 2px calc(50% - 90px), 84px 105px, 100% 320px, 100% 100%, 100% 100%;
+  background-position: 50% 0, 50% 50%, top center, 0 0, 0 0;
+  /* The wire runs from the very top of the screen. It used to start at the
+     arch's peak so it met the curve drawn there; that curve is gone, so a
+     wire starting in mid-air would just look cut. It still stops 48px short
+     of centre, where the lamp's hook ring lands once the lamp is centred,
+     so the two meet instead of the wire running down through the glass. */
+  background-size: 2px calc(50% - 48px), 84px 105px, 100% 320px, 100% 100%, 100% 100%;
 }
 
 /* ---- the falloff ---- */
@@ -1946,37 +1945,50 @@ main#app {
 .icon-label { display: inline-flex; align-items: center; gap: 6px; }
 .icon-label svg { width: 16px; height: 16px; flex-shrink: 0; }
 
+/* One tray, three equal buttons. The play button used to be 54px against
+   the other two at 44, which is a reasonable way to mark the primary action
+   and a poor way to make a row: three circles of two sizes floating on the
+   page read as an accident rather than a control. They are one size now and
+   sit in a single rounded tray, so the group is the object and play is
+   marked by colour instead of by being bigger than its neighbours. */
 .audio-controls {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  margin: 10px 0;
+  gap: 6px;
+  margin: 10px auto;
+  padding: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 4%, var(--surface));
+  border: 1px solid var(--border);
 }
+/* inline-flex needs the row centred by its parent rather than by itself. */
+.ayah-display + .audio-controls, .answer-area + .audio-controls,
+.learn-audio-row, #learn-audio-controls, #review-audio-controls { align-self: center; }
+#learn-audio-controls, #review-audio-controls { display: flex; width: fit-content; margin-inline: auto; }
 .audio-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: 46px;
+  height: 46px;
+  flex: 0 0 auto;
   border-radius: 50%;
-  border: 1px solid var(--border);
-  background: var(--surface);
+  border: 1px solid transparent;
+  background: transparent;
   color: var(--primary);
   cursor: pointer;
   transition: transform .1s ease, background-color .15s ease, color .15s ease;
 }
 .audio-btn svg { width: 20px; height: 20px; }
 @media (hover: hover) { .audio-btn:hover { transform: translateY(-1px); } }
+/* Same diameter as its neighbours; it is the primary action, so it is
+   filled rather than enlarged. */
 #learn-audio-controls-playpause, #review-audio-controls-playpause {
-  width: 54px;
-  height: 54px;
   background: var(--primary);
   color: #fff;
   border-color: var(--primary);
-  box-shadow: 0 4px 14px rgba(31,111,92,0.3);
 }
-#learn-audio-controls-playpause svg, #review-audio-controls-playpause svg { width: 22px; height: 22px; }
 .audio-btn.active { background: var(--accent); color: #201e17; border-color: var(--accent); }
 
 /* Waiting for the recitation to buffer: the play button itself spins, so
@@ -3077,19 +3089,27 @@ main#app {
    fitted height, grade gate and all - and is simply covered, so lifting
    the veil lands on the state that was already there rather than
    rebuilding it. */
-.ayah-scroll.veiled { visibility: hidden; }
+/* The veil sizes the box instead of floating over it. Laid over the ayah
+   with position:absolute it had no say in how tall the panel was, so on a
+   short ayah - where the panel is at its 180px floor - the lead line and
+   three buttons simply hung out of the bottom of the frame. In the flow,
+   the panel is as tall as whatever is inside it, and the overflow cannot
+   happen by construction.
+   display:none rather than visibility:hidden on the text underneath, for
+   the same reason: hidden still reserves the ayah's full height, so the
+   panel would be the ayah plus the veil stacked. Nothing is lost - the
+   masked words and the grade gate are DOM, not layout, and the height is
+   refitted when the veil lifts. */
+.ayah-scroll.veiled { display: none; }
 .listen-veil {
-  position: absolute;
-  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 14px;
-  padding: 18px;
+  padding: 4px 2px;
+  width: 100%;
   text-align: center;
-  background: color-mix(in srgb, var(--primary) 6%, var(--surface));
-  border-radius: inherit;
 }
 .listen-veil.hidden { display: none; }
 .listen-veil-lead {

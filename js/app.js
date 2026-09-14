@@ -283,8 +283,19 @@ function saveState() {
 
 const state = loadState();
 
+// The local date, never toISOString(). toISOString converts to UTC first,
+// so it names the wrong day for part of every day: one hour of it in
+// Algiers, three in Riyadh, four in New York - where an evening's work from
+// 8pm onwards was being filed under tomorrow. Every day key in the app -
+// activity, the streak, the daily counts, the wird strip, SM-2 due dates -
+// went through this, which is why a streak could stall and a completed day
+// could show empty.
+function isoOf(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  return isoOf(new Date());
 }
 
 function formatArabicDate(iso) {
@@ -332,12 +343,6 @@ function formatDurationSince(iso) {
 const ACTIVITY_WEEKDAYS = ["ح", "ن", "ث", "ر", "خ", "ج", "س"]; // الأحد → السبت
 const ACTIVITY_MONTHS = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
 const ACTIVITY_CELL = 13; // px per column, cell plus its gap
-
-function isoOf(d) {
-  // Local date, not toISOString(): east of UTC that would name yesterday
-  // for most of the evening, and the whole sheet would sit a day out.
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 function activityLevel(n) {
   if (!n) return 0;
@@ -577,10 +582,10 @@ function computeStreak() {
   let streak = 0;
   let forgiven = 0;
   const cursor = new Date();
-  if (!state.activity[cursor.toISOString().slice(0, 10)]) cursor.setDate(cursor.getDate() - 1);
+  if (!state.activity[isoOf(cursor)]) cursor.setDate(cursor.getDate() - 1);
   let lastWasGap = false;
   while (streak < 3650) {
-    const key = cursor.toISOString().slice(0, 10);
+    const key = isoOf(cursor);
     if (state.activity[key]) {
       streak++;
       lastWasGap = false;
@@ -602,7 +607,7 @@ function activeDaysThisWeek() {
   let n = 0;
   const cursor = new Date();
   for (let i = 0; i < 7; i++) {
-    if (state.activity[cursor.toISOString().slice(0, 10)]) n++;
+    if (state.activity[isoOf(cursor)]) n++;
     cursor.setDate(cursor.getDate() - 1);
   }
   return n;
@@ -1014,7 +1019,7 @@ function sm2Schedule(item, quality) {
 
   const due = new Date();
   due.setDate(due.getDate() + item.interval);
-  item.due = due.toISOString().slice(0, 10);
+  item.due = isoOf(due);
   item.lastReviewed = todayISO();
   return item;
 }
@@ -1499,7 +1504,10 @@ function renderDashboard() {
     deferredEl.classList.toggle("hidden", deferred <= 0);
   }
   const weekEl = document.getElementById("stat-week");
-  if (weekEl) weekEl.textContent = `${activeDaysThisWeek()} من 7 أيام`;
+  if (weekEl) {
+    const week = activeDaysThisWeek();
+    weekEl.textContent = week >= 7 ? "أسبوع كامل 🌿" : `${week} من 7 أيام`;
+  }
   renderReviewBadge();
 
   const balanceEl = document.getElementById("balance-note");
@@ -2033,7 +2041,7 @@ function renderWirdCard() {
     for (let i = 6; i >= 0; i--) {
       const d = new Date();
       d.setDate(d.getDate() - i);
-      const iso = d.toISOString().slice(0, 10);
+      const iso = isoOf(d);
       const count = counts[iso] || 0;
       const met = count >= target;
       const isToday = iso === today;
@@ -2324,7 +2332,14 @@ async function openTodaysWirdReading() {
       .filter((a) => a.numberInSurah >= from && a.numberInSurah <= to)
       .map((a) => ({ ...a, surahNumberForReader: surahNumber }));
     if (matches.length === 0) return;
-    openMushafReader(matches);
+    // A wird measured in pages carries on into the next surah rather than
+    // stopping at a cover: whether today's two pages happen to straddle a
+    // surah boundary is not something the reader should feel.
+    const reachesEnd = to >= ayahs.length;
+    const spill = state.wirdTargetType === "pages" && reachesEnd && pagesShortBy > 0
+      ? await pagesFromNextSurah(surahNumber, pagesShortBy)
+      : [];
+    openMushafReader(matches.concat(spill));
   } catch (e) {
     showToast("تعذّر تحميل النص. تحقق من الاتصال بالإنترنت.", "error");
   }
@@ -2347,16 +2362,43 @@ function defaultMushafSurah(surahs) {
 // given ayah (N ayahs, or however many ayahs the next N real Mushaf pages
 // hold) - shared by the default-range calculation and by manually editing
 // the "from" field, so either path keeps "to" in sync with the daily target.
+// Also records, in pagesShortBy, how many pages of the target did not fit
+// in this surah. The from/to inputs address ayah numbers inside one surah
+// and cannot say "and then the next one", so the clamp has to stay - but a
+// two-page wird that starts on the last page of a surah was silently
+// becoming a one-page wird, and the second page only turned up the next
+// day. The reader makes up the difference from the surah that follows.
+let pagesShortBy = 0;
+
 function computeMushafTo(ayahs, from) {
   if (state.wirdTargetType === "pages") {
     const pages = groupAyahsIntoMushafPages(ayahs);
     let fromPageIdx = pages.findIndex((p) => p.ayahs[p.ayahs.length - 1].numberInSurah >= from);
     if (fromPageIdx === -1) fromPageIdx = 0;
-    const pageCount = Math.max(1, Math.min(state.wirdTarget || 1, pages.length - fromPageIdx));
+    const wanted = Math.max(1, state.wirdTarget || 1);
+    const available = pages.length - fromPageIdx;
+    const pageCount = Math.max(1, Math.min(wanted, available));
+    pagesShortBy = Math.max(0, wanted - available);
     const lastPage = pages[fromPageIdx + pageCount - 1];
     return lastPage.ayahs[lastPage.ayahs.length - 1].numberInSurah;
   }
+  pagesShortBy = 0;
   return Math.min(from + (state.wirdTarget || 5) - 1, ayahs.length);
+}
+
+// The opening pages of the surah after this one, enough to finish a wird
+// that ran out of surah. Nothing is added if this is the last surah, or if
+// the next one cannot be fetched - a short wird is better than no wird.
+async function pagesFromNextSurah(surahNumber, pageCount) {
+  if (pageCount <= 0 || surahNumber >= 114) return [];
+  try {
+    const next = await fetchSurahAyahs(surahNumber + 1);
+    const pages = groupAyahsIntoMushafPages(next);
+    return pages.slice(0, pageCount).flatMap((page) =>
+      page.ayahs.map((a) => ({ ...a, surahNumberForReader: surahNumber + 1 })));
+  } catch (e) {
+    return [];
+  }
 }
 
 // Defaults the from/to range to wherever this surah's reading should pick
@@ -4153,8 +4195,11 @@ function fitAyahPanel(scrollId, tabId) {
   const panel = scroll.closest(".ayah-display");
   const gapBelow = (panel ? panel.getBoundingClientRect().bottom - rect.bottom : 0)
     + (parseFloat(getComputedStyle(dock).marginTop) || 0);
-  const avail = window.innerHeight - nav.offsetHeight - dock.offsetHeight - gapBelow - topInPage - 24;
-  scroll.style.maxHeight = `${Math.max(130, Math.round(avail))}px`;
+  const avail = window.innerHeight - nav.offsetHeight - dock.offsetHeight - gapBelow - topInPage - 14;
+  // 130 was a floor set for the smallest ayah; on anything longer it made
+  // the panel feel like a slot rather than a page, and the text spent most
+  // of its time scrolled. A bit more room, and 10px less slack below.
+  scroll.style.maxHeight = `${Math.max(180, Math.round(avail))}px`;
   updateAyahScrollState(scroll);
 }
 
