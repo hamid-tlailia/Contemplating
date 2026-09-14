@@ -514,8 +514,10 @@ html:root[data-theme="lastthird"] { background-image: none; }
    every tab. */
 .app-footer.hidden { display: none; }
 
+/* The address lives in the button's href, not printed under it: a raw URL
+   set as body text is something to read and re-type rather than something
+   to press. */
 .contact-link { display: block; margin-top: 8px; text-align: center; text-decoration: none; }
-.contact-url { margin: 6px 0 0; font-size: 0.74rem; word-break: break-all; text-align: center; }
 
 /* The completion screen. Quiet rather than confetti-loud: finishing the
    Qur'an is not a level-up. */
