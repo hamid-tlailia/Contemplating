@@ -912,9 +912,9 @@ h1, h2 { font-family: 'Tajawal', sans-serif; margin: 0; }
     background: color-mix(in srgb, var(--primary) 55%, var(--surface));
   }
 
-  /* Nothing for main#app here: the padding shorthand further down the file
-     overrode this anyway, and the clearance over the fixed bar is the
-     footer's (see .app-footer near the end). */
+  /* The clearance over the fixed bar is main#app's padding-bottom, set in
+     the media block near the end of this file - after the `padding`
+     shorthand below, so it is not overridden. */
 }
 
 main#app {
@@ -2983,10 +2983,15 @@ main#app {
    over the last ~80px of the page, so the footer needs the same clearance
    main#app gets - otherwise its text ends up hidden behind the nav. */
 @media (max-width: 820px) {
-  /* Clear of the fixed bottom nav with room to spare - at the old 88px the
-     footer card's last line could still end up tucked under it on taller
-     nav bars (a gesture bar adds to the inset). */
-  .app-footer { padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px)); }
+  /* The clearance over the fixed bottom bar belongs to the page, not to the
+     footer. It used to be the footer's padding, which worked only for as
+     long as the footer was on every tab - the moment it became
+     dashboard-only, the other three tabs lost their clearance entirely and
+     their last card sat under the bar with nothing left to scroll to.
+     Declared after the `padding` shorthand on main#app further up, so it
+     wins; the footer keeps a normal gap of its own. */
+  main#app { padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px)); }
+  .app-footer { padding-bottom: 16px; }
 }
 
 /* On phones the header isn't sticky (see the tabs/header rules above), so
