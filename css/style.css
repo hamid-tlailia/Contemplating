@@ -3363,6 +3363,9 @@ main#app {
 }
 .wird-day.met { background: var(--primary); border-color: var(--primary); color: #fff; }
 .wird-day.today { box-shadow: 0 0 0 2px var(--accent); }
+/* A day that has not arrived yet: present in the week, making no claim
+   about itself. */
+.wird-day.upcoming { opacity: 0.45; border-style: dashed; }
 
 .overall-progress-header {
   display: flex;

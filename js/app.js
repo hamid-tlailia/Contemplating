@@ -2087,16 +2087,29 @@ function renderWirdCard() {
   if (weekEl) {
     weekEl.innerHTML = "";
     let todayEl = null;
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
+    // This calendar week, Saturday to Friday - not the last seven days.
+    // A rolling window is permanently full for anyone keeping their wird:
+    // every day that drops off the back was also met, so the strip reads
+    // "all done" forever and never marks the start of anything. A week that
+    // begins on Saturday empties itself every Saturday, which is what makes
+    // the row worth looking at - it shows this week, not the last seven
+    // days of history.
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - ((start.getDay() + 1) % 7)); // Sat = 6 -> 0 back
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
       const iso = isoOf(d);
       const count = counts[iso] || 0;
-      const met = count >= target;
       const isToday = iso === today;
+      // A day that has not arrived is neither met nor missed, and colouring
+      // it as either would be a claim about a day that has not happened.
+      const upcoming = iso > today;
+      const met = !upcoming && count >= target;
       const dayEl = document.createElement("div");
-      dayEl.className = `wird-day${met ? " met" : ""}${isToday ? " today" : ""}`;
-      dayEl.title = `${iso}: ${count}/${target}`;
+      dayEl.className = `wird-day${met ? " met" : ""}${isToday ? " today" : ""}${upcoming ? " upcoming" : ""}`;
+      dayEl.title = upcoming ? `${iso}: لم يحن بعد` : `${iso}: ${count}/${target}`;
       dayEl.textContent = WIRD_DAY_FULL[d.getDay()];
       weekEl.appendChild(dayEl);
       if (isToday) todayEl = dayEl;
