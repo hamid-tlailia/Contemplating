@@ -31,7 +31,7 @@ const THEMES = [
   { id: "night", name: "أزرق ليلي", points: 150 },
   // Darkness with one lamp, a moon and a handful of stars - for the hour it
   // is named after. Listed by price, so it sits with the other 300.
-  { id: "lastthird", name: "ثلث الليل", points: 300 },
+  { id: "lastthird", name: "ثلث الليل", points: 350 },
   { id: "forest", name: "أخضر داكن مريح", points: 300 },
   { id: "embroidered", name: "مطرز فاخر", points: 400 },
 ];
@@ -54,6 +54,8 @@ const BACKGROUNDS = [
   { id: "geometric-gold", name: "زخرفة ذهبية", points: 40 },
   { id: "waves", name: "أمواج هادئة", points: 60 },
   { id: "stars-scatter", name: "سماء مرصّعة", points: 80 },
+  { id: "arabesque", name: "أرابيسك متشابك", points: 100 },
+  { id: "palm-fronds", name: "سعف النخيل", points: 120 },
 ];
 
 // Kept deliberately modest - these are a motivational layer on top of real
@@ -100,7 +102,10 @@ const ICONS = {
   xCircle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/></svg>',
   pencil: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
   optionsList: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="2"/><path d="M11 6h9"/><circle cx="5" cy="12" r="2"/><path d="M11 12h9"/><circle cx="5" cy="18" r="2"/><path d="M11 18h9"/></svg>',
-  coin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/></svg>',
+  // One coin for the whole app: a struck coin rather than two bare
+  // concentric rings - a milled rim, and a crescent on the face, which is
+  // the app's own mark.
+  coin: '<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9.2" fill="currentColor" opacity="0.16"/><circle cx="12" cy="12" r="9.2" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="6.6" stroke="currentColor" stroke-width="1" opacity="0.55" stroke-dasharray="1.6 1.7"/><path d="M14.6 8.3a4.2 4.2 0 1 0 0 7.4 5 5 0 0 1 0-7.4Z" fill="currentColor"/></svg>',
   headphones: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15v-3a9 9 0 0 1 18 0v3"/><path d="M3 16a2 2 0 0 1 2-2h1v6H5a2 2 0 0 1-2-2Z"/><path d="M21 16a2 2 0 0 0-2-2h-1v6h1a2 2 0 0 0 2-2Z"/></svg>',
 };
 // ---------- Wiring that cannot bring the app down ----------
@@ -2066,6 +2071,21 @@ async function renderMeaningOfTheDay() {
   card.classList.remove("hidden");
 }
 
+// Which weekday the week starts on where this person is - Saturday across
+// most of the Arab world, Sunday in the US, Monday in much of Europe. The
+// browser knows (Intl.Locale#getWeekInfo, and firstDay before that); Saturday
+// is the fallback because the app's audience is overwhelmingly there, but it
+// is a fallback rather than an assumption.
+function localFirstWeekday() {
+  try {
+    const loc = new Intl.Locale(navigator.language || "ar");
+    const info = typeof loc.getWeekInfo === "function" ? loc.getWeekInfo() : loc.weekInfo;
+    // Intl counts Monday as 1 and Sunday as 7; Date#getDay counts Sunday as 0.
+    if (info && info.firstDay) return info.firstDay % 7;
+  } catch (e) { /* older engine: fall through */ }
+  return 6; // Saturday
+}
+
 function renderWirdCard() {
   const type = state.wirdTargetType || "ayahs";
   const counts = type === "pages" ? state.dailyPageCounts : state.dailyCounts;
@@ -2096,7 +2116,8 @@ function renderWirdCard() {
     // days of history.
     const start = new Date();
     start.setHours(0, 0, 0, 0);
-    start.setDate(start.getDate() - ((start.getDay() + 1) % 7)); // Sat = 6 -> 0 back
+    const firstDay = localFirstWeekday();
+    start.setDate(start.getDate() - ((start.getDay() - firstDay + 7) % 7));
     for (let i = 0; i < 7; i++) {
       const d = new Date(start);
       d.setDate(start.getDate() + i);
@@ -2738,7 +2759,7 @@ on("btn-mushaf-reader-close", "click", closeMushafReader);
 (() => {
   const SWIPE_MIN = 70;        // px of travel before it counts as a swipe
   const SWIPE_MAX_OFF_AXIS = 0.5; // |dy| may be at most half of |dx|
-  const NO_SWIPE = "input, textarea, select, [contenteditable], .swatch-grid, .mode-switch, .ayah-scroll, .mushaf-map-grid, .combo-list, [data-no-swipe]";
+  const NO_SWIPE = "input, textarea, select, [contenteditable], .swatch-grid, .mode-switch, .ayah-scroll, .mushaf-map-grid, .combo-list, .wird-week, .activity-grid, [data-no-swipe]";
   let startX = null, startY = null, startedOn = null;
 
   const overlayOpen = () => document.documentElement.classList.contains("modal-open");
@@ -4998,20 +5019,14 @@ function showConfirmModal(title, message, confirmLabel, onConfirm) {
   document.getElementById("info-modal-overlay").classList.remove("modal-closed");
 }
 
-on("btn-learn-meanings", "click", async () => {
-  openInfoModal("معاني الكلمات", `<p class="muted">جاري تحميل المعاني...</p>`);
-  const pointer = state.learningPointer;
-  try {
-    const meanings = await fetchWordMeanings(pointer.surah, pointer.ayah);
-    if (!meanings.length) throw new Error("empty");
-    const body = meanings[0].isWholeAyah
-      ? `<p>${meanings[0].meaning}</p>`
-      : meanings.map((m) => `<div class="meaning-chip"><span class="mw-ar">${m.text}</span><span>${m.meaning || "—"}</span></div>`).join("");
-    document.getElementById("info-modal-body").innerHTML = body;
-  } catch (e) {
-    document.getElementById("info-modal-body").innerHTML = `<p class="muted">تعذّر تحميل معاني الكلمات حاليًا.</p>`;
-  }
-});
+// "معاني الكلمات" is gone, and not because it was crowded: it could never
+// show word meanings. quran.com carries word-by-word translations in 71
+// languages and Arabic is not one of them - asking for
+// word_translation_language=ar returns the English gloss - so
+// fetchWordMeanings always failed its all-Arabic check and fell through to
+// the whole-ayah Muyassar tafsir, which is exactly what the التفسير button
+// beside it already showed. Two buttons, one result. The remaining button
+// says what it actually does.
 
 // The تسميع round's own button. Same path as the standalone تسميع button
 // below it: a clean recitation completes the round.
@@ -6812,7 +6827,6 @@ on("listen-write-input", "keydown", (e) => { if (e.key === "Enter") submitListen
 // would cut before the reciter had said anything.
 on("review-audio", "timeupdate", stopAtCutPoint);
 setHTML("btn-learn-tafsir", iconLabel("book", "التفسير"));
-setHTML("btn-learn-meanings", iconLabel("bulb", "معاني الكلمات"));
 setHTML("btn-learn-mask-more", iconLabel("eyeOff", "إخفاء المزيد"));
 setHTML("btn-learn-partial-wrong", iconLabel("xCircle", "أخطأت في كلمة"));
 setHTML("btn-learn-partial-correct", iconLabel("check", "تذكرتها جيدًا"));
