@@ -6531,6 +6531,7 @@ function suggestFromChoices() {
 
 let listenPrimed = false;   // the opening is queued for this ayah
 let listenCutAt = null;     // seconds at which to stop, once we know the length
+let listenSplitIndex = 0;   // how many words the reciter got through before stopping
 
 function listenModeOn() {
   return state.listenMode === true;
@@ -6572,6 +6573,8 @@ function primeListening() {
   if (!audio) return;
   listenPrimed = true;
   listenCutAt = null;
+  listenSplitIndex = 0;
+  hideListenFinishChoices();
   setListenLead("استمع لأول الآية، ثم أكملها من حفظك.");
   applyListenVeil();
   // The grade buttons belong after the recall, not before it.
@@ -6600,9 +6603,108 @@ function stopAtCutPoint() {
   if (!audio || !listenModeOn() || !listenPrimed || listenCutAt === null) return;
   if (audio.currentTime >= listenCutAt) {
     audio.pause();
-    listenCutAt = null; // spent: "أكمل الآية" must play through to the end
-    setListenLead("أكملها من حفظك… ثم اسمع البقية أو أظهر النص.");
+    // Where he stopped, in words. Recitation is not evenly paced, so this is
+    // an estimate from the fraction of the clip played - but it only has to
+    // be close: it decides where the seam is drawn, and the seam is then
+    // shown, not hidden, so a word either side is visible rather than wrong.
+    const played = audio.duration ? audio.currentTime / audio.duration : 0.35;
+    listenSplitIndex = Math.min(currentWords.length - 1,
+      Math.max(1, Math.round(currentWords.length * played)));
+    listenCutAt = null; // spent: "اسمع البقية" must play through to the end
+    setListenLead("توقّف القارئ هنا. أكملها من حفظك:");
+    showListenFinishChoices();
   }
+}
+
+// The part he has not recited - what the person is being asked for.
+function listenRemainingText() {
+  return currentWords.slice(listenSplitIndex).join(" ");
+}
+
+function showListenFinishChoices() {
+  const finish = document.getElementById("listen-finish");
+  if (finish) finish.classList.remove("hidden");
+  const row = document.getElementById("listen-write-row");
+  if (row) row.classList.add("hidden");
+}
+
+function hideListenFinishChoices() {
+  ["listen-finish", "listen-write-row"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add("hidden");
+  });
+}
+
+// Completing by voice: the same recitation check the app already uses,
+// pointed at the remainder instead of the whole ayah.
+function finishListenBySaying() {
+  if (!voiceSupported()) {
+    showToast("التسميع غير مدعوم في هذا المتصفح. أكملها كتابةً.", "error");
+    finishListenByWriting();
+    return;
+  }
+  const audio = document.getElementById("review-audio");
+  if (audio) audio.pause();
+  openVoiceModal(listenRemainingText(), () => {
+    closeVoiceModal();
+    revealListenSeam(null);
+  }, { continueOnLowAccuracy: true, onFail: () => revealListenSeam(null) });
+}
+
+function finishListenByWriting() {
+  const row = document.getElementById("listen-write-row");
+  const finish = document.getElementById("listen-finish");
+  if (finish) finish.classList.add("hidden");
+  if (!row) return;
+  row.classList.remove("hidden");
+  const input = document.getElementById("listen-write-input");
+  if (input) { input.value = ""; input.focus(); }
+}
+
+function submitListenWriting() {
+  const input = document.getElementById("listen-write-input");
+  if (!input) return;
+  const typed = quranWords(input.value.trim());
+  revealListenSeam(typed);
+}
+
+// The whole ayah, with the seam shown: what the reciter gave, and what the
+// person supplied. When they wrote it, each of their words is marked right
+// or wrong against the text - seeing the miss in place is the point of
+// having typed it at all.
+function revealListenSeam(typedWords) {
+  const audio = document.getElementById("review-audio");
+  if (audio) audio.pause();
+  listenPrimed = false;
+  hideListenFinishChoices();
+  applyListenVeil();
+
+  const target = document.getElementById("review-text");
+  if (target) {
+    let wrong = 0;
+    target.innerHTML = currentWords.map((w, i) => {
+      if (i < listenSplitIndex) return `<span class="word seam-reciter">${w}</span>`;
+      if (!typedWords) return `<span class="word seam-you">${w}</span>`;
+      const given = typedWords[i - listenSplitIndex];
+      const okWord = given && answerMatchesQuranWord(w, given);
+      if (!okWord) wrong++;
+      return `<span class="word seam-you${okWord ? "" : " seam-wrong"}">${w}</span>`;
+    }).join(" ");
+    const hint = document.getElementById("review-reveal-hint");
+    if (hint) {
+      hint.classList.remove("hidden");
+      const said = currentWords.length - listenSplitIndex;
+      hint.textContent = typedWords
+        ? (wrong === 0
+            ? `✅ أكملتها كاملة — ${arabicCount(said, "كلمة", "كلمتان", "كلمات", "كلمة")}`
+            : `الملوّن بالأحمر ما اختلف عن النص (${wrong} من ${said})`)
+        : "ما قبل الفاصل من القارئ، وما بعده منك.";
+    }
+  }
+  maskLevel = 0;
+  document.getElementById("grade-controls").classList.remove("hidden");
+  fitReviewAyahHeight();
+  scheduleAnswerDockUpdate();
 }
 
 function listenContinue() {
@@ -6624,6 +6726,7 @@ function listenReveal() {
   const audio = document.getElementById("review-audio");
   if (audio) audio.pause();
   listenPrimed = false;
+  hideListenFinishChoices();
   applyListenVeil();
   maskLevel = 0;
   renderMaskedText();
@@ -6687,6 +6790,10 @@ on("btn-review-listen", "click", toggleListenMode);
 on("btn-listen-continue", "click", listenContinue);
 on("btn-listen-again", "click", listenFromStart);
 on("btn-listen-reveal", "click", listenReveal);
+on("btn-listen-say", "click", finishListenBySaying);
+on("btn-listen-write", "click", finishListenByWriting);
+on("btn-listen-write-submit", "click", submitListenWriting);
+on("listen-write-input", "keydown", (e) => { if (e.key === "Enter") submitListenWriting(); });
 // The cut is enforced on the clock rather than with a timer: a timer set
 // when play() is called drifts with buffering, and on a slow connection it
 // would cut before the reciter had said anything.

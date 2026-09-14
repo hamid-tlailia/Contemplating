@@ -752,8 +752,20 @@
           </div>
           <div class="listen-veil hidden" id="listen-veil">
             <p class="listen-veil-lead" id="listen-lead">استمع لأول الآية، ثم أكملها من حفظك.</p>
+            <!-- Two ways to carry on from where the reciter stopped. They
+                 only appear once he has actually stopped: before that the
+                 only thing to do is listen. -->
+            <div class="listen-finish hidden" id="listen-finish">
+              <button class="btn primary" id="btn-listen-say">🎤 أكملها تسميعًا</button>
+              <button class="btn primary" id="btn-listen-write">✍️ أكملها كتابةً</button>
+            </div>
+            <div class="listen-write-row hidden" id="listen-write-row">
+              <input type="text" id="listen-write-input" autocomplete="off" autocapitalize="off"
+                     spellcheck="false" placeholder="اكتب بقية الآية…">
+              <button class="btn primary" id="btn-listen-write-submit">تحقّق</button>
+            </div>
             <div class="listen-actions">
-              <button class="btn primary" id="btn-listen-continue">▶ أكمل الآية</button>
+              <button class="btn" id="btn-listen-continue">▶ اسمع البقية</button>
               <button class="btn" id="btn-listen-again">أعد من أولها</button>
               <button class="btn" id="btn-listen-reveal">👁 أظهر النص</button>
             </div>
