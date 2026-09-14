@@ -55,7 +55,7 @@ const BACKGROUNDS = [
   { id: "waves", name: "أمواج هادئة", points: 60 },
   { id: "stars-scatter", name: "سماء مرصّعة", points: 80 },
   { id: "arabesque", name: "أرابيسك متشابك", points: 100 },
-  { id: "palm-fronds", name: "سعف النخيل", points: 120 },
+  { id: "lanterns", name: "فوانيس رمضان", points: 120 },
 ];
 
 // Kept deliberately modest - these are a motivational layer on top of real
@@ -1490,6 +1490,7 @@ function switchTab(tab, { fromHistory = false, from = null } = {}) {
     setTimeout(() => leaving.classList.remove("leaving", out), 300);
   }
   slideDirection = null;
+  syncFooterVisibility();
   if (tab === "dashboard") renderDashboard();
   if (tab === "review" && !isChallengeMode && !isEphemeralReview) startReviewSession();
   if (tab === "learn") loadLearnAyah();
@@ -5019,14 +5020,99 @@ function showConfirmModal(title, message, confirmLabel, onConfirm) {
   document.getElementById("info-modal-overlay").classList.remove("modal-closed");
 }
 
-// "معاني الكلمات" is gone, and not because it was crowded: it could never
-// show word meanings. quran.com carries word-by-word translations in 71
-// languages and Arabic is not one of them - asking for
-// word_translation_language=ar returns the English gloss - so
-// fetchWordMeanings always failed its all-Arabic check and fell through to
-// the whole-ayah Muyassar tafsir, which is exactly what the التفسير button
-// beside it already showed. Two buttons, one result. The remaining button
-// says what it actually does.
+// ---------- Word meanings, from a source that actually has them ----------
+//
+// The old معاني الكلمات button could not work: quran.com carries word-by-word
+// translations in 71 languages and Arabic is not one of them (asking for
+// word_translation_language=ar hands back the English gloss), and
+// alquran.cloud's "معاني مفردات القرآن" edition is English too despite the
+// name. Neither carries an Arabic لemma or root either.
+//
+// تفسير الجلالين does. It is written as interleaved glossing - each Quranic
+// word in guillemets followed by what it means:
+//
+//   «ذلك» أي هذا «الكتاب» الذي يقرؤه محمد «لا ريب» لا شك «فيه» ...
+//
+// which is غريب القرآن in its classical form, and parses cleanly into word
+// and meaning. So the meanings are real scholarship rather than invented,
+// and they come from an edition the app already has access to.
+
+const wordGlossCache = {};
+
+// Splits the Jalalayn text into {word, meaning} pairs. Anything before the
+// first guillemet is preamble and anything the parse cannot place is handed
+// back whole, so a verse the pattern does not fit still shows something
+// true rather than nothing.
+function parseJalalaynGloss(text) {
+  if (!text) return { pairs: [], rest: "" };
+  const pairs = [];
+  const re = /«([^»]+)»\s*([^«]*)/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const word = m[1].trim();
+    const meaning = (m[2] || "").trim().replace(/^أي\s+/, "");
+    if (word) pairs.push({ word, meaning });
+  }
+  const firstQuote = text.indexOf("«");
+  const rest = firstQuote > 0 ? text.slice(0, firstQuote).trim() : "";
+  return { pairs, rest };
+}
+
+async function fetchWordGloss(surah, ayah) {
+  const key = `${surah}:${ayah}`;
+  if (wordGlossCache[key]) return wordGlossCache[key];
+  const res = await fetchWithTimeout(`${API_BASE}/ayah/${key}/ar.jalalayn`, 7000);
+  const json = await res.json();
+  const text = json && json.data && json.data.text;
+  if (!text) throw new Error("no gloss");
+  const parsed = parseJalalaynGloss(text);
+  wordGlossCache[key] = parsed;
+  return parsed;
+}
+
+function glossHTML({ pairs, rest }) {
+  if (!pairs.length) return `<p>${rest || ""}</p>`;
+  const chips = pairs.map((p) => `
+    <div class="meaning-chip">
+      <span class="mw-ar">${p.word}</span>
+      <span>${p.meaning || "—"}</span>
+    </div>`).join("");
+  return (rest ? `<p class="muted gloss-preamble">${rest}</p>` : "") + chips +
+    `<p class="muted gloss-source">من تفسير الجلالين</p>`;
+}
+
+// One modal, two ways of reading the same ayah: the plain meaning of the
+// whole verse, and the same verse word by word.
+async function openAyahMeaning(surah, ayah, mode) {
+  const title = mode === "words" ? "معاني الكلمات" : "التفسير";
+  openInfoModal(title, `<p class="muted">جاري التحميل...</p>`);
+  const body = document.getElementById("info-modal-body");
+  const tabs = `
+    <div class="gloss-tabs">
+      <button class="btn gloss-tab${mode === "tafsir" ? " active" : ""}" data-gloss="tafsir">التفسير</button>
+      <button class="btn gloss-tab${mode === "words" ? " active" : ""}" data-gloss="words">معاني الكلمات</button>
+    </div>`;
+  try {
+    let inner;
+    if (mode === "words") {
+      inner = glossHTML(await fetchWordGloss(surah, ayah));
+    } else {
+      const res = await fetchWithTimeout(`${API_BASE}/ayah/${surah}:${ayah}/ar.muyassar`, 7000);
+      const json = await res.json();
+      const text = json && json.data && json.data.text;
+      if (!text) throw new Error("no tafsir");
+      inner = `<p>${text}</p><p class="muted gloss-source">من التفسير الميسّر</p>`;
+    }
+    if (body) body.innerHTML = tabs + inner;
+  } catch (e) {
+    if (body) body.innerHTML = tabs + `<p class="muted">تعذّر التحميل حاليًا. تحقق من الاتصال بالإنترنت.</p>`;
+  }
+  if (body) {
+    body.querySelectorAll(".gloss-tab").forEach((btn) => {
+      btn.addEventListener("click", () => openAyahMeaning(surah, ayah, btn.dataset.gloss));
+    });
+  }
+}
 
 // The تسميع round's own button. Same path as the standalone تسميع button
 // below it: a clean recitation completes the round.
@@ -6806,7 +6892,7 @@ function renderMaskedText() {
 
 setupAudioControls("review-audio-controls", "review-audio");
 setHTML("btn-mask-more", iconLabel("eyeOff", "إخفاء المزيد"));
-setHTML("btn-review-tafsir", iconLabel("book", "التفسير"));
+setHTML("btn-review-tafsir", ICONS.book);
 setHTML("btn-review-voice", iconLabel("mic", "اختبر بالتسميع"));
 renderListenButton();
 on("btn-khatm-read", "click", () => { switchTab("dashboard"); setTimeout(() => {
@@ -6826,7 +6912,7 @@ on("listen-write-input", "keydown", (e) => { if (e.key === "Enter") submitListen
 // when play() is called drifts with buffering, and on a slow connection it
 // would cut before the reciter had said anything.
 on("review-audio", "timeupdate", stopAtCutPoint);
-setHTML("btn-learn-tafsir", iconLabel("book", "التفسير"));
+setHTML("btn-learn-tafsir", ICONS.book);
 setHTML("btn-learn-mask-more", iconLabel("eyeOff", "إخفاء المزيد"));
 setHTML("btn-learn-partial-wrong", iconLabel("xCircle", "أخطأت في كلمة"));
 setHTML("btn-learn-partial-correct", iconLabel("check", "تذكرتها جيدًا"));
@@ -6849,12 +6935,12 @@ async function fetchTafsirText(surah, ayah) {
 function setupTafsirButton(buttonId, getRef) {
   const btn = document.getElementById(buttonId);
   if (!btn) return;
-  btn.addEventListener("click", async () => {
+  btn.addEventListener("click", () => {
     const ref = getRef();
     if (!ref) return;
-    openInfoModal("التفسير", `<p class="muted">جاري تحميل التفسير...</p>`);
-    const text = await fetchTafsirText(ref.surah, ref.ayah);
-    document.getElementById("info-modal-body").innerHTML = `<p>${text}</p>`;
+    // Opens on the tafsir, with the word-by-word reading one tap away in
+    // the same sheet rather than behind a second button in the row.
+    openAyahMeaning(ref.surah, ref.ayah, "tafsir");
   });
 }
 
@@ -7686,6 +7772,15 @@ startUp("تبويب التصفح", initBrowseTab);
 // Set on every launch, not only when the toggle is touched: the timer lives
 // in the page, and the page is new.
 startUp("تذكير الورد", scheduleWirdReminder);
+// The footer names where the ayat come from and where progress is kept.
+// It is true on every tab and needed on none of them but the first: under
+// the drill, the review and the browser it was a third card of small print
+// repeating itself. It follows the route instead.
+function syncFooterVisibility() {
+  const footer = document.querySelector(".app-footer");
+  if (footer) footer.classList.toggle("hidden", document.documentElement.dataset.route !== "dashboard");
+}
+
 startUp("شريط الاتصال", () => {
   const btn = document.getElementById("btn-connection-retry");
   if (btn) btn.addEventListener("click", retryFailedInits);
@@ -7703,6 +7798,7 @@ startUp("العنوان", () => {
   const initialOverlays = initialRoute.overlays.filter((name) => OVERLAY_ROUTES[name].restorable());
   writeRoute(initialRoute.tab, initialOverlays, true);
   switchTab(initialRoute.tab, { fromHistory: true });
+  syncFooterVisibility();
   applyOverlays(initialOverlays);
 });
 // The markup that shipped with the page carries digits too, and it was drawn

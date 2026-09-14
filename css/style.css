@@ -479,6 +479,44 @@ html:root[data-theme="lastthird"] { background-image: none; }
   text-underline-offset: 5px;
 }
 
+/* التفسير, on the reading box rather than in the row of buttons under it.
+   It belongs to the ayah, and as an icon on the frame's left edge it stops
+   competing with the controls that belong to the drill. Physical left: the
+   app is RTL, so this is the far end of every line of text. */
+.ayah-side-btn {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  color: var(--primary);
+  cursor: pointer;
+  padding: 0;
+}
+.ayah-side-btn svg { width: 17px; height: 17px; }
+@media (hover: hover) { .ayah-side-btn:hover { background: var(--surface); } }
+
+/* The two readings of one ayah, side by side in the same sheet. */
+.gloss-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+.gloss-tabs .btn { flex: 1; padding: 7px 10px; font-size: 0.85rem; }
+.gloss-tab.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+.gloss-preamble { margin: 0 0 10px; }
+.gloss-source { margin: 12px 0 0; font-size: 0.76rem; text-align: left; }
+
+/* The footer follows the route: it belongs under the dashboard, not under
+   every tab. */
+.app-footer.hidden { display: none; }
+
+.contact-link { display: block; margin-top: 8px; text-align: center; text-decoration: none; }
+.contact-url { margin: 6px 0 0; font-size: 0.74rem; word-break: break-all; text-align: center; }
+
 /* The completion screen. Quiet rather than confetti-loud: finishing the
    Qur'an is not a level-up. */
 .khatm-panel { text-align: center; }
@@ -625,16 +663,15 @@ html.modal-open, html.modal-open body { overflow: hidden; }
    makes the woven look without drawing a single knot by hand. */
 :root[data-bg="arabesque"] {
   background-image:
-    repeating-linear-gradient(60deg, rgba(31,111,92,0.18) 0 2px, transparent 2px 18px),
-    repeating-linear-gradient(-60deg, rgba(31,111,92,0.18) 0 2px, transparent 2px 18px),
-    repeating-linear-gradient(0deg, rgba(185,139,42,0.10) 0 2px, transparent 2px 36px);
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'%3E%3Cg fill='none' stroke='%231f6f5c' stroke-opacity='0.3' stroke-width='1.6' stroke-linejoin='round'%3E%3Cpath d='M40 6 62 18v24L40 54 18 42V18Z'/%3E%3Cpath d='M40 18 51 24v12l-11 6-11-6V24Z'/%3E%3Cpath d='M40 6v12M62 18 51 24M62 42 51 36M40 54V42M18 42l11-6M18 18l11 6'/%3E%3C/g%3E%3Cg fill='%23b98b2a' fill-opacity='0.3'%3E%3Ccircle cx='40' cy='30' r='2.4'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 80px 80px;
 }
 /* Palm fronds: a leaf drawn once - midrib and ribs either side - and tiled
    in alternating rows so it reads as fronds rather than as a stamp. */
-:root[data-bg="palm-fronds"] {
+:root[data-bg="lanterns"] {
   background-image:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='72' viewBox='0 0 72 72'%3E%3Cg fill='none' stroke='%231f6f5c' stroke-opacity='0.3' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M36 8v56'/%3E%3Cpath d='M36 16 24 24M36 16l12 8M36 26 23 35M36 26l13 9M36 36 24 45M36 36l12 9M36 46 26 54M36 46l10 8'/%3E%3C/g%3E%3C/svg%3E");
-  background-size: 72px 72px;
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='88' height='88' viewBox='0 0 88 88'%3E%3Cg fill='none' stroke='%23b98b2a' stroke-opacity='0.34' stroke-width='1.6' stroke-linejoin='round' stroke-linecap='round'%3E%3Cpath d='M44 14v6'/%3E%3Cpath d='M38 20h12l-2 4H40Z'/%3E%3Cpath d='M40 24h8l4 14-8 12-8-12Z'/%3E%3Cpath d='M40 24 36 38M48 24l4 14M36 38h16'/%3E%3Cpath d='M44 50v6'/%3E%3Cpath d='M41 56h6'/%3E%3C/g%3E%3Cg fill='%23b98b2a' fill-opacity='0.22'%3E%3Cpath d='M40 26h8l3 11-7 10-7-10Z'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 88px 88px;
 }
 :root[data-bg="stars-scatter"] {
   background-image:
@@ -3011,7 +3048,6 @@ main#app {
 /* The count and the coin on one baseline. The digits are a heavier, taller
    face than the icon, so centring the boxes still left the number riding
    above the coin. */
-.points-display-value > strong { position: relative; top: 1px; line-height: 1; }
 .points-display-value {
   display: inline-flex;
   align-items: center;
@@ -3023,7 +3059,9 @@ main#app {
   font-size: 1.1rem;
   line-height: 1;
   position: relative;
-  top: 1px; /* same nudge as the header: digits sit high in their line box */
+  /* The digits are a heavier, taller face than the coin beside them, so
+     centring the two boxes still leaves the number riding above it. */
+  top: 3px;
 }
 
 /* Shared by every cosmetic collectible grid (reciters, themes, fonts,
@@ -3091,13 +3129,12 @@ main#app {
 .swatch.theme-lastthird .swatch-sub { color: #a89f90; }
 .swatch.bg-arabesque {
   background:
-    repeating-linear-gradient(60deg, rgba(31,111,92,0.4) 0 2px, transparent 2px 12px),
-    repeating-linear-gradient(-60deg, rgba(31,111,92,0.4) 0 2px, transparent 2px 12px),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'%3E%3Cg fill='none' stroke='%231f6f5c' stroke-opacity='0.55' stroke-width='2' stroke-linejoin='round'%3E%3Cpath d='M40 6 62 18v24L40 54 18 42V18Z'/%3E%3Cpath d='M40 18 51 24v12l-11 6-11-6V24Z'/%3E%3C/g%3E%3C/svg%3E") center/50px 50px repeat,
     var(--surface);
 }
-.swatch.bg-palm-fronds {
+.swatch.bg-lanterns {
   background:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='72' viewBox='0 0 72 72'%3E%3Cg fill='none' stroke='%231f6f5c' stroke-opacity='0.45' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='M36 8v56'/%3E%3Cpath d='M36 16 24 24M36 16l12 8M36 26 23 35M36 26l13 9M36 36 24 45M36 36l12 9M36 46 26 54M36 46l10 8'/%3E%3C/g%3E%3C/svg%3E") center/46px 46px repeat,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='88' height='88' viewBox='0 0 88 88'%3E%3Cg fill='none' stroke='%23b98b2a' stroke-opacity='0.6' stroke-width='2' stroke-linejoin='round' stroke-linecap='round'%3E%3Cpath d='M44 14v6'/%3E%3Cpath d='M38 20h12l-2 4H40Z'/%3E%3Cpath d='M40 24h8l4 14-8 12-8-12Z'/%3E%3Cpath d='M36 38h16'/%3E%3Cpath d='M44 50v6M41 56h6'/%3E%3C/g%3E%3C/svg%3E") center/52px 52px repeat,
     var(--surface);
 }
 
