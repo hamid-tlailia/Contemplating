@@ -133,12 +133,13 @@
       <button id="btn-settings-close" class="icon-only-btn" aria-label="إغلاق">✕</button>
     </div>
     <div class="points-display-row">
-      <span class="points-display-label">نقاطك</span>
+      <span class="points-display-label" id="points-display-label">نقاطك</span>
       <span class="points-display-value">
         <span class="coin-icon" id="settings-coin-icon"></span>
         <strong id="points-display">0</strong>
       </span>
     </div>
+    <p class="muted points-note hidden" id="points-note"></p>
     <p class="settings-section-note">🪙 زينة مصحفك — اختيارية بالكامل، ولا تفتح شيئًا في الحفظ أو المراجعة.</p>
 
     <!-- Every group is a closed accordion: the sheet opens as a short list of
@@ -549,6 +550,22 @@
 
   <!-- LEARN (guided sequential memorization) -->
   <section id="tab-learn" class="tab-panel">
+
+    <!-- The end of the whole thing. It gets a screen of its own rather than
+         a changed heading over a drill that has nothing left to drill. -->
+    <div class="panel khatm-panel hidden" id="khatm-panel">
+      <div class="khatm-mark" aria-hidden="true">۞</div>
+      <h2>تمَّ بحمد الله</h2>
+      <p class="khatm-lead">أتممتَ حفظ القرآن الكريم كاملًا — ٦٢٣٦ آية.</p>
+      <p class="khatm-since muted" id="khatm-since"></p>
+      <p class="khatm-hadith">«خيرُكم من تعلَّم القرآن وعلَّمه»</p>
+      <p class="muted">الحفظ انتهى، والتعاهد لا ينتهي: «تعاهدوا هذا القرآن، فوالذي نفسي بيده لهو أشدُّ تفلُّتًا من الإبل في عُقُلها».</p>
+      <div class="khatm-actions">
+        <button class="btn primary" data-tab="review">تعاهد ما حفظت</button>
+        <button class="btn" id="btn-khatm-read">📖 اقرأ من المصحف</button>
+        <button class="btn" id="btn-khatm-share">🌿 شارك تمامك</button>
+      </div>
+    </div>
     <div class="panel learn-panel">
       <div class="learn-header">
         <div>

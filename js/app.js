@@ -213,6 +213,10 @@ function loadState() {
       parsed.wirdPlan = parsed.wirdPlan || null;
       parsed.wirdNotifiedOn = parsed.wirdNotifiedOn || null;
       parsed.lastBackupOn = parsed.lastBackupOn || null;
+      // Nobody who has been using the app has this yet; seed it from the
+      // balance, which is the closest honest guess (it undercounts whatever
+      // they have already spent, and never overcounts).
+      if (parsed.pointsEarned == null) parsed.pointsEarned = parsed.points || 0;
       parsed.listenMode = parsed.listenMode === true;
       parsed.backupNudgedOn = parsed.backupNudgedOn || null;
       parsed.autoVaryModes = parsed.autoVaryModes !== false;
@@ -264,6 +268,7 @@ function loadState() {
     wirdPlan: null, // {anchor, time:"HH:MM", place, notify} - the when/where commitment
     wirdNotifiedOn: null, // "YYYY-MM-DD" - the day the reminder last went out, so it goes out once
     listenMode: false, // review by ear: the ayah veiled, its opening played, you continue
+    pointsEarned: 0, // lifetime points earned; the balance is spent, this is not
     lastBackupOn: null, // "YYYY-MM-DD" - the day a backup file was last saved
     backupNudgedOn: null, // "YYYY-MM-DD" - the day we last suggested saving one
     autoVaryModes: true, // rotate the test mode across an ayah's three rounds
@@ -525,8 +530,39 @@ function checkWirdCompletionReward() {
 function addPoints(amount) {
   if (!amount) return;
   state.points += amount;
+  // Kept separately from the balance because the balance is spent and this
+  // is not: once everything in the shop is owned - 1,840 points buys all of
+  // it, which a daily user passes in a few months - the balance stops
+  // meaning anything and just climbs. The lifetime figure is what the
+  // header keeps showing after that, and it only ever goes up because it
+  // is a record of work done rather than money in a pocket.
+  state.pointsEarned = (state.pointsEarned || 0) + amount;
   saveState();
   renderPointsDisplay();
+}
+
+// Everything purchasable, in one list, so "is there anything left to buy"
+// is a question with an answer rather than four separate ones.
+function allCollectibles() {
+  return [
+    { items: RECITERS, owned: state.unlockedReciters },
+    { items: THEMES, owned: state.unlockedThemes },
+    { items: FONTS, owned: state.unlockedFonts },
+    { items: BACKGROUNDS, owned: state.unlockedBackgrounds },
+  ];
+}
+
+function everythingOwned() {
+  return allCollectibles().every(({ items, owned }) =>
+    items.every((i) => (owned || []).includes(i.id)));
+}
+
+function cheapestUnowned() {
+  let best = Infinity;
+  allCollectibles().forEach(({ items, owned }) => {
+    items.forEach((i) => { if (!(owned || []).includes(i.id)) best = Math.min(best, i.points); });
+  });
+  return best === Infinity ? null : best;
 }
 
 // Shared click-purchase flow for every cosmetic collectible grid (reciters,
@@ -561,10 +597,23 @@ function purchaseOrSelect(item, ownedList, { onSelect, confirmTitle, unlockedNou
 }
 
 function renderPointsDisplay() {
+  const done = everythingOwned();
+  // With nothing left to buy, a balance is just a number going up. The
+  // lifetime total at least says what it counts.
+  const shown = done ? (state.pointsEarned || state.points) : state.points;
   const el = document.getElementById("points-display");
-  if (el) el.textContent = state.points;
+  if (el) el.textContent = shown;
   const headerEl = document.getElementById("header-points-value");
-  if (headerEl) headerEl.textContent = state.points;
+  if (headerEl) headerEl.textContent = shown;
+  const note = document.getElementById("points-note");
+  if (note) {
+    note.textContent = done
+      ? "فتحتَ كل المقتنيات — هذا مجموع ما جمعته منذ البداية."
+      : `أقرب ما يمكنك فتحه: ${cheapestUnowned()} نقطة`;
+    note.classList.toggle("hidden", !done && cheapestUnowned() === null);
+  }
+  const label = document.getElementById("points-display-label");
+  if (label) label.textContent = done ? "حصادك" : "نقاطك";
 }
 
 // Two changes from a plain consecutive-day count, both about the streak
@@ -4048,9 +4097,52 @@ function getOrCreateLearningItem(surahNumber, surahName, ayahObj) {
   return state.ayahs[key];
 }
 
+// ---------- The end of the whole thing ----------
+//
+// Walking off the end of the last surah used to change the heading to
+// "أتممت حفظ القرآن كاملاً" and leave everything else exactly where it was:
+// the mode switch, the audio controls, the answer area, all of them live
+// over an ayah that no longer existed. Someone who had just finished the
+// Qur'an was left on a screen that looked broken. It gets a screen of its
+// own now, and the drill it has nothing left to drill gets put away.
+
+function quranIsMemorized() {
+  return memorizedAyahCount() >= QURAN_AYAH_COUNT;
+}
+
+function showKhatm() {
+  const panel = document.getElementById("khatm-panel");
+  if (!panel) return;
+  panel.classList.remove("hidden");
+  // The drill has nothing left to drill, so it is put away rather than
+  // left running over an ayah that no longer exists.
+  document.querySelectorAll("#tab-learn > .panel:not(.khatm-panel)").forEach((el) => el.classList.add("hidden"));
+  const since = document.getElementById("khatm-since");
+  if (since) {
+    const first = Object.values(state.ayahs || {})
+      .map((a) => a && a.memorizedOn)
+      .filter(Boolean)
+      .sort()[0];
+    since.textContent = first ? `بدأت في ${formatArabicDate(first)} — ${formatDurationSince(first)}` : "";
+  }
+}
+
+function hideKhatm() {
+  const panel = document.getElementById("khatm-panel");
+  if (!panel || panel.classList.contains("hidden")) return;
+  panel.classList.add("hidden");
+  document.querySelectorAll("#tab-learn > .panel").forEach((el) => el.classList.remove("hidden"));
+  panel.classList.add("hidden");   // ...except this one
+}
+
 async function loadLearnAyah() {
   const pointer = state.learningPointer;
   closeInfoModal();
+  // The pointer walking past surah 114 is one way to arrive here; adding
+  // the last ayahs from the browse tab is another, and it never moves the
+  // pointer at all.
+  if (quranIsMemorized()) { showKhatm(); return; }
+  hideKhatm();
 
   let ayahs, surahs, meta;
   try {
@@ -4071,9 +4163,7 @@ async function loadLearnAyah() {
       saveState();
       return loadLearnAyah();
     }
-    document.getElementById("learn-ref").textContent = "🎉 أتممت حفظ القرآن كاملاً!";
-    document.getElementById("learn-round-info").textContent = "ما شاء الله تبارك الله";
-    document.getElementById("mcq-options").innerHTML = "";
+    showKhatm();
     return;
   }
 
@@ -6588,6 +6678,11 @@ setHTML("btn-mask-more", iconLabel("eyeOff", "إخفاء المزيد"));
 setHTML("btn-review-tafsir", iconLabel("book", "التفسير"));
 setHTML("btn-review-voice", iconLabel("mic", "اختبر بالتسميع"));
 renderListenButton();
+on("btn-khatm-read", "click", () => { switchTab("dashboard"); setTimeout(() => {
+  const card = document.querySelector(".mushaf-card");
+  if (card) card.scrollIntoView({ behavior: "smooth", block: "center" });
+}, 120); });
+on("btn-khatm-share", "click", () => shareProgress());
 on("btn-review-listen", "click", toggleListenMode);
 on("btn-listen-continue", "click", listenContinue);
 on("btn-listen-again", "click", listenFromStart);
