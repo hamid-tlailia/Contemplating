@@ -6786,6 +6786,40 @@ function submitListenWriting() {
 // person supplied. When they wrote it, each of their words is marked right
 // or wrong against the text - seeing the miss in place is the point of
 // having typed it at all.
+// Where the written continuation actually begins, found by trying every
+// plausible start and keeping the one that matches the ayah best.
+//
+// The reciter's stopping point is only ever an estimate - it comes from the
+// fraction of the clip played, and recitation is not evenly paced, so on a
+// long ayah it can land several words out, and the audio pauses mid-word as
+// often as not. The person then starts from the next whole word they
+// remember, which may be before or after where the app guessed. Comparing
+// position by position from the guess made a one-word drift mark every
+// single word wrong - a 14-out-of-14 verdict on a correct recitation, which
+// is worse than no check at all.
+//
+// So the guess is a hint, and what was actually written decides the seam.
+function bestSeamOffset(typedWords, hint) {
+  if (!typedWords || !typedWords.length) return hint;
+  const lo = Math.max(0, hint - 8);
+  const hi = Math.min(currentWords.length - 1, hint + 8);
+  let best = hint, bestScore = -1;
+  for (let off = lo; off <= hi; off++) {
+    let score = 0;
+    for (let i = 0; i < typedWords.length && off + i < currentWords.length; i++) {
+      if (answerMatchesQuranWord(currentWords[off + i], typedWords[i])) score++;
+    }
+    // Most matches wins; a tie goes to whichever sits closest to the guess.
+    if (score > bestScore || (score === bestScore && Math.abs(off - hint) < Math.abs(best - hint))) {
+      bestScore = score;
+      best = off;
+    }
+  }
+  // Nothing matched anywhere: this is not a drift, it is a different text.
+  // Keep the guess rather than sliding the seam to an arbitrary place.
+  return bestScore > 0 ? best : hint;
+}
+
 function revealListenSeam(typedWords) {
   const audio = document.getElementById("review-audio");
   if (audio) audio.pause();
@@ -6793,26 +6827,36 @@ function revealListenSeam(typedWords) {
   hideListenFinishChoices();
   applyListenVeil();
 
+  const start = typedWords ? bestSeamOffset(typedWords, listenSplitIndex) : listenSplitIndex;
+  const end = typedWords ? start + typedWords.length : currentWords.length;
+
   const target = document.getElementById("review-text");
   if (target) {
-    let wrong = 0;
+    let wrong = 0, judged = 0;
     target.innerHTML = currentWords.map((w, i) => {
-      if (i < listenSplitIndex) return `<span class="word seam-reciter">${w}</span>`;
+      if (i < start) return `<span class="word seam-reciter">${w}</span>`;
       if (!typedWords) return `<span class="word seam-you">${w}</span>`;
-      const given = typedWords[i - listenSplitIndex];
-      const okWord = given && answerMatchesQuranWord(w, given);
+      // Past the end of what was written: not recited and not written
+      // either, so it is neither right nor wrong.
+      if (i >= end) return `<span class="word seam-untouched">${w}</span>`;
+      judged++;
+      const okWord = answerMatchesQuranWord(w, typedWords[i - start]);
       if (!okWord) wrong++;
       return `<span class="word seam-you${okWord ? "" : " seam-wrong"}">${w}</span>`;
     }).join(" ");
     const hint = document.getElementById("review-reveal-hint");
     if (hint) {
       hint.classList.remove("hidden");
-      const said = currentWords.length - listenSplitIndex;
-      hint.textContent = typedWords
-        ? (wrong === 0
-            ? `✅ أكملتها كاملة — ${arabicCount(said, "كلمة", "كلمتان", "كلمات", "كلمة")}`
-            : `الملوّن بالأحمر ما اختلف عن النص (${wrong} من ${said})`)
-        : "ما قبل الفاصل من القارئ، وما بعده منك.";
+      const left = currentWords.length - end;
+      if (!typedWords) {
+        hint.textContent = "ما قبل الفاصل من القارئ، وما بعده منك.";
+      } else if (wrong === 0 && left === 0) {
+        hint.textContent = `✅ أكملتها كاملة — ${arabicCount(judged, "كلمة", "كلمتان", "كلمات", "كلمة")}`;
+      } else if (wrong === 0) {
+        hint.textContent = `✅ ما كتبته صحيح (${judged}) — وبقي ${arabicCount(left, "كلمة", "كلمتان", "كلمات", "كلمة")}`;
+      } else {
+        hint.textContent = `الملوّن بالأحمر ما اختلف عن النص (${wrong} من ${judged})`;
+      }
     }
   }
   maskLevel = 0;
