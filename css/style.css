@@ -468,9 +468,23 @@ html:root[data-theme="lastthird"] { background-image: none; }
   box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--primary) 45%, transparent);
   border-radius: 2px;
 }
-/* The first word after the seam gets the divider, so the join has a place
-   rather than being inferred from where the underline starts. */
-.word.seam-you:not(.seam-wrong) + .word.seam-you { box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--primary) 45%, transparent); }
+/* And the join itself is drawn, not implied. The first word the person
+   supplied carries a bar on the edge facing the reciter's half - inline-start,
+   so it lands on the right in this RTL text and stays there if the line
+   wraps. A width the underlines don't have and a colour the text doesn't,
+   because "where did he stop?" is the one thing this screen has to answer. */
+.word.seam-start {
+  border-inline-start: 3px solid var(--accent);
+  border-radius: 2px;
+  padding-inline-start: 10px;
+  margin-inline-start: 7px;
+  /* Taller than the glyphs so it reads as a rule between the two halves and
+     not as an ornament on the word it happens to be attached to. The
+     negative block margin gives that height back, so the line spacing of
+     the ayah is the same with the bar as without it. */
+  padding-block: 4px;
+  margin-block: -4px;
+}
 /* Neither recited nor written: no claim either way. */
 .word.seam-untouched { color: var(--muted); opacity: 0.45; }
 .word.seam-wrong {

@@ -6779,50 +6779,80 @@ function submitListenWriting() {
   const input = document.getElementById("listen-write-input");
   if (!input) return;
   const typed = quranWords(input.value.trim());
-  revealListenSeam(typed);
+  // Nothing written is not the same as everything written wrong: with no
+  // words to line up there is nothing to judge, so the seam is simply shown.
+  revealListenSeam(typed.length ? typed : null);
 }
 
 // The whole ayah, with the seam shown: what the reciter gave, and what the
 // person supplied. When they wrote it, each of their words is marked right
 // or wrong against the text - seeing the miss in place is the point of
 // having typed it at all.
-// Where the written continuation actually begins, found by trying every
-// plausible start and keeping the one that matches the ayah best.
+// Lining up what was written against the ayah.
 //
-// The reciter's stopping point is only ever an estimate - it comes from the
-// fraction of the clip played, and recitation is not evenly paced, so on a
-// long ayah it can land several words out, and the audio pauses mid-word as
-// often as not. The person then starts from the next whole word they
-// remember, which may be before or after where the app guessed. Comparing
-// position by position from the guess made a one-word drift mark every
-// single word wrong - a 14-out-of-14 verdict on a correct recitation, which
-// is worse than no check at all.
+// A fixed starting offset was not enough. It handled the reciter stopping a
+// word early or late, but not a word missing from the middle, an extra one,
+// or a و dropped from the front of a word - and any one of those shifts
+// everything after it, so a single slip still turned the whole remainder
+// red. The comparison has to tolerate insertions and deletions, not just a
+// shift.
 //
-// So the guess is a hint, and what was actually written decides the seam.
-function bestSeamOffset(typedWords, hint) {
-  if (!typedWords || !typedWords.length) return hint;
-  // The whole ayah, not a window around the hint. A window is one more way
-  // for the guess to be wrong - if the audio stopped further from the
-  // estimate than the window is wide, the alignment could not reach the
-  // real start. An ayah is tens of words, so searching all of it costs
-  // nothing worth measuring.
-  const lo = 0;
-  const hi = currentWords.length - 1;
-  let best = hint, bestScore = -1;
-  for (let off = lo; off <= hi; off++) {
-    let score = 0;
-    for (let i = 0; i < typedWords.length && off + i < currentWords.length; i++) {
-      if (answerMatchesQuranWord(currentWords[off + i], typedWords[i])) score++;
-    }
-    // Most matches wins; a tie goes to whichever sits closest to the guess.
-    if (score > bestScore || (score === bestScore && Math.abs(off - hint) < Math.abs(best - hint))) {
-      bestScore = score;
-      best = off;
+// So: a word-level fitting alignment. The written words are matched against
+// the ayah with gaps allowed on both sides - free before and after, since
+// the reciter covered the start and the person may stop early - and each
+// ayah word comes back marked as matched, mistaken, or missing. One slip
+// costs one mark, which is what a person expects and what makes the verdict
+// worth reading.
+// A word of the ayah nobody wrote is cheap to skip - stopping early is the
+// normal way this exercise ends. A written word that answers to nothing in
+// the ayah is not: every word the person typed was meant as part of it, so
+// discarding one has to cost more than calling it a mistake, or a wrong word
+// at either end of the writing is quietly swallowed instead of marked. That
+// is exactly what a fixed cost for both did: "...هدى خطأ" came back clean,
+// with the last word reported as merely unreached.
+const SEAM_MATCH = 2, SEAM_MISS = -2;
+const SEAM_GAP_AYAH = -1, SEAM_GAP_WRITTEN = -3;
+
+function alignSeam(typedWords, hint) {
+  const A = currentWords, B = typedWords;
+  const n = A.length, m = B.length;
+  if (!m) return { start: hint, marks: [] };
+
+  // score[i][j]: best alignment of A[0..i) with B[0..j). A's prefix is free
+  // (the reciter's part), so the first column is all zeros.
+  const score = Array.from({ length: n + 1 }, () => new Float64Array(m + 1));
+  for (let j = 1; j <= m; j++) score[0][j] = j * SEAM_GAP_WRITTEN;
+  for (let i = 1; i <= n; i++) {
+    for (let j = 1; j <= m; j++) {
+      const same = answerMatchesQuranWord(A[i - 1], B[j - 1]);
+      score[i][j] = Math.max(
+        score[i - 1][j - 1] + (same ? SEAM_MATCH : SEAM_MISS),
+        score[i - 1][j] + SEAM_GAP_AYAH,     // an ayah word nobody wrote
+        score[i][j - 1] + SEAM_GAP_WRITTEN   // a written word not in the ayah
+      );
     }
   }
-  // Nothing matched anywhere: this is not a drift, it is a different text.
-  // Keep the guess rather than sliding the seam to an arbitrary place.
-  return bestScore > 0 ? best : hint;
+
+  // The written text must be fully consumed; the ayah's tail is free.
+  let endI = n;
+  for (let i = 0; i <= n; i++) if (score[i][m] > score[endI][m]) endI = i;
+
+  const marks = [];
+  let i = endI, j = m;
+  while (i > 0 && j > 0) {
+    const same = answerMatchesQuranWord(A[i - 1], B[j - 1]);
+    if (score[i][j] === score[i - 1][j - 1] + (same ? SEAM_MATCH : SEAM_MISS)) {
+      marks.push({ index: i - 1, state: same ? "ok" : "wrong" });
+      i--; j--;
+    } else if (score[i][j] === score[i - 1][j] + SEAM_GAP_AYAH) {
+      marks.push({ index: i - 1, state: "missing" });
+      i--;
+    } else {
+      j--; // something written that is not in the ayah - nothing to mark
+    }
+  }
+  marks.reverse();
+  return { start: marks.length ? marks[0].index : hint, marks };
 }
 
 function revealListenSeam(typedWords) {
@@ -6832,27 +6862,36 @@ function revealListenSeam(typedWords) {
   hideListenFinishChoices();
   applyListenVeil();
 
-  const start = typedWords ? bestSeamOffset(typedWords, listenSplitIndex) : listenSplitIndex;
-  const end = typedWords ? start + typedWords.length : currentWords.length;
+  const aligned = typedWords ? alignSeam(typedWords, listenSplitIndex) : null;
+  const start = aligned ? aligned.start : listenSplitIndex;
+  const stateOf = {};
+  if (aligned) aligned.marks.forEach((mk) => { stateOf[mk.index] = mk.state; });
+  const lastMarked = aligned && aligned.marks.length
+    ? aligned.marks[aligned.marks.length - 1].index
+    : currentWords.length - 1;
 
   const target = document.getElementById("review-text");
   if (target) {
     let wrong = 0, judged = 0;
     target.innerHTML = currentWords.map((w, i) => {
       if (i < start) return `<span class="word seam-reciter">${w}</span>`;
-      if (!typedWords) return `<span class="word seam-you">${w}</span>`;
-      // Past the end of what was written: not recited and not written
+      // The join itself gets a mark. Without it the two halves are only a
+      // shade apart, and "where did he stop?" - the whole question the
+      // exercise asks - is left to be inferred from the underlines.
+      const seam = i === start && start > 0 ? " seam-start" : "";
+      if (!typedWords) return `<span class="word seam-you${seam}">${w}</span>`;
+      // Past the last word the writing reached: not recited and not written
       // either, so it is neither right nor wrong.
-      if (i >= end) return `<span class="word seam-untouched">${w}</span>`;
+      if (i > lastMarked) return `<span class="word seam-untouched${seam}">${w}</span>`;
       judged++;
-      const okWord = answerMatchesQuranWord(w, typedWords[i - start]);
-      if (!okWord) wrong++;
-      return `<span class="word seam-you${okWord ? "" : " seam-wrong"}">${w}</span>`;
+      const state = stateOf[i] || "missing";
+      if (state !== "ok") wrong++;
+      return `<span class="word seam-you${seam}${state === "ok" ? "" : " seam-wrong"}">${w}</span>`;
     }).join(" ");
     const hint = document.getElementById("review-reveal-hint");
     if (hint) {
       hint.classList.remove("hidden");
-      const left = currentWords.length - end;
+      const left = currentWords.length - 1 - lastMarked;
       if (!typedWords) {
         hint.textContent = "ما قبل الفاصل من القارئ، وما بعده منك.";
       } else if (wrong === 0 && left === 0) {
