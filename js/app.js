@@ -6801,8 +6801,13 @@ function submitListenWriting() {
 // So the guess is a hint, and what was actually written decides the seam.
 function bestSeamOffset(typedWords, hint) {
   if (!typedWords || !typedWords.length) return hint;
-  const lo = Math.max(0, hint - 8);
-  const hi = Math.min(currentWords.length - 1, hint + 8);
+  // The whole ayah, not a window around the hint. A window is one more way
+  // for the guess to be wrong - if the audio stopped further from the
+  // estimate than the window is wide, the alignment could not reach the
+  // real start. An ayah is tens of words, so searching all of it costs
+  // nothing worth measuring.
+  const lo = 0;
+  const hi = currentWords.length - 1;
   let best = hint, bestScore = -1;
   for (let off = lo; off <= hi; off++) {
     let score = 0;
