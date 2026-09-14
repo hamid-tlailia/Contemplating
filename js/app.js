@@ -6658,6 +6658,91 @@ function listenCutPoint(duration) {
   return Math.min(6, Math.max(1.5, duration * 0.35));
 }
 
+// ---------- Stopping the reciter on a word, not in the middle of one ----------
+//
+// A cut at a bare fraction of the clip lands wherever it lands, and most of
+// the time that is inside a word: وَءَاتُوا۟ came out as "وَءَا" and the person
+// was left guessing whether he had heard a whole word or half of one.
+//
+// The recitations are timed word by word, and quran.com publishes those
+// timings. Reading the waveform was the obvious alternative and is not
+// possible: the audio CDN sends no CORS header, so an AnalyserNode on that
+// element reads silence and a fetch of it comes back opaque. The timings do
+// not have that problem - and, verified per ayah, the mp3 they were measured
+// against is byte for byte the file this app already plays.
+//
+// Every use of them is guarded: an unmapped reciter, a failed request, a
+// reader offline, or timings that do not fit the audio that actually loaded
+// all fall back to the fraction. Nothing here can stop the ayah playing.
+const QURAN_COM_RECITERS = {
+  "ar.alafasy": 7,
+  "ar.husary": 6,
+  "ar.minshawi": 9,
+  "ar.abdulbasitmurattal": 2,
+  "ar.abdurrahmaansudais": 3,
+  // ماهر المعيقلي has no counterpart there; he keeps the fraction.
+};
+const wordTimingCache = new Map();
+let listenSegments = null; // [{ start, end }] in seconds, for the ayah in hand
+
+// The API gives [wordNumber, startMs, endMs] in one place and
+// [index, wordNumber, startMs, endMs] in another; the last two are the
+// times either way.
+function parseAudioSegments(raw) {
+  if (!Array.isArray(raw) || !raw.length) return null;
+  const out = [];
+  for (const seg of raw) {
+    if (!Array.isArray(seg) || seg.length < 2) return null;
+    const start = Number(seg[seg.length - 2]) / 1000;
+    const end = Number(seg[seg.length - 1]) / 1000;
+    if (!isFinite(start) || !isFinite(end) || end < start) return null;
+    out.push({ start, end });
+  }
+  return out;
+}
+
+async function fetchWordTimings(surah, ayah) {
+  const reciterId = QURAN_COM_RECITERS[state.reciter];
+  if (!reciterId) return null;
+  const key = `${reciterId}:${surah}:${ayah}`;
+  if (wordTimingCache.has(key)) return wordTimingCache.get(key);
+  let segments = null;
+  try {
+    const res = await fetch(`https://api.quran.com/api/v4/verses/by_key/${surah}:${ayah}?audio=${reciterId}`);
+    if (res.ok) {
+      const json = await res.json();
+      segments = parseAudioSegments(json && json.verse && json.verse.audio && json.verse.audio.segments);
+    }
+  } catch (e) {
+    segments = null; // offline, or the API is down: the fraction still works
+  }
+  if (wordTimingCache.size > 300) wordTimingCache.clear();
+  wordTimingCache.set(key, segments);
+  return segments;
+}
+
+// Timings measured against a different cut of the recitation would be worse
+// than none, so they are only trusted if the last word ends inside the clip
+// that actually loaded, and near its end rather than a third of the way in.
+function segmentsFitAudio(segments, duration) {
+  if (!segments || !segments.length || !duration || !isFinite(duration)) return false;
+  const last = segments[segments.length - 1].end;
+  return last > duration * 0.6 && last <= duration + 0.4;
+}
+
+// Where to stop so the reciter finishes what he started. A target inside a
+// word runs on to the end of it; a target already in the gap between two
+// words is a boundary and stays where it is.
+function cutAtWordBoundary(target) {
+  if (!listenSegments) return { at: target, index: null };
+  for (let i = 0; i < listenSegments.length; i++) {
+    const seg = listenSegments[i];
+    if (target <= seg.start) return { at: target, index: i };
+    if (target < seg.end) return { at: seg.end, index: i + 1 };
+  }
+  return { at: target, index: listenSegments.length };
+}
+
 function setListenLead(text) {
   const el = document.getElementById("listen-lead");
   if (el) el.textContent = text;
@@ -6685,9 +6770,11 @@ function applyListenVeil() {
 function primeListening() {
   const audio = document.getElementById("review-audio");
   if (!audio) return;
+  clearListenCutTimer();
   listenPrimed = true;
   listenCutAt = null;
   listenSplitIndex = 0;
+  listenSegments = null;
   hideListenFinishChoices();
   setListenLead("استمع لأول الآية، ثم أكملها من حفظك.");
   applyListenVeil();
@@ -6702,28 +6789,91 @@ function playListenPrompt() {
   const start = () => {
     listenCutAt = listenCutPoint(audio.duration);
     audio.currentTime = 0;
-    audio.play().catch(() => {
+    audio.play().then(armListenCut).catch(() => {
       // Autoplay refused (no gesture yet on this page): the ▶ button is
       // right there, so say so instead of failing silently.
       setListenLead("اضغط ▶ لسماع أول الآية.");
     });
+    loadListenWordBoundaries(audio);
   };
   if (audio.readyState >= 1) start();
   else audio.addEventListener("loadedmetadata", start, { once: true });
 }
 
+// Fetched alongside playback rather than before it: the cut is seconds away,
+// the fraction is already set as a floor, and the ayah must never wait on a
+// network round trip to start. If the timings arrive in time they move the
+// cut onto the end of a word; if they don't, nothing changes.
+function loadListenWordBoundaries(audio) {
+  const item = reviewQueue[reviewIndex];
+  if (!item) return;
+  const token = `${item.surah}:${item.ayah}`;
+  fetchWordTimings(item.surah, item.ayah).then((segments) => {
+    const now = reviewQueue[reviewIndex];
+    // The queue may have moved on, or the mode been switched off, while the
+    // request was in flight - timings for a previous ayah would be poison.
+    if (!now || `${now.surah}:${now.ayah}` !== token) return;
+    if (!listenPrimed || listenCutAt === null) return;
+    if (!segmentsFitAudio(segments, audio.duration)) return;
+    listenSegments = segments;
+    listenCutAt = cutAtWordBoundary(listenCutPoint(audio.duration)).at;
+    armListenCut();
+  });
+}
+
+// timeupdate fires about four times a second, so leaning on it alone
+// overshot the cut by up to a quarter of a second - long enough to sound
+// the first syllable of the next word, which is the very thing the word
+// boundary was there to prevent. So the stop is timed: a clock armed for
+// the moment itself, with timeupdate left in place behind it as a net for
+// when the tab is throttled and timers run late.
+let listenCutTimer = 0;
+
+function clearListenCutTimer() {
+  if (listenCutTimer) { clearTimeout(listenCutTimer); listenCutTimer = 0; }
+}
+
+function armListenCut() {
+  clearListenCutTimer();
+  const audio = document.getElementById("review-audio");
+  if (!audio || listenCutAt === null || audio.paused) return;
+  const rate = audio.playbackRate || 1;
+  const left = (listenCutAt - audio.currentTime) / rate;
+  if (left <= 0) { stopAtCutPoint(); return; }
+  listenCutTimer = setTimeout(() => {
+    listenCutTimer = 0;
+    // A timer can fire early as well as late; if the audio has not reached
+    // the cut yet, wait out the remainder rather than stopping short.
+    if (listenCutAt !== null && audio.currentTime < listenCutAt - 0.01) armListenCut();
+    else stopAtCutPoint();
+  }, Math.max(0, left * 1000));
+}
+
 function stopAtCutPoint() {
   const audio = document.getElementById("review-audio");
   if (!audio || !listenModeOn() || !listenPrimed || listenCutAt === null) return;
-  if (audio.currentTime >= listenCutAt) {
+  // A hair's tolerance: the clock lands a millisecond or two short of the
+  // mark as often as past it, and without this the stop fell through to the
+  // next timeupdate - a quarter of a second into the following word. Stopping
+  // twenty milliseconds early sits inside the silence after the word.
+  if (audio.currentTime >= listenCutAt - 0.02) {
+    // Only once it really stops: timeupdate calls this several times a
+    // second, and disarming the clock on every one of those calls left the
+    // quarter-second overshoot it was added to remove.
+    clearListenCutTimer();
     audio.pause();
-    // Where he stopped, in words. Recitation is not evenly paced, so this is
-    // an estimate from the fraction of the clip played - but it only has to
-    // be close: it decides where the seam is drawn, and the seam is then
-    // shown, not hidden, so a word either side is visible rather than wrong.
+    // Where he stopped, in words. With the recitation's own timings this is
+    // exact - provided they count the ayah's words the same way this does;
+    // where they don't, or where there are none, it falls back to the
+    // fraction of the clip played. Recitation is not evenly paced, so that
+    // is only an estimate - but it is a hint to the alignment, not a verdict,
+    // and being a word out costs nothing there.
+    const boundary = listenSegments ? cutAtWordBoundary(listenCutAt) : null;
+    const exact = boundary && boundary.index !== null
+      && listenSegments.length === currentWords.length;
     const played = audio.duration ? audio.currentTime / audio.duration : 0.35;
-    listenSplitIndex = Math.min(currentWords.length - 1,
-      Math.max(1, Math.round(currentWords.length * played)));
+    listenSplitIndex = Math.min(currentWords.length - 1, Math.max(1,
+      exact ? boundary.index : Math.round(currentWords.length * played)));
     listenCutAt = null; // spent: "اسمع البقية" must play through to the end
     setListenLead("توقّف القارئ هنا. أكملها من حفظك:");
     showListenFinishChoices();
@@ -6829,9 +6979,25 @@ const SEAM_MATCH = 2, SEAM_MISS = -2;
 const SEAM_GAP_AYAH = -1, SEAM_GAP_WRITTEN = -3;
 
 function alignSeam(typedWords, hint) {
-  const A = currentWords, B = typedWords;
+  const A = currentWords;
+  // A one-letter particle with nothing after it is a half-typed word or a
+  // stray keystroke - the mushaf never leaves one standing alone - so it is
+  // not an answer, and letting it convict the next word of being wrong is
+  // an accusation the writing does not support.
+  const B = typedWords.length && /^[\u0648\u0641\u0628\u0644\u0643]$/.test(typedWords[typedWords.length - 1])
+    ? typedWords.slice(0, -1)
+    : typedWords;
   const n = A.length, m = B.length;
   if (!m) return { start: hint, marks: [] };
+
+  // Two words typed where the mushaf writes one. A phone keyboard invites
+  // the conjunction to be typed apart - "و اتوا" for وَءَاتُوا۟, "و اركعوا"
+  // for وَٱرْكَعُوا۟ - and the vocative يا likewise (يا أيها / يَٰٓأَيُّهَا).
+  // Counted as two, the word they belong to matched nothing and every word
+  // after it shifted, which is how a correctly written ayah came back with
+  // three words owed. Only consulted when the single word did not match, so
+  // it costs nothing on the ordinary path.
+  const joins = (i, j) => j >= 2 && answerMatchesQuranWord(A[i - 1], B[j - 2] + B[j - 1]);
 
   // score[i][j]: best alignment of A[0..i) with B[0..j). A's prefix is free
   // (the reciter's part), so the first column is all zeros.
@@ -6840,11 +7006,13 @@ function alignSeam(typedWords, hint) {
   for (let i = 1; i <= n; i++) {
     for (let j = 1; j <= m; j++) {
       const same = answerMatchesQuranWord(A[i - 1], B[j - 1]);
-      score[i][j] = Math.max(
+      let best = Math.max(
         score[i - 1][j - 1] + (same ? SEAM_MATCH : SEAM_MISS),
         score[i - 1][j] + SEAM_GAP_AYAH,     // an ayah word nobody wrote
         score[i][j - 1] + SEAM_GAP_WRITTEN   // a written word not in the ayah
       );
+      if (!same && joins(i, j)) best = Math.max(best, score[i - 1][j - 2] + SEAM_MATCH);
+      score[i][j] = best;
     }
   }
 
@@ -6859,6 +7027,9 @@ function alignSeam(typedWords, hint) {
     if (score[i][j] === score[i - 1][j - 1] + (same ? SEAM_MATCH : SEAM_MISS)) {
       marks.push({ index: i - 1, state: same ? "ok" : "wrong" });
       i--; j--;
+    } else if (!same && joins(i, j) && score[i][j] === score[i - 1][j - 2] + SEAM_MATCH) {
+      marks.push({ index: i - 1, state: "ok" });
+      i--; j -= 2;
     } else if (score[i][j] === score[i - 1][j] + SEAM_GAP_AYAH) {
       marks.push({ index: i - 1, state: "missing" });
       i--;
@@ -7004,6 +7175,7 @@ function suggestListenQuality(recalled, total) {
 function listenContinue() {
   const audio = document.getElementById("review-audio");
   if (!audio) return;
+  clearListenCutTimer();
   listenCutAt = null;
   setListenLead("استمع إلى بقيتها وقارنها بما قلت.");
   audio.play().catch(() => {});
@@ -7111,6 +7283,11 @@ on("listen-write-input", "blur", () => {
 // when play() is called drifts with buffering, and on a slow connection it
 // would cut before the reciter had said anything.
 on("review-audio", "timeupdate", stopAtCutPoint);
+// Whenever the audio starts or moves - the ▶ button after a refused
+// autoplay, a scrub - the clock is re-aimed at what is left before the cut.
+on("review-audio", "play", armListenCut);
+on("review-audio", "seeked", armListenCut);
+on("review-audio", "pause", clearListenCutTimer);
 setHTML("btn-learn-tafsir", ICONS.book);
 setHTML("btn-learn-mask-more", iconLabel("eyeOff", "إخفاء المزيد"));
 setHTML("btn-learn-partial-wrong", iconLabel("xCircle", "أخطأت في كلمة"));
