@@ -6745,7 +6745,9 @@ function showListenFinishChoices() {
 function hideListenFinishChoices() {
   ["listen-finish", "listen-write-row"].forEach((id) => {
     const el = document.getElementById(id);
-    if (el) el.classList.add("hidden");
+    // Pinned above the keyboard it is out of the flow, where "hidden" on an
+    // ancestor would not have reached it - so it is unpinned as it is hidden.
+    if (el) el.classList.add("hidden"), el.classList.remove("keyboard-active");
   });
 }
 
@@ -6772,7 +6774,20 @@ function finishListenByWriting() {
   if (!row) return;
   row.classList.remove("hidden");
   const input = document.getElementById("listen-write-input");
-  if (input) { input.value = ""; input.focus(); }
+  if (input) { input.value = ""; growListenWriteBox(); input.focus(); }
+}
+
+// The box follows the writing. A single line was fine for one word and
+// useless for the twelve this asks for: what you wrote scrolled off to the
+// side and there was no way to read it back before checking it. Capped so
+// it can never grow past the keyboard it sits on.
+function growListenWriteBox() {
+  const input = document.getElementById("listen-write-input");
+  if (!input) return;
+  input.style.height = "auto";
+  const cap = Math.max(96, Math.round(window.innerHeight * 0.28));
+  input.style.height = `${Math.min(input.scrollHeight, cap)}px`;
+  input.style.overflowY = input.scrollHeight > cap ? "auto" : "hidden";
 }
 
 function submitListenWriting() {
@@ -6861,6 +6876,7 @@ function revealListenSeam(typedWords) {
   listenPrimed = false;
   hideListenFinishChoices();
   applyListenVeil();
+  resetReviewChoices();
 
   const aligned = typedWords ? alignSeam(typedWords, listenSplitIndex) : null;
   const start = aligned ? aligned.start : listenSplitIndex;
@@ -6871,42 +6887,118 @@ function revealListenSeam(typedWords) {
     : currentWords.length - 1;
 
   const target = document.getElementById("review-text");
-  if (target) {
-    let wrong = 0, judged = 0;
-    target.innerHTML = currentWords.map((w, i) => {
-      if (i < start) return `<span class="word seam-reciter">${w}</span>`;
-      // The join itself gets a mark. Without it the two halves are only a
-      // shade apart, and "where did he stop?" - the whole question the
-      // exercise asks - is left to be inferred from the underlines.
-      const seam = i === start && start > 0 ? " seam-start" : "";
-      if (!typedWords) return `<span class="word seam-you${seam}">${w}</span>`;
-      // Past the last word the writing reached: not recited and not written
-      // either, so it is neither right nor wrong.
-      if (i > lastMarked) return `<span class="word seam-untouched${seam}">${w}</span>`;
-      judged++;
-      const state = stateOf[i] || "missing";
-      if (state !== "ok") wrong++;
-      return `<span class="word seam-you${seam}${state === "ok" ? "" : " seam-wrong"}">${w}</span>`;
-    }).join(" ");
-    const hint = document.getElementById("review-reveal-hint");
-    if (hint) {
-      hint.classList.remove("hidden");
-      const left = currentWords.length - 1 - lastMarked;
-      if (!typedWords) {
-        hint.textContent = "ما قبل الفاصل من القارئ، وما بعده منك.";
-      } else if (wrong === 0 && left === 0) {
-        hint.textContent = `✅ أكملتها كاملة — ${arabicCount(judged, "كلمة", "كلمتان", "كلمات", "كلمة")}`;
-      } else if (wrong === 0) {
-        hint.textContent = `✅ ما كتبته صحيح (${judged}) — وبقي ${arabicCount(left, "كلمة", "كلمتان", "كلمات", "كلمة")}`;
-      } else {
-        hint.textContent = `الملوّن بالأحمر ما اختلف عن النص (${wrong} من ${judged})`;
-      }
+  const grades = document.getElementById("grade-controls");
+  const hint = document.getElementById("review-reveal-hint");
+  if (!target) return;
+
+  // What the writing settled and what it left open. A word written right is
+  // done with; a word written wrong, or never written at all, is not handed
+  // over - it is asked. Stopping eight words in used to open the grading row
+  // with the other seven simply printed, which grades a recall that never
+  // happened.
+  let wrong = 0, judged = 0;
+  const owed = [];
+  target.innerHTML = currentWords.map((w, i) => {
+    if (i < start) return `<span class="word seam-reciter">${w}</span>`;
+    // The join itself gets a mark. Without it the two halves are only a
+    // shade apart, and "where did he stop?" - the whole question the
+    // exercise asks - is left to be inferred from the underlines.
+    const seam = i === start && start > 0 ? " seam-start" : "";
+    // No writing to judge: تسميع, or the text simply asked for. Those paths
+    // have done their own checking, so the ayah is shown whole.
+    if (!typedWords) return `<span class="word seam-you${seam}">${w}</span>`;
+    if (i > lastMarked) {
+      owed.push(i);
+      return `<span class="word masked seam-owed${seam}" data-idx="${i}">${w}</span>`;
     }
-  }
+    judged++;
+    const state = stateOf[i] || "missing";
+    if (state === "ok") return `<span class="word seam-you${seam}">${w}</span>`;
+    wrong++;
+    owed.push(i);
+    // Tinted rather than red-lettered while it is still covered: the tile
+    // says "you had this one wrong" without saying what it was.
+    return `<span class="word masked seam-owed seam-owed-wrong${seam}" data-idx="${i}">${w}</span>`;
+  }).join(" ");
+
+  const left = typedWords ? currentWords.length - 1 - lastMarked : 0;
+  const verdict = !typedWords
+    ? "ما قبل الفاصل من القارئ، وما بعده منك."
+    : wrong === 0 && left === 0
+      ? `✅ أكملتها كاملة — ${arabicCount(judged, "كلمة", "كلمتان", "كلمات", "كلمة")}`
+      : wrong === 0
+        ? `✅ ما كتبته صحيح (${judged}) — وأكملتَ الباقي بالاختيار`
+        : `الملوّن بالأحمر ما اختلف عن النص (${wrong} من ${judged})`;
+
+  // The suggestion comes from the writing, not from the choices that
+  // followed it: picking the right word out of four after getting it wrong
+  // is a recovery, not a recall, and SM-2 lives on this number for months.
+  const owing = currentWords.length - start;
+  const recalled = owing - owed.length;
+
+  const settle = () => {
+    if (hint) { hint.classList.remove("hidden"); hint.textContent = verdict; }
+    if (grades) grades.classList.remove("hidden");
+    if (typedWords && owing > 0) suggestListenQuality(recalled, owing);
+    fitReviewAyahHeight();
+    scheduleAnswerDockUpdate();
+  };
+
+  const askOwed = (stillOwed, revealed) => {
+    if (stillOwed === 0) { settle(); }
+    else {
+      if (grades) grades.classList.add("hidden");
+      if (hint) {
+        // A word written wrong and a word never written are both owed, but
+        // they are not the same failure and saying "لم تكتبها" about one he
+        // did write reads as the app not having looked.
+        const stillWrong = target.querySelectorAll(".word.masked.seam-owed-wrong").length;
+        hint.classList.remove("hidden");
+        hint.textContent = stillOwed === 1
+          ? (stillWrong === 1
+              ? "كلمة واحدة اختلفت عمّا كتبت - اضغط عليها واختر الصحيحة."
+              : "بقيت كلمة لم تكتبها - اضغط عليها واختر الصحيحة.")
+          : (stillWrong === stillOwed
+              ? `اضغط على كل كلمة ملوّنة واختر الصحيحة (بقي ${stillOwed}).`
+              : `أكمل ما لم تكتبه: اضغط على كل كلمة واختر الصحيحة (بقي ${stillOwed}).`);
+      }
+      fitReviewAyahHeight();
+      const box = document.getElementById("review-ayah-scroll");
+      if (revealed && box) scrollWordIntoPanel(box, box.querySelector(".word.masked") || revealed);
+      scheduleAnswerDockUpdate();
+    }
+  };
+
+  target.querySelectorAll(".word.masked").forEach((el) => {
+    const idx = Number(el.dataset.idx);
+    const wasWrong = el.classList.contains("seam-owed-wrong");
+    const reveal = () => {
+      el.classList.remove("masked", "asking", "seam-owed", "seam-owed-wrong");
+      el.classList.add("seam-you");
+      if (wasWrong) el.classList.add("seam-wrong");
+      askOwed(target.querySelectorAll(".word.masked").length, el);
+    };
+    el.addEventListener("click", () => askReviewChoice(idx, currentWords[idx], el, reveal));
+  });
+
   maskLevel = 0;
-  document.getElementById("grade-controls").classList.remove("hidden");
-  fitReviewAyahHeight();
-  scheduleAnswerDockUpdate();
+  if (owed.length) askOwed(owed.length, null);
+  else settle();
+}
+
+// The grading row opens with a mark on it, the way the تسميع and choice
+// rounds already do: how much of the ayah after the seam came back on its
+// own, before any option was offered.
+function suggestListenQuality(recalled, total) {
+  const accuracy = Math.round((recalled / total) * 100);
+  const quality = suggestedQualityFor(accuracy);
+  const btn = document.querySelector(`.grade-buttons button[data-quality="${quality}"]`);
+  const hint = document.getElementById("grade-suggestion");
+  if (!hint) return;
+  document.querySelectorAll(".grade-buttons button").forEach((b) => b.classList.remove("suggested"));
+  if (btn) btn.classList.add("suggested");
+  hint.textContent = `أكملتَ ${recalled} من ${total} من حفظك — المقترح: ${btn ? btn.textContent : ""} (والقرار لك)`;
+  hint.classList.remove("hidden");
 }
 
 function listenContinue() {
@@ -6995,7 +7087,26 @@ on("btn-listen-reveal", "click", listenReveal);
 on("btn-listen-say", "click", finishListenBySaying);
 on("btn-listen-write", "click", finishListenByWriting);
 on("btn-listen-write-submit", "click", submitListenWriting);
-on("listen-write-input", "keydown", (e) => { if (e.key === "Enter") submitListenWriting(); });
+// Enter checks rather than breaking the line: the box wraps on its own, and
+// an ayah has no line breaks to type.
+on("listen-write-input", "keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitListenWriting(); }
+});
+on("listen-write-input", "input", growListenWriteBox);
+// Same treatment the typing round gets in الحفظ: while the keyboard is up the
+// row leaves the flow and sits on top of it, so what is being written stays
+// visible instead of being covered by the thing writing it.
+on("listen-write-input", "focus", () => {
+  const row = document.getElementById("listen-write-row");
+  if (row) row.classList.add("keyboard-active");
+  growListenWriteBox();
+  setTimeout(growListenWriteBox, 350);
+});
+on("listen-write-input", "blur", () => {
+  const row = document.getElementById("listen-write-row");
+  if (row) row.classList.remove("keyboard-active");
+  growListenWriteBox();
+});
 // The cut is enforced on the clock rather than with a timer: a timer set
 // when play() is called drifts with buffering, and on a slow connection it
 // would cut before the reciter had said anything.

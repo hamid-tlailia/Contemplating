@@ -443,17 +443,44 @@ html:root[data-theme="lastthird"] { background-image: none; }
   width: 100%;
 }
 .listen-finish.hidden, .listen-write-row.hidden { display: none; }
-.listen-write-row input {
+.listen-write-row textarea {
   flex: 1 1 180px;
   min-width: 0;
   font-family: var(--ayah-font-family, 'Amiri', serif);
   font-size: 1.05rem;
+  line-height: 1.9;
   text-align: center;
   padding: 9px 12px;
   border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
+  /* The height is set from the content in JS; without these the browser's
+     own resize handle and scrollbar fight it every keystroke. */
+  resize: none;
+  overflow-y: hidden;
+  outline: none;
+}
+.listen-write-row textarea:focus { border-color: var(--primary); }
+/* Above the keyboard rather than under it, the way the typing round in الحفظ
+   already works: the row leaves the flow while the field has focus, so what
+   is being written stays on screen. Only on a phone - on a desktop there is
+   no keyboard to be covered by. */
+@media (max-width: 820px) {
+  .listen-write-row.keyboard-active {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 45;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -4px 16px rgba(0,0,0,0.12);
+    margin: 0;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+    flex-wrap: nowrap;
+    align-items: flex-end;
+  }
 }
 
 /* The seam, shown rather than hidden: the reciter's half is set back and
@@ -487,6 +514,14 @@ html:root[data-theme="lastthird"] { background-image: none; }
 }
 /* Neither recited nor written: no claim either way. */
 .word.seam-untouched { color: var(--muted); opacity: 0.45; }
+/* Owed: a word the writing left open - never written, or written wrong. It
+   is covered and has to be answered before the grading row opens, so the
+   tile carries only which of the two it is, never the word itself. The
+   .masked rules give it its cover; these two only tint it. */
+.word.masked.seam-owed-wrong {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--danger) 55%, transparent);
+}
 .word.seam-wrong {
   color: var(--danger);
   box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--danger) 70%, transparent);

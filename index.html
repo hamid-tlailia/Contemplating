@@ -767,8 +767,12 @@
               <button class="btn primary" id="btn-listen-write">✍️ أكملها كتابةً</button>
             </div>
             <div class="listen-write-row hidden" id="listen-write-row">
-              <input type="text" id="listen-write-input" autocomplete="off" autocapitalize="off"
-                     spellcheck="false" placeholder="اكتب بقية الآية…">
+              <!-- A textarea, not a one-line input: the rest of an ayah is a
+                   run of words, and watching them scroll sideways out of a
+                   single line makes it impossible to check what you wrote.
+                   It grows with the text instead (see growListenWriteBox). -->
+              <textarea id="listen-write-input" rows="1" autocomplete="off" autocapitalize="off"
+                        spellcheck="false" placeholder="اكتب بقية الآية…"></textarea>
               <button class="btn primary" id="btn-listen-write-submit">تحقّق</button>
             </div>
             <div class="listen-actions">
