@@ -518,7 +518,7 @@ function checkWirdCompletionReward() {
   showToast(
     state.wirdPlan ? "🤝 وفّيت بعهد اليوم" : "🌙 أتممت ورد اليوم",
     "success",
-    `${activeDaysThisWeek()} من 7 أيام هذا الأسبوع · +${POINTS.wirdComplete}`
+    `${activeDaysThisWeek()} من 7 أيام هذا الأسبوع${rewardSuffix(POINTS.wirdComplete)}`
   );
 }
 
@@ -529,9 +529,23 @@ function checkWirdCompletionReward() {
 // the "what earns points" list in one place.
 function addPoints(amount) {
   if (!amount) return;
+  // The count ends where the collection does. A number that climbs forever
+  // with nothing left to spend it on is not a reward, it is noise on the
+  // screen - so once every collectible is unlocked nothing further is
+  // awarded, and the figure shown settles at the final harvest instead of
+  // drifting upward for the rest of the person's life. (If more is ever put
+  // in the shop, everythingOwned goes false again and counting resumes on
+  // its own.)
+  if (everythingOwned()) return;
   state.points += amount;
   saveState();
   renderPointsDisplay();
+}
+
+// "+15" under a finished round is a promise. Once the counting has stopped
+// it is a promise the app no longer keeps, so it stops being made.
+function rewardSuffix(amount) {
+  return everythingOwned() ? "" : ` · +${amount}`;
 }
 
 // Everything purchasable, in one list, so "is there anything left to buy"
@@ -608,8 +622,10 @@ function purchaseOrSelect(item, ownedList, { onSelect, confirmTitle, unlockedNou
 
 function renderPointsDisplay() {
   const done = everythingOwned();
-  // With nothing left to buy, a balance is just a number going up. The
-  // lifetime total at least says what it counts.
+  // With nothing left to buy the balance means nothing, and it has stopped
+  // moving anyway (see addPoints). What is shown instead is the whole
+  // harvest - the balance plus everything it bought - which is the last
+  // number this counter will ever produce.
   const shown = done ? lifetimePoints() : state.points;
   const el = document.getElementById("points-display");
   if (el) el.textContent = shown;
@@ -618,7 +634,7 @@ function renderPointsDisplay() {
   const note = document.getElementById("points-note");
   if (note) {
     note.textContent = done
-      ? "فتحتَ كل المقتنيات — هذا مجموع ما جمعته منذ البداية."
+      ? "فتحتَ كل المقتنيات — بلغت النقاط منتهاها وتوقّف عدّها. هذا حصادك كلّه."
       : `أقرب ما يمكنك فتحه: ${cheapestUnowned()} نقطة`;
     note.classList.toggle("hidden", !done && cheapestUnowned() === null);
   }
@@ -4898,7 +4914,7 @@ function masterCurrentLearningAyah(item) {
   showToast(
     `🌟 أتقنت ${item.surahName} : ${item.ayah} — ${randomEncouragement()}`,
     "success",
-    `تعود إليك للمراجعة ${intervalText(item.interval)} · ${surahMasteredProgress(item.surah)} · +${POINTS.masterAyah}`
+    `تعود إليك للمراجعة ${intervalText(item.interval)} · ${surahMasteredProgress(item.surah)}${rewardSuffix(POINTS.masterAyah)}`
   );
 
   // A hand-picked mode was for that ayah; the next one starts the ramp again.
@@ -7495,7 +7511,7 @@ function finishReviewOrChallenge() {
     playMasterySound();
     empty.innerHTML = `<p>⚡ تعاهدت ${challengeCorrectCount} من ${reviewQueue.length} آية اليوم</p>
       <p class="muted">${randomEncouragement()}</p>
-      <p class="reward-note">+${POINTS.dailyChallenge}</p>`;
+      ${everythingOwned() ? "" : `<p class="reward-note">+${POINTS.dailyChallenge}</p>`}`;
     isChallengeMode = false;
     document.getElementById("challenge-banner").classList.add("hidden");
   } else if (isEphemeralReview) {
