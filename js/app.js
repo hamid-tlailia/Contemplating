@@ -532,10 +532,9 @@ function surahMasteredProgress(surahNumber) {
 function checkWirdCompletionReward() {
   const today = todayISO();
   if (state.wirdRewardedDate === today) return;
-  const type = state.wirdTargetType || "ayahs";
-  const counts = type === "pages" ? state.dailyPageCounts : state.dailyCounts;
-  const target = state.wirdTarget || 5;
-  if ((counts[today] || 0) < target) return;
+  // One rule for whether the day was met, in wirdDoneToday - including the
+  // open wird, where any reading at all is the whole of it.
+  if (!wirdDoneToday()) return;
   state.wirdRewardedDate = today;
   saveState();
   addPoints(POINTS.wirdComplete);
@@ -1796,7 +1795,6 @@ function renderDashboard() {
         summary.innerHTML = `
           <span class="plan-surah-name">📖 ${group.name}</span>
           <span class="plan-surah-meta">${items2.length} آية${dueInGroup ? ` <span class="badge due">${dueInGroup} مستحقة</span>` : ""}</span>
-          ${gilded ? `<span class="gild-seal"><span>تمَّ الحفظ</span></span>` : ""}
         `;
         if (offer) {
           const btn = document.createElement("button");
@@ -2057,10 +2055,22 @@ function isStandalone() {
   return window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 }
 
+// The unit the day's reading is measured in. "open" is not a unit - it is
+// the absence of a target - so it is still counted in ayahs, which is the
+// finer of the two and what the card shows.
+function wirdCounts() {
+  return (state.wirdTargetType === "pages") ? state.dailyPageCounts : state.dailyCounts;
+}
+
+function wirdIsOpen() {
+  return state.wirdTargetType === "open";
+}
+
 function wirdDoneToday() {
-  const type = state.wirdTargetType || "ayahs";
-  const counts = type === "pages" ? state.dailyPageCounts : state.dailyCounts;
-  return (counts[todayISO()] || 0) >= (state.wirdTarget || 5);
+  const today = wirdCounts()[todayISO()] || 0;
+  // Nothing was asked for, so turning up is the whole of it.
+  if (wirdIsOpen()) return today > 0;
+  return today >= (state.wirdTarget || 5);
 }
 
 // The next time this clock-time comes round: today if it hasn't passed,
@@ -2262,18 +2272,21 @@ function localFirstWeekday() {
 }
 
 function renderWirdCard() {
-  const type = state.wirdTargetType || "ayahs";
-  const counts = type === "pages" ? state.dailyPageCounts : state.dailyCounts;
+  const counts = wirdCounts();
+  const open = wirdIsOpen();
   const target = state.wirdTarget || 5;
   const today = todayISO();
   const todayCount = counts[today] || 0;
-  const pct = Math.min(100, Math.round((todayCount / target) * 100));
+  // With no target there is no fraction to fill: the ring is either empty or
+  // whole, which is exactly what an open wird asks of the day.
+  const pct = open ? (todayCount > 0 ? 100 : 0)
+                   : Math.min(100, Math.round((todayCount / target) * 100));
 
   const ring = document.getElementById("wird-ring");
   if (ring) ring.style.background = `conic-gradient(var(--primary) ${pct}%, var(--border) ${pct}%)`;
 
   const countText = document.getElementById("wird-count-text");
-  if (countText) countText.textContent = `${todayCount}/${target}`;
+  if (countText) countText.textContent = open ? String(todayCount) : `${todayCount}/${target}`;
 
   const todayDateEl = document.getElementById("wird-today-date");
   if (todayDateEl) todayDateEl.textContent = formatArabicDate(today);
@@ -2298,14 +2311,15 @@ function renderWirdCard() {
       d.setDate(start.getDate() + i);
       const iso = isoOf(d);
       const count = counts[iso] || 0;
+      const metOnDay = open ? count > 0 : count >= target;
       const isToday = iso === today;
       // A day that has not arrived is neither met nor missed, and colouring
       // it as either would be a claim about a day that has not happened.
       const upcoming = iso > today;
-      const met = !upcoming && count >= target;
+      const met = !upcoming && metOnDay;
       const dayEl = document.createElement("div");
       dayEl.className = `wird-day${met ? " met" : ""}${isToday ? " today" : ""}${upcoming ? " upcoming" : ""}`;
-      dayEl.title = upcoming ? `${iso}: لم يحن بعد` : `${iso}: ${count}/${target}`;
+      dayEl.title = upcoming ? `${iso}: لم يحن بعد` : (open ? `${iso}: ${count}` : `${iso}: ${count}/${target}`);
       dayEl.textContent = WIRD_DAY_FULL[d.getDay()];
       weekEl.appendChild(dayEl);
       if (isToday) todayEl = dayEl;
@@ -2969,10 +2983,16 @@ function initWirdCard() {
 
   const typeBtns = [...document.querySelectorAll(".wird-type-btn")];
   const unitLabel = document.getElementById("wird-target-unit");
+  const field = document.getElementById("wird-target-field");
+  const openNote = document.getElementById("wird-open-note");
   function updateTypeUI() {
     const type = state.wirdTargetType || "ayahs";
     typeBtns.forEach((btn) => btn.classList.toggle("active", btn.dataset.type === type));
     if (unitLabel) unitLabel.textContent = type === "pages" ? "صفحة/يوم" : "آية/يوم";
+    // A number to hit is the one thing an open wird does not have, so the
+    // box that asks for it goes away rather than sitting there disabled.
+    if (field) field.classList.toggle("hidden", type === "open");
+    if (openNote) openNote.classList.toggle("hidden", type !== "open");
   }
   updateTypeUI();
 

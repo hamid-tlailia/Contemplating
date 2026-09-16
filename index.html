@@ -443,17 +443,6 @@
           <h2>🌙 ورد اليوم</h2>
           <p id="wird-today-date" class="muted"></p>
         </div>
-        <div class="wird-target-control">
-          <div class="wird-type-toggle">
-            <button type="button" class="wird-type-btn" data-type="ayahs">آية</button>
-            <button type="button" class="wird-type-btn" data-type="pages">صفحة</button>
-          </div>
-          <label>
-            الهدف:
-            <input type="number" id="wird-target-input" min="1" max="604" value="5">
-            <span id="wird-target-unit">آية/يوم</span>
-          </label>
-        </div>
       </div>
       <div class="wird-progress">
         <div class="wird-ring" id="wird-ring">
@@ -519,6 +508,23 @@
     <div class="panel mushaf-card">
       <h2>📖 قراءة اليوم من المصحف</h2>
       <p class="muted">اقرأ بملء الشاشة بمعزل عن الحفظ والمراجعة - يُضاف ما تقرؤه إلى ورد اليوم عند تأكيد إنهاء القراءة. يتذكّر التطبيق آخر موضع توقفت عنده ليبدأ منه المرة القادمة.</p>
+
+      <!-- The daily target lives here, beside the reading it measures, rather
+           than up in the wird card: setting it meant scrolling up, and
+           checking what you had set meant scrolling up again. -->
+      <div class="wird-target-control">
+        <div class="wird-type-toggle">
+          <button type="button" class="wird-type-btn" data-type="ayahs">آية</button>
+          <button type="button" class="wird-type-btn" data-type="pages">صفحة</button>
+          <button type="button" class="wird-type-btn" data-type="open">مفتوح</button>
+        </div>
+        <label id="wird-target-field">
+          الهدف:
+          <input type="number" id="wird-target-input" min="1" max="604" value="5">
+          <span id="wird-target-unit">آية/يوم</span>
+        </label>
+        <p class="muted wird-open-note hidden" id="wird-open-note">بلا عدد مطلوب — يُحسب لك اليوم بمجرّد أن تقرأ.</p>
+      </div>
 
       <div class="mushaf-mode-toggle">
         <button type="button" class="mushaf-mode-btn active" data-mushaf-mode="range">نطاق آيات</button>
