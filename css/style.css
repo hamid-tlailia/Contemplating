@@ -1409,17 +1409,53 @@ main#app {
 }
 .plan-surah-group.gilded .plan-surah-summary::before { color: var(--accent); }
 
-/* Said in words as well as in gold, for whoever does not read the frame. */
+/* The seal, hung on the frame's top edge: a pointed-end plaque of the kind
+   that carries a title on an illuminated page - a gold rim, a dark panel
+   inside it, the words on the panel. Drawn with two clipped layers rather
+   than an image so it takes the theme's own gold and stays crisp at any
+   pixel density. It takes no clicks: the whole row is the group's toggle. */
+.plan-surah-group.gilded { margin-top: 15px; }
 .gild-seal {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
-  color: color-mix(in srgb, var(--accent) 85%, var(--text));
-  border-radius: 999px;
-  padding: 2px 8px;
-  font-size: 0.68rem;
-  font-weight: 600;
+  position: absolute;
+  top: -14px;
+  /* Physical left/translate, not inline-start: this centres the same way
+     whichever direction the text runs. */
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1;
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  padding: 0 20px;
+  font-size: 0.66rem;
+  font-weight: 700;
   white-space: nowrap;
+  color: #f6e7c4;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.35));
 }
+.gild-seal::before,
+.gild-seal::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  clip-path: polygon(0 50%, 10px 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 10px 100%);
+}
+.gild-seal::before {
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--accent) 45%, #fff),
+    var(--accent) 45%,
+    color-mix(in srgb, var(--accent) 65%, #000));
+}
+.gild-seal::after {
+  inset: 2.5px 5px;
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--accent) 30%, #2f2008),
+    color-mix(in srgb, var(--accent) 12%, #1d1305));
+  clip-path: polygon(0 50%, 8px 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 8px 100%);
+}
+.gild-seal > span { position: relative; z-index: 1; }
 
 /* Offered only on a surah standing finished and unilluminated. */
 .gild-btn {

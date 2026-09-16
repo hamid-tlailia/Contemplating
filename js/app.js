@@ -219,6 +219,28 @@ function loadState() {
       parsed.wirdNotifiedOn = parsed.wirdNotifiedOn || null;
       parsed.lastBackupOn = parsed.lastBackupOn || null;
       parsed.gilding = parsed.gilding || {};
+      // The illumination was briefly sold in three degrees, opened at the
+      // start of a surah, at its half and at its end. It is one purchase now,
+      // and only for a surah memorized whole - so a degree bought part-way
+      // along is no longer a thing that exists. The third degree cost 25+75+
+      // 150, which is exactly today's single price, so it carries over as a
+      // full gilding; the first and second are refunded to the balance rather
+      // than left sitting on a surah as a claim of "تمَّ الحفظ" that isn't
+      // true yet. (Which is what put a finished frame around البقرة at 161
+      // of 286.)
+      // Guarded by a flag, and it has to be: a surah gilded under the rules
+      // that replaced it also stores a 1, and the two are indistinguishable
+      // from the value alone - so without this the sweep would run again on
+      // the next load and refund away every gilding anyone has bought since.
+      if (!parsed.gildingMigrated) {
+        Object.keys(parsed.gilding).forEach((surah) => {
+          const degree = parsed.gilding[surah];
+          if (degree >= 3) { parsed.gilding[surah] = 1; return; }
+          parsed.points = (parsed.points || 0) + (degree >= 2 ? 100 : 25);
+          delete parsed.gilding[surah];
+        });
+        parsed.gildingMigrated = true;
+      }
       parsed.listenMode = parsed.listenMode === true;
       parsed.backupNudgedOn = parsed.backupNudgedOn || null;
       parsed.autoVaryModes = parsed.autoVaryModes !== false;
@@ -270,7 +292,8 @@ function loadState() {
     wirdPlan: null, // {anchor, time:"HH:MM", place, notify} - the when/where commitment
     wirdNotifiedOn: null, // "YYYY-MM-DD" - the day the reminder last went out, so it goes out once
     listenMode: false, // review by ear: the ayah veiled, its opening played, you continue
-    gilding: {}, // surah number -> highest illumination degree bought (1-3)
+    gilding: {}, // surah number -> 1 once its illumination is bought
+    gildingMigrated: true, // a new plan has nothing from the three-degree scheme to sweep
     lastBackupOn: null, // "YYYY-MM-DD" - the day a backup file was last saved
     backupNudgedOn: null, // "YYYY-MM-DD" - the day we last suggested saving one
     autoVaryModes: true, // rotate the test mode across an ayah's three rounds
@@ -571,13 +594,23 @@ function surahFullyMemorized(surahNumber) {
   return done >= total;
 }
 
-function isGilded(surahNumber) {
+// Bought - which is what stops it being offered twice, and what the lifetime
+// total counts.
+function gildPurchased(surahNumber) {
   return !!(state.gilding || {})[surahNumber];
+}
+
+// Shown. The seal on the frame says "تمَّ الحفظ", so it is only drawn while
+// that is true: an ayah dropped from the plan afterwards takes the frame
+// down with it rather than leaving the seal telling a lie, and putting the
+// ayah back brings it straight back - the purchase itself is never lost.
+function isGilded(surahNumber) {
+  return gildPurchased(surahNumber) && surahFullyMemorized(surahNumber);
 }
 
 // Bought only at the end, and only once.
 function canGild(surahNumber) {
-  return !isGilded(surahNumber) && surahFullyMemorized(surahNumber);
+  return !gildPurchased(surahNumber) && surahFullyMemorized(surahNumber);
 }
 
 // Every surah standing finished and unilluminated - what the points still
@@ -1762,8 +1795,8 @@ function renderDashboard() {
         summary.className = "plan-surah-summary";
         summary.innerHTML = `
           <span class="plan-surah-name">📖 ${group.name}</span>
-          <span class="plan-surah-meta">${items2.length} آية${dueInGroup ? ` <span class="badge due">${dueInGroup} مستحقة</span>` : ""}${
-            gilded ? ` <span class="gild-seal">✦ تمَّ الحفظ</span>` : ""}</span>
+          <span class="plan-surah-meta">${items2.length} آية${dueInGroup ? ` <span class="badge due">${dueInGroup} مستحقة</span>` : ""}</span>
+          ${gilded ? `<span class="gild-seal"><span>تمَّ الحفظ</span></span>` : ""}
         `;
         if (offer) {
           const btn = document.createElement("button");
