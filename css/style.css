@@ -1323,11 +1323,26 @@ main#app {
 }
 @media (hover: hover) { .icon-btn:hover { color: var(--danger); } }
 
+/* The gilded rows carry a frame with padding of its own, so every row gets
+   the same side padding - otherwise the illuminated ones sit 8px wider and
+   their progress bars fall out of line with the rest of the list. */
 .surah-progress-list { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.surah-progress-row { padding: 6px 8px; }
 .surah-progress-row { display: flex; align-items: center; gap: 10px; }
-.surah-progress-row .name { width: 140px; flex-shrink: 0; font-size: 0.9rem; }
+/* 140px when there is room for it, so the bars line up down the list, but
+   allowed to give way on a narrow phone - the row now carries a buy button
+   too, and a name that refuses to shrink pushed the whole row off the card. */
+.surah-progress-row .name {
+  flex: 0 1 140px;
+  min-width: 0;
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .progress-bar {
-  flex: 1;
+  flex: 1 1 40px;
+  min-width: 32px;
   height: 8px;
   background: var(--border);
   border-radius: 999px;
@@ -1340,6 +1355,79 @@ main#app {
   transition: width .3s ease;
 }
 .surah-progress-row .pct { width: 48px; text-align: end; font-size: 0.8rem; color: var(--muted); }
+
+/* ---------- The illuminated surah ---------- */
+/* Three degrees, and each has to read as more than the one before it at a
+   glance - a person scanning this list should see which surahs are finished
+   without reading a single percentage. So they escalate in kind and not
+   just in amount: a mark, then the name itself in gold, then the row set
+   apart with a frame and the name inside ornament brackets. */
+.gild-orn {
+  color: var(--accent, var(--primary));
+  font-size: 0.95em;
+  opacity: 0.9;
+}
+/* Gold, not green: --accent is the gold in every one of the themes, and the
+   thing being bought is gilding. Led by --primary it read as "this row is
+   selected" rather than as an illuminated surah. */
+.surah-progress-row.gilded-1 .name { color: color-mix(in srgb, var(--accent) 60%, var(--text)); }
+.surah-progress-row.gilded-2 .name {
+  color: color-mix(in srgb, var(--accent) 85%, var(--text));
+  font-weight: 600;
+}
+.surah-progress-row.gilded-2 .progress-fill {
+  background: linear-gradient(90deg, var(--primary), var(--accent));
+}
+.surah-progress-row.gilded-3 {
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--accent) 16%, transparent),
+    color-mix(in srgb, var(--accent) 5%, transparent));
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 10px;
+}
+.surah-progress-row.gilded-3 .name {
+  color: color-mix(in srgb, var(--accent) 92%, var(--text));
+  font-weight: 700;
+}
+.surah-progress-row.gilded-3 .progress-fill {
+  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 60%, #fff));
+}
+
+/* Buy the next degree. Kept to the price and a mark: the row is already
+   four things wide on a phone, and a worded button would push the bar out. */
+.gild-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent);
+  background: none;
+  color: color-mix(in srgb, var(--accent) 80%, var(--text));
+  font-family: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .gild-btn:hover { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+}
+.gild-btn-mark { font-size: 0.85em; }
+.gild-btn-price { font-variant-numeric: tabular-nums; }
+.gild-lead { margin: 6px 0 0; font-size: 0.8rem; line-height: 1.7; }
+.gild-lead.hidden { display: none; }
+/* The same three degrees wherever a surah is named. */
+.gilded-name-1 { color: color-mix(in srgb, var(--accent) 60%, var(--text)); }
+.gilded-name-2 { color: color-mix(in srgb, var(--accent) 85%, var(--text)); font-weight: 600; }
+.gilded-name-3 { color: color-mix(in srgb, var(--accent) 92%, var(--text)); font-weight: 700; }
+/* Nothing left to buy for this surah - the mark stands on its own. */
+.gild-done {
+  flex-shrink: 0;
+  color: var(--accent, var(--primary));
+  font-size: 0.9rem;
+  width: 22px;
+  text-align: center;
+}
 
 /* Stacked, each row taking the card's full width - the same shape the
    mushaf card's controls already have. As a wrapping row the surah box and

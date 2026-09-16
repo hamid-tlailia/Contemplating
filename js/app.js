@@ -218,6 +218,7 @@ function loadState() {
       parsed.wirdPlan = parsed.wirdPlan || null;
       parsed.wirdNotifiedOn = parsed.wirdNotifiedOn || null;
       parsed.lastBackupOn = parsed.lastBackupOn || null;
+      parsed.gilding = parsed.gilding || {};
       parsed.listenMode = parsed.listenMode === true;
       parsed.backupNudgedOn = parsed.backupNudgedOn || null;
       parsed.autoVaryModes = parsed.autoVaryModes !== false;
@@ -269,6 +270,7 @@ function loadState() {
     wirdPlan: null, // {anchor, time:"HH:MM", place, notify} - the when/where commitment
     wirdNotifiedOn: null, // "YYYY-MM-DD" - the day the reminder last went out, so it goes out once
     listenMode: false, // review by ear: the ayah veiled, its opening played, you continue
+    gilding: {}, // surah number -> highest illumination degree bought (1-3)
     lastBackupOn: null, // "YYYY-MM-DD" - the day a backup file was last saved
     backupNudgedOn: null, // "YYYY-MM-DD" - the day we last suggested saving one
     autoVaryModes: true, // rotate the test mode across an ayah's three rounds
@@ -548,6 +550,103 @@ function rewardSuffix(amount) {
   return everythingOwned() ? "" : ` · +${amount}`;
 }
 
+// ---------- Illuminating the mushaf ----------
+//
+// The four collectible grids are a finite shop: about two thousand points
+// buys the lot, which a daily user passes in a few months, and after that
+// the points had nothing to do. This is the sink that does not run out -
+// and it does not run out for the right reason. A surah can be illuminated
+// only as far as it has been memorized, so what is bought tracks the work
+// rather than the grind: the whole Qur'an, thrice over, is as far as it
+// goes, and by then there is nothing left to memorize either.
+//
+// Three degrees, each opened by reaching a place in the surah rather than
+// by having the points:
+//
+//   بَدء   one ayah of it memorized
+//   نصف    half of it
+//   ختم    all of it
+const GILD_TIERS = [
+  { tier: 1, name: "تذهيب البدء", points: 25, hint: "بعد أول آية تحفظها منها" },
+  { tier: 2, name: "تذهيب النصف", points: 75, hint: "بعد حفظ نصفها" },
+  { tier: 3, name: "تذهيب الختم", points: 150, hint: "بعد حفظ السورة كلها" },
+];
+
+// How far a surah has been memorized, as the gilding counts it: ayahs that
+// are properly in the review cycle, against the surah's real length.
+function surahMasteredCount(surahNumber) {
+  return Object.values(state.ayahs).filter(
+    (i) => i.surah === surahNumber && i.learningStage === "srs" && !i.temporary
+  ).length;
+}
+
+// The highest degree the surah's progress has opened - not what is owned.
+function gildTierReached(surahNumber) {
+  const total = surahAyahCount(surahNumber);
+  const done = surahMasteredCount(surahNumber);
+  if (!total || !done) return 0;
+  if (done >= total) return 3;
+  if (done * 2 >= total) return 2;
+  return 1;
+}
+
+function gildTierOwned(surahNumber) {
+  return (state.gilding || {})[surahNumber] || 0;
+}
+
+// The next degree to buy for this surah: one step up from what is owned,
+// and only if the memorizing has reached it. Degrees come in order - the
+// frame is not drawn before the mark that sits inside it.
+function nextGildTier(surahNumber) {
+  const owned = gildTierOwned(surahNumber);
+  if (owned >= GILD_TIERS.length) return null;
+  if (gildTierReached(surahNumber) < owned + 1) return null;
+  return GILD_TIERS[owned];
+}
+
+// Every surah with a degree waiting to be bought, cheapest first.
+function pendingGildings() {
+  const out = [];
+  new Set(Object.values(state.ayahs).filter((i) => !i.temporary).map((i) => i.surah))
+    .forEach((surah) => {
+      const next = nextGildTier(surah);
+      if (next) out.push({ surah, ...next });
+    });
+  return out.sort((a, b) => a.points - b.points);
+}
+
+function gildSurah(surahNumber) {
+  const next = nextGildTier(surahNumber);
+  if (!next) return;
+  if (state.points < next.points) {
+    showToast(`🪙 يتطلب ${next.name} ${next.points} نقطة ولا تملك ما يكفي (رصيدك: ${state.points}).`, "error");
+    return;
+  }
+  const name = surahDisplayName(surahNumber);
+  showConfirmModal(
+    "تذهيب السورة",
+    `تُذهّب "${name}" — ${next.name} — مقابل ${next.points} 🪙 (رصيدك: ${state.points})؟`,
+    `أنفق ${next.points} 🪙 وذهّبها`,
+    () => {
+      state.points -= next.points;
+      state.gilding = state.gilding || {};
+      state.gilding[surahNumber] = next.tier;
+      saveState();
+      renderPointsDisplay();
+      renderSurahProgress();
+      fireConfetti(true);
+      showToast(`✨ ذهّبت "${name}" — ${next.name}`, "success");
+    }
+  );
+}
+
+function surahDisplayName(surahNumber) {
+  const meta = (surahListCache || []).find((s) => s.number === surahNumber);
+  if (meta) return meta.name;
+  const any = Object.values(state.ayahs).find((i) => i.surah === surahNumber);
+  return (any && any.surahName) || `سورة ${surahNumber}`;
+}
+
 // Everything purchasable, in one list, so "is there anything left to buy"
 // is a question with an answer rather than four separate ones.
 function allCollectibles() {
@@ -560,8 +659,13 @@ function allCollectibles() {
 }
 
 function everythingOwned() {
-  return allCollectibles().every(({ items, owned }) =>
+  const gridsDone = allCollectibles().every(({ items, owned }) =>
     items.every((i) => (owned || []).includes(i.id)));
+  // The gilding counts as shop stock: while a surah still has a degree
+  // waiting, there is something to spend on, so the points keep counting.
+  // It goes quiet by itself when the memorizing pauses, and starts again
+  // with the next surah - which is the behaviour wanted, not a special case.
+  return gridsDone && pendingGildings().length === 0;
 }
 
 // What has been earned all told, worked out rather than counted. A counter
@@ -578,6 +682,9 @@ function lifetimePoints() {
       if (i.points && (owned || []).includes(i.id)) spent += i.points;
     });
   });
+  Object.values(state.gilding || {}).forEach((tier) => {
+    for (let t = 0; t < tier && t < GILD_TIERS.length; t++) spent += GILD_TIERS[t].points;
+  });
   return state.points + spent;
 }
 
@@ -586,6 +693,8 @@ function cheapestUnowned() {
   allCollectibles().forEach(({ items, owned }) => {
     items.forEach((i) => { if (!(owned || []).includes(i.id)) best = Math.min(best, i.points); });
   });
+  const gild = pendingGildings()[0];
+  if (gild) best = Math.min(best, gild.points);
   return best === Infinity ? null : best;
 }
 
@@ -2945,6 +3054,18 @@ async function renderSurahProgress() {
     try { surahs = await fetchSurahList(); } catch (e) { surahs = null; }
   }
 
+  // The ✦ button means nothing on its own, and this is the only place it
+  // appears - so the card says once what it is, and only while there is
+  // something to buy.
+  const lead = document.getElementById("gild-lead");
+  if (lead) {
+    const waiting = pendingGildings().length;
+    lead.textContent = waiting
+      ? `✦ ذهّب سورة بنقاطك — تُفتح درجاتُها الثلاث بحفظك: أوّل آية، ثم النصف، ثم الختم (${waiting} بانتظارك).`
+      : "";
+    lead.classList.toggle("hidden", !waiting);
+  }
+
   container.innerHTML = "";
   Object.keys(bySurah).sort((a, b) => a - b).forEach((surahNum) => {
     const info = bySurah[surahNum];
@@ -2952,13 +3073,34 @@ async function renderSurahProgress() {
     const totalInSurah = meta ? meta.numberOfAyahs : info.total;
     const name = meta ? meta.name : (info.name || surahNum);
     const pct = Math.round((info.mastered / totalInSurah) * 100);
+    const num = Number(surahNum);
+    const owned = gildTierOwned(num);
+    const next = nextGildTier(num);
     const row = document.createElement("div");
-    row.className = "surah-progress-row";
+    row.className = `surah-progress-row${owned ? ` gilded gilded-${owned}` : ""}`;
+    // The name is wrapped in its ornament rather than having one appended,
+    // so the illumination reads as framing the surah instead of trailing it.
     row.innerHTML = `
-      <span class="name">${name}</span>
+      <span class="name">${owned >= 3 ? `<span class="gild-orn">﴾</span>` : ""}${name}${owned >= 3 ? `<span class="gild-orn">﴿</span>` : ""}${owned === 1 ? ` <span class="gild-orn">۞</span>` : ""}</span>
       <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
       <span class="pct">${pct}%</span>
     `;
+    if (next) {
+      const btn = document.createElement("button");
+      btn.className = "gild-btn";
+      btn.type = "button";
+      btn.title = `${next.name} — ${next.hint}`;
+      btn.setAttribute("aria-label", `${next.name} لسورة ${name} مقابل ${next.points} نقطة`);
+      btn.innerHTML = `<span class="gild-btn-mark">✦</span><span class="gild-btn-price">${next.points}</span>`;
+      btn.addEventListener("click", () => gildSurah(num));
+      row.appendChild(btn);
+    } else if (owned >= GILD_TIERS.length) {
+      const done = document.createElement("span");
+      done.className = "gild-done";
+      done.title = "مذهّبة بالكامل";
+      done.textContent = "✦";
+      row.appendChild(done);
+    }
     container.appendChild(row);
   });
 }
@@ -6448,9 +6590,12 @@ function renderReviewSurahList(ignoreDailyCap = false) {
   groups.forEach((g) => {
     const row = document.createElement("div");
     row.className = "review-surah-card";
+    // An illuminated surah keeps its mark wherever it is named, so the
+    // gilding belongs to the surah rather than to one card on the dashboard.
+    const gild = gildTierOwned(g.surah);
     row.innerHTML = `
       <div class="review-surah-card-text">
-        <span class="review-surah-card-name">${g.name}</span>
+        <span class="review-surah-card-name${gild ? ` gilded-name gilded-name-${gild}` : ""}">${gild >= 3 ? "﴾" : ""}${g.name}${gild >= 3 ? "﴿" : ""}${gild === 1 ? " ۞" : ""}</span>
         <span class="review-surah-card-count">${g.items.length} آية مستحقة</span>
       </div>
       <button class="btn primary">مراجعة</button>`;
