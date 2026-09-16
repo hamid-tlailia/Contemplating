@@ -1828,6 +1828,7 @@ function renderDashboard() {
   }
 
 
+  renderPendingCard();
   renderSurahProgress();
   renderMushafMap();
   renderActivityCalendar();
@@ -3398,8 +3399,8 @@ function renderAddIntent() {
   const note = document.getElementById("add-intent-note");
   if (note) {
     note.textContent = intent === "review"
-      ? "تدخل جدول المراجعة مباشرةً وتُحتسب في «آيات محفوظة»."
-      : "تدخل «ابدأ الحفظ»، ولا تُحتسب محفوظةً حتى تُتمّ ثلاث جولات بلا خطأ.";
+      ? "جولةٌ واحدة تُثبتها، ثم تدخل المراجعة المتباعدة وتُحتسب في «آيات محفوظة»."
+      : "تنتظر في لوحتك حتى تحفظها — بلا مراجعة متباعدة ولا احتساب حتى تُتمّ ثلاث جولات.";
   }
   // The button names the destination too; it owns its own text (the count
   // depends on what is already in the plan), so it is asked to redraw.
@@ -3593,8 +3594,16 @@ function planRangeAddition(surahNumber, list) {
 // carrying half the Qur'an already needs those ayahs in review without
 // re-earning them, and someone adding a new page needs the rounds.
 //
-//   "أحفظها بالفعل" -> into the review cycle, due today, counted.
-//   "سأحفظها"       -> learning, three clean rounds in ابدأ الحفظ first.
+//   "أحفظها بالفعل" -> "verify": nothing is granted yet. One clean round
+//                      proves the claim, and then it joins the review cycle
+//                      properly - counted, scheduled, like any other.
+//   "سأحفظها"       -> "learning": it waits on the dashboard until the
+//                      memorizing reaches it, out of the review cycle and
+//                      out of the count until it is actually learnt.
+//
+// So neither answer hands anything over for free: one asks for a single
+// round because the person says the work is already done, the other asks
+// for the usual three because it isn't.
 function addIntent() {
   return state.addIntent === "review" ? "review" : "learn";
 }
@@ -3615,13 +3624,12 @@ function addAyahToPlan(surahNumber, surahName, ayahObj, { asReview } = {}) {
     due: todayISO(),
     lastReviewed: null,
     added: todayISO(),
-    learningStage: review ? "srs" : "learning",
+    learningStage: review ? "verify" : "learning",
     roundStreak: 0,
     temporary: false,
-    // Only an ayah declared already memorized carries a date of memorizing.
-    // One still to be learnt gets it when it finishes its rounds, from
-    // masterCurrentLearningAyah - the same day the work was actually done.
-    memorizedOn: review ? todayISO() : null,
+    // Written the day the rounds are finished, by masterCurrentLearningAyah -
+    // the day the work was actually done, whichever door the ayah came in by.
+    memorizedOn: null,
   };
   saveState();
 }
@@ -4421,7 +4429,13 @@ function renderLearnRoundInfo() {
   if (!item) return;
   const round = item.roundStreak || 0;
   const rotating = state.autoVaryModes && !learnModeManualOverride;
-  el.textContent = `الجولة ${round + 1} من ${ROUNDS_TO_MASTER}${rotating ? ` · ${MODE_ROUND_LABEL[learnMode]}` : ""}`;
+  // A verification is one round, and saying "الجولة 1 من 3" over it would
+  // promise two more that are never coming.
+  const needed = roundsNeededFor(item);
+  const head = item.learningStage === "verify"
+    ? "إثبات حفظك — جولة واحدة"
+    : `الجولة ${round + 1} من ${needed}`;
+  el.textContent = `${head}${rotating ? ` · ${MODE_ROUND_LABEL[learnMode]}` : ""}`;
 }
 
 document.querySelectorAll(".mode-btn").forEach((btn) => {
@@ -5161,6 +5175,13 @@ function advanceLearnWord() {
   }
 }
 
+// Three rounds to learn an ayah; one to prove an ayah you say you already
+// know. The claim still has to be shown - it is just not made to repeat work
+// that, if the claim is true, was done long ago.
+function roundsNeededFor(item) {
+  return item && item.learningStage === "verify" ? 1 : ROUNDS_TO_MASTER;
+}
+
 function completeLearnRound() {
   const item = state.ayahs[learnCurrentKey];
   // A slip repeats the round it happened in; it doesn't send you back to
@@ -5168,15 +5189,23 @@ function completeLearnRound() {
   // person for the very thing the round exists to surface, and the fix for
   // a shaky word is to do that round again, not to redo the two that
   // already went well.
+  const needed = roundsNeededFor(item);
   if (!learnMistakeThisRound) {
     item.roundStreak = (item.roundStreak || 0) + 1;
+  } else if (item.learningStage === "verify") {
+    // The claim did not hold. It is not held against the person - the ayah
+    // simply becomes one to memorize, with the three rounds that go with it,
+    // and the round just spent counts as the first attempt at the first.
+    item.learningStage = "learning";
+    item.roundStreak = 0;
+    showToast("لا بأس — سنضعها في الحفظ من أوّلها.", undefined);
   }
   saveState();
 
-  if (item.roundStreak >= ROUNDS_TO_MASTER) {
+  if (item.roundStreak >= needed) {
     masterCurrentLearningAyah(item);
   } else {
-    showToast(learnMistakeThisRound ? "قريب جدًا! أعد المحاولة من جديد 💪" : `أحسنت! جولة ${item.roundStreak} من ${ROUNDS_TO_MASTER} ✅`, learnMistakeThisRound ? undefined : "success");
+    showToast(learnMistakeThisRound ? "قريب جدًا! أعد المحاولة من جديد 💪" : `أحسنت! جولة ${item.roundStreak} من ${needed} ✅`, learnMistakeThisRound ? undefined : "success");
     if (!learnMistakeThisRound) fireConfetti(false);
     setTimeout(() => loadLearnAyah(), 900);
   }
@@ -6862,6 +6891,70 @@ function loadReviewItem() {
   fitReviewAyahHeight();
   scheduleAnswerDockUpdate();
   closeInfoModal();
+}
+
+// Everything added to the plan that is not yet memorized: what is waiting to
+// be learnt, and what is waiting to be proved. It has to be visible - an ayah
+// added and then never seen again reads as an ayah the app swallowed - but it
+// is kept apart from "خطة الحفظ الحالية", which is the review cycle, because
+// none of this is in that cycle or in the count yet.
+function pendingGroups() {
+  const groups = new Map();
+  Object.values(state.ayahs).forEach((item) => {
+    const stage = item.learningStage;
+    if (stage !== "learning" && stage !== "verify") return;
+    const key = `${item.surah}|${stage}`;
+    if (!groups.has(key)) {
+      groups.set(key, { surah: item.surah, stage, name: item.surahName || `سورة ${item.surah}`, items: [] });
+    }
+    groups.get(key).items.push(item);
+  });
+  return [...groups.values()]
+    // Proving comes first: it is one round away from counting, while the
+    // rest is a queue that waits on the memorizing reaching it.
+    .sort((a, b) => (a.stage === b.stage ? a.surah - b.surah : a.stage === "verify" ? -1 : 1));
+}
+
+function renderPendingCard() {
+  const card = document.getElementById("pending-card");
+  const list = document.getElementById("pending-list");
+  if (!card || !list) return;
+  const groups = pendingGroups();
+  card.classList.toggle("hidden", groups.length === 0);
+  if (!groups.length) return;
+
+  const toVerify = groups.filter((g) => g.stage === "verify").reduce((n, g) => n + g.items.length, 0);
+  document.getElementById("pending-heading").textContent = toVerify ? "📥 بانتظارك" : "📥 في انتظار الحفظ";
+  document.getElementById("pending-lead").textContent = toVerify
+    ? "آياتٌ أضفتَها ولم تدخل المراجعة بعد. ما قلتَ إنك تحفظه يحتاج جولةً واحدة يُثبته، وما سواه ينتظر دوره."
+    : "آياتٌ أضفتَها للحفظ. لا تدخل المراجعة ولا تُحتسب محفوظةً حتى تحفظها.";
+
+  list.innerHTML = "";
+  groups.forEach((g) => {
+    const nums = g.items.map((i) => i.ayah).sort((a, b) => a - b);
+    const span = nums.length > 1 ? `${nums[0]}–${nums[nums.length - 1]}` : `${nums[0]}`;
+    const row = document.createElement("div");
+    row.className = `pending-row${g.stage === "verify" ? " to-verify" : ""}`;
+    row.innerHTML = `
+      <div class="pending-row-text">
+        <span class="pending-row-name">${g.name} <span class="pending-row-span">${span}</span></span>
+        <span class="pending-row-count">${ayahCountLabel(g.items.length)} · ${g.stage === "verify" ? "تنتظر إثباتك" : "تنتظر دورها"}</span>
+      </div>
+      <button class="btn ${g.stage === "verify" ? "primary" : ""}">${g.stage === "verify" ? "أثبت حفظك" : "ابدأ بها"}</button>`;
+    row.querySelector("button").addEventListener("click", () => startPendingGroup(g));
+    list.appendChild(row);
+  });
+}
+
+// Points the memorizing at the first ayah of this group and goes there. The
+// learn tab walks a pointer rather than a queue, so this is what "reaching"
+// an ayah added out of sequence actually means.
+function startPendingGroup(group) {
+  const first = group.items.map((i) => i.ayah).sort((a, b) => a - b)[0];
+  state.learningPointer = { surah: group.surah, ayah: first };
+  saveState();
+  switchTab("learn");
+  loadLearnAyah();
 }
 
 // Picks which word indices to hide for a given mask level (0 = none, higher

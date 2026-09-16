@@ -1429,6 +1429,30 @@ main#app {
 }
 .gild-btn-price { font-variant-numeric: tabular-nums; }
 
+/* Added but not yet memorized: waiting its turn, or waiting to be proved.
+   Set apart from the review plan below it by a dashed edge - it is a holding
+   area, not a schedule, and it empties itself as the ayahs are learnt. */
+.pending-card { border: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent); }
+.pending-card.hidden { display: none; }
+.pending-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.pending-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+/* The ones a round away from counting carry the accent; the rest are a queue. */
+.pending-row.to-verify { border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+.pending-row-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.pending-row-name { font-weight: 700; font-size: 0.92rem; color: var(--primary); }
+.pending-row-span { font-weight: 400; color: var(--muted); font-size: 0.82rem; }
+.pending-row-count { font-size: 0.76rem; color: var(--muted); }
+.pending-row .btn { flex-shrink: 0; padding: 7px 12px; font-size: 0.8rem; }
+
 /* Before adding: already memorized, or still to be? The answer decides
    whether an ayah lands in the review cycle or has to earn its way there,
    so it is asked plainly and before the button rather than assumed. */
