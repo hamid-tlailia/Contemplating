@@ -523,7 +523,7 @@
           <input type="number" id="wird-target-input" min="1" max="604" value="5">
           <span id="wird-target-unit">آية/يوم</span>
         </label>
-        <p class="muted wird-open-note hidden" id="wird-open-note">بلا عدد مطلوب — يُحسب لك اليوم بمجرّد أن تقرأ.</p>
+        <p class="muted wird-open-note hidden" id="wird-open-note">بلا عدد مطلوب — اقرأ وقلّب الصفحات كما تشاء، وتوقّف حيث شئت، ويُحسب لك اليوم بمجرّد أن تقرأ.</p>
       </div>
 
       <div class="mushaf-mode-toggle">
@@ -667,8 +667,19 @@
   <!-- BROWSE / ADD -->
   <section id="tab-browse" class="tab-panel">
     <div class="panel browse-add-panel">
-      <h2>إضافة آيات إلى خطة المراجعة مباشرة</h2>
-      <p class="muted">أضف ما شئت من الآيات مباشرة دون المرور برحلة "ابدأ الحفظ" التدريجية — من أي سورة، وبأي ترتيب، وبلا مقابل. كل آية تضيفها تدخل خطة المراجعة وتُحتسب ضمن تقدّمك.</p>
+      <h2>إضافة آيات إلى خطتك</h2>
+      <p class="muted">أضف ما شئت من الآيات — من أي سورة، وبأي ترتيب، وبلا مقابل.</p>
+
+      <!-- قبل الإضافة: أهي محفوظة أصلا أم ستُحفظ؟ الفرق ليس تسمية: ما يُضاف
+           للمراجعة يُحتسب محفوظا من فوره، وما يُضاف للحفظ يمرّ بجولاته. -->
+      <div class="add-intent">
+        <p class="add-intent-q">هذه الآيات:</p>
+        <div class="add-intent-toggle">
+          <button type="button" class="add-intent-btn" data-intent="learn">سأحفظها</button>
+          <button type="button" class="add-intent-btn" data-intent="review">أحفظها بالفعل</button>
+        </div>
+        <p class="muted add-intent-note" id="add-intent-note"></p>
+      </div>
 
       <div class="browse-add-section">
         <p class="browse-add-section-title">تصفح حسب السورة والنطاق</p>
@@ -890,6 +901,9 @@
   </div>
   <div class="mushaf-reader-footer">
     <button id="btn-mushaf-reader-prev" class="btn"></button>
+    <!-- Only for an open reading, where the forward button never turns into
+         "أنهيت" because there is always another page. -->
+    <button id="btn-mushaf-reader-done" class="btn hidden">✅ أنهيت</button>
     <button id="btn-mushaf-reader-next" class="btn primary"></button>
   </div>
 </div>

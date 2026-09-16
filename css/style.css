@@ -1429,6 +1429,35 @@ main#app {
 }
 .gild-btn-price { font-variant-numeric: tabular-nums; }
 
+/* Before adding: already memorized, or still to be? The answer decides
+   whether an ayah lands in the review cycle or has to earn its way there,
+   so it is asked plainly and before the button rather than assumed. */
+.add-intent { margin: 12px 0 14px; }
+.add-intent-q { margin: 0 0 6px; font-size: 0.85rem; color: var(--muted); }
+.add-intent-toggle {
+  display: inline-flex;
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  border-radius: 999px;
+  padding: 3px;
+  gap: 2px;
+}
+.add-intent-btn {
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 0.82rem;
+  padding: 6px 14px;
+  border-radius: 999px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.add-intent-btn.active {
+  background: var(--primary);
+  color: #fff;
+  font-weight: 600;
+}
+.add-intent-note { margin: 8px 0 0; font-size: 0.78rem; line-height: 1.7; }
+
 /* Stacked, each row taking the card's full width - the same shape the
    mushaf card's controls already have. As a wrapping row the surah box and
    the two ayah fields sized themselves to their content and huddled against
@@ -1556,7 +1585,7 @@ main#app {
 .range-inputs.open-ended .range-dash,
 .range-inputs.open-ended label:last-of-type { display: none; }
 .range-inputs.open-ended::after {
-  content: "إلى آخر السورة";
+  content: "وتوقّف حيث شئت";
   flex: 1 1 0;
   align-self: end;
   padding-bottom: 10px;
@@ -2878,20 +2907,33 @@ main#app {
    and it lengthens into a lozenge for three rather than letting 100+ spill
    out of the ring - which is what a fixed 1.6em width did from البقرة 100
    onwards. min-width keeps the round shape where the number still fits. */
+/* The end-of-ayah mark as the mushaf draws it: an eight-pointed medallion
+   between two rings with a dot in each notch, and the ayah's number sitting
+   dead centre. The medallion is a background and the number is the element's
+   own text, centred by the flexbox - which is what puts it exactly in the
+   middle, where the ۝ character's own number placement is at the mercy of
+   whichever font happens to be installed. */
 .ayah-number-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 1.7em;
-  height: 1.7em;
-  padding: 0 0.32em;
+  width: 2.05em;
+  height: 2.05em;
+  flex-shrink: 0;
   font-size: 0.5em;
+  font-weight: 700;
   line-height: 1;
   vertical-align: middle;
-  border: 1.5px solid var(--accent);
-  border-radius: 999px;
   color: var(--accent);
+  background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64' width='64' height='64'><g fill='none' stroke='%23b98b2a' stroke-width='2' stroke-linejoin='round'><path d='M32.0 2.0L39.7 13.5L53.2 10.8L50.5 24.3L62.0 32.0L50.5 39.7L53.2 53.2L39.7 50.5L32.0 62.0L24.3 50.5L10.8 53.2L13.5 39.7L2.0 32.0L13.5 24.3L10.8 10.8L24.3 13.5Z'/><circle cx='32' cy='32' r='15.5'/></g><g fill='%23b98b2a'><circle cx='41.8' cy='8.4' r='1.5'/><circle cx='55.6' cy='22.2' r='1.5'/><circle cx='55.6' cy='41.8' r='1.5'/><circle cx='41.8' cy='55.6' r='1.5'/><circle cx='22.2' cy='55.6' r='1.5'/><circle cx='8.4' cy='41.8' r='1.5'/><circle cx='8.4' cy='22.2' r='1.5'/><circle cx='22.2' cy='8.4' r='1.5'/></g></svg>");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 100% 100%;
 }
+/* Three digits do not fit the ring at the size two do, so they are set
+   smaller rather than allowed to spill over the points. */
+.ayah-number-badge[data-len="3"] { font-size: 0.4em; }
+.mushaf-reader-footer .hidden { display: none; }
 .mushaf-reader-footer {
   display: flex;
   gap: 10px;

@@ -218,6 +218,7 @@ function loadState() {
       parsed.wirdPlan = parsed.wirdPlan || null;
       parsed.wirdNotifiedOn = parsed.wirdNotifiedOn || null;
       parsed.lastBackupOn = parsed.lastBackupOn || null;
+      parsed.addIntent = parsed.addIntent === "review" ? "review" : "learn";
       parsed.gilding = parsed.gilding || {};
       // The illumination was briefly sold in three degrees, opened at the
       // start of a surah, at its half and at its end. It is one purchase now,
@@ -292,6 +293,10 @@ function loadState() {
     wirdPlan: null, // {anchor, time:"HH:MM", place, notify} - the when/where commitment
     wirdNotifiedOn: null, // "YYYY-MM-DD" - the day the reminder last went out, so it goes out once
     listenMode: false, // review by ear: the ayah veiled, its opening played, you continue
+    // "learn" | "review" - what the browse tab does with what it adds.
+    // Defaults to learning: needing the rounds is the honest assumption, and
+    // "I already know these" is the claim a person makes deliberately.
+    addIntent: "learn",
     gilding: {}, // surah number -> 1 once its illumination is bought
     gildingMigrated: true, // a new plan has nothing from the three-degree scheme to sweep
     lastBackupOn: null, // "YYYY-MM-DD" - the day a backup file was last saved
@@ -2840,7 +2845,10 @@ function renderMushafReaderPage() {
           text = rest;
         }
       }
-      return `${text} <span class="ayah-number-badge">${a.numberInSurah}</span>`;
+      // Plain digits: the numerals pass converts them to whichever style the
+      // person chose (see applyNumeralsTo), and hardcoding one here would
+      // quietly ignore that setting in the one place it matters most.
+      return `${text} <span class="ayah-number-badge" data-len="${String(a.numberInSurah).length}">${a.numberInSurah}</span>`;
     })
     .join(" ");
   document.getElementById("mushaf-reader-text").innerHTML = bismillahHTML + bodyHTML;
@@ -2856,13 +2864,54 @@ function renderMushafReaderPage() {
   // and "next" on the left (forward, matching RTL reading direction) - the
   // chevrons point the same way their button sits relative to the other.
   prevBtn.innerHTML = iconLabel("chevronRight", "الصفحة السابقة");
-  const isLast = mushafPageIndex === mushafPages.length - 1;
+  // An open reading never shows "أنهيت القراءة" on the forward button - there
+  // is always a next page - so finishing gets a button of its own, on every
+  // page, and the person stops at whichever one they please.
+  const open = wirdIsOpen();
+  const isLast = !open && mushafPageIndex === mushafPages.length - 1;
   document.getElementById("btn-mushaf-reader-next").innerHTML = isLast
     ? iconLabel("checkDone", "أنهيت القراءة")
     : iconLabel("chevronLeft", "الصفحة التالية");
+  const doneBtn = document.getElementById("btn-mushaf-reader-done");
+  if (doneBtn) doneBtn.classList.toggle("hidden", !open);
 }
 
-function goToNextMushafPage() {
+// An open reading has no end to reach, so running out of loaded pages is not
+// the end of it: the next surah is fetched and added on, and the person keeps
+// turning until they decide to stop. Bounded all the same - one surah at a
+// time, and never past the last of them.
+let loadingMorePages = false;
+async function extendOpenReading() {
+  if (loadingMorePages) return false;
+  const last = mushafPages[mushafPages.length - 1];
+  const lastAyah = last && last.ayahs[last.ayahs.length - 1];
+  const surah = lastAyah && lastAyah.surahNumberForReader;
+  if (!surah || surah >= 114) return false;
+  loadingMorePages = true;
+  try {
+    const next = await fetchSurahAyahs(surah + 1);
+    const more = next.map((a) => ({ ...a, surahNumberForReader: surah + 1 }));
+    const all = mushafPages.flatMap((p) => p.ayahs).concat(more);
+    mushafPages = groupAyahsIntoMushafPages(all);
+    rememberMushafReader(all, mushafPageIndex);
+    return true;
+  } catch (e) {
+    showToast("تعذّر تحميل ما بعدها. تحقق من الاتصال بالإنترنت.", "error");
+    return false;
+  } finally {
+    loadingMorePages = false;
+  }
+}
+
+async function goToNextMushafPage() {
+  if (mushafPageIndex >= mushafPages.length - 1 && wirdIsOpen()) {
+    const grew = await extendOpenReading();
+    if (grew) {
+      mushafPageIndex++;
+      renderMushafReaderPage();
+      return;
+    }
+  }
   if (mushafPageIndex < mushafPages.length - 1) {
     mushafPageIndex++;
     renderMushafReaderPage();
@@ -2941,6 +2990,12 @@ function rememberMushafPage() {
 }
 
 on("btn-mushaf-reader-next", "click", goToNextMushafPage);
+on("btn-mushaf-reader-done", "click", () => showConfirmModal(
+  "إنهاء القراءة",
+  "هل أنهيت قراءة اليوم؟ سيُضاف ما قرأته إلى ورد اليوم.",
+  "نعم، أنهيت",
+  finishMushafReading
+));
 on("btn-mushaf-reader-prev", "click", goToPrevMushafPage);
 on("btn-mushaf-reader-close", "click", closeMushafReader);
 
@@ -3328,12 +3383,37 @@ function buildAyahRow(surahNumber, surahName, ayahObj, showSurahBadge) {
 
 // One way in, whatever the ayah and wherever it was found: into the plan.
 function handleAddAyahClick(surahNumber, surahName, ayahObj, buttonEl) {
-  addAyahDirectlyToSrs(surahNumber, surahName, ayahObj);
+  addAyahToPlan(surahNumber, surahName, ayahObj);
   buttonEl.innerHTML = iconLabel("checkDone", "أُضيفت");
   buttonEl.disabled = true;
   renderDashboard();
   updateAddRangeButton(); // the range may be fully in the plan now
 }
+
+function renderAddIntent() {
+  const intent = addIntent();
+  document.querySelectorAll(".add-intent-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.intent === intent);
+  });
+  const note = document.getElementById("add-intent-note");
+  if (note) {
+    note.textContent = intent === "review"
+      ? "تدخل جدول المراجعة مباشرةً وتُحتسب في «آيات محفوظة»."
+      : "تدخل «ابدأ الحفظ»، ولا تُحتسب محفوظةً حتى تُتمّ ثلاث جولات بلا خطأ.";
+  }
+  // The button names the destination too; it owns its own text (the count
+  // depends on what is already in the plan), so it is asked to redraw.
+  updateAddRangeButton();
+}
+
+document.querySelectorAll(".add-intent-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    if (btn.dataset.intent === addIntent()) return;
+    state.addIntent = btn.dataset.intent;
+    saveState();
+    renderAddIntent();
+  });
+});
 
 // Browsing a surah range sits behind an accordion (it's the default view
 // and can get long), while any search - a specific ayah number or a phrase
@@ -3392,7 +3472,9 @@ function updateAddRangeButton() {
     return;
   }
   btn.disabled = false;
-  btn.textContent = `إضافة ${ayahCountLabel(plan.toAdd.length)} إلى الخطة`;
+  // Names the destination as well as the count, so what the toggle decided is
+  // legible from the button you are about to press.
+  btn.textContent = `إضافة ${ayahCountLabel(plan.toAdd.length)} إلى ${addIntent() === "review" ? "المراجعة" : "الحفظ"}`;
 }
 
 // Searches the whole Quran (not just the pre-selected surah) via
@@ -3503,7 +3585,22 @@ function planRangeAddition(surahNumber, list) {
   return { already, toAdd };
 }
 
-function addAyahDirectlyToSrs(surahNumber, surahName, ayahObj, { quiet = false } = {}) {
+// Adding ayahs straight to the plan used to file every one of them as
+// memorized: the browse tab wrote learningStage "srs" and they counted
+// towards "آيات محفوظة", towards the surah's completion, and so towards its
+// gilding - without a single round being done. That is a hole, and the fix
+// is not to forbid it but to ask, because both answers are real: someone
+// carrying half the Qur'an already needs those ayahs in review without
+// re-earning them, and someone adding a new page needs the rounds.
+//
+//   "أحفظها بالفعل" -> into the review cycle, due today, counted.
+//   "سأحفظها"       -> learning, three clean rounds in ابدأ الحفظ first.
+function addIntent() {
+  return state.addIntent === "review" ? "review" : "learn";
+}
+
+function addAyahToPlan(surahNumber, surahName, ayahObj, { asReview } = {}) {
+  const review = asReview === undefined ? addIntent() === "review" : asReview;
   const key = `${surahNumber}:${ayahObj.numberInSurah}`;
   if (state.ayahs[key]) return;
   state.ayahs[key] = {
@@ -3518,12 +3615,13 @@ function addAyahDirectlyToSrs(surahNumber, surahName, ayahObj, { quiet = false }
     due: todayISO(),
     lastReviewed: null,
     added: todayISO(),
-    learningStage: "srs",
+    learningStage: review ? "srs" : "learning",
     roundStreak: 0,
-    // Whatever order they were added in, these are ayahs the person chose to
-    // memorize: they count, and they count from today.
     temporary: false,
-    memorizedOn: todayISO(),
+    // Only an ayah declared already memorized carries a date of memorizing.
+    // One still to be learnt gets it when it finishes its rounds, from
+    // masterCurrentLearningAyah - the same day the work was actually done.
+    memorizedOn: review ? todayISO() : null,
   };
   saveState();
 }
@@ -3546,14 +3644,15 @@ on("btn-add-range", "click", async () => {
 // Says what was actually added rather than what the two boxes said: a range
 // asking for 20 ayahs of a surah that has 7 added seven of them.
 function commitRangeAddition(surahNumber, surahName, plan) {
-  plan.toAdd.forEach((a) => addAyahDirectlyToSrs(surahNumber, surahName, a, { quiet: true }));
+  plan.toAdd.forEach((a) => addAyahToPlan(surahNumber, surahName, a));
   const added = plan.toAdd.length;
   const numbers = plan.toAdd.map((a) => a.numberInSurah).sort((x, y) => x - y);
   const span = numbers.length > 1 ? ` (${numbers[0]}–${numbers[numbers.length - 1]})` : ` (${numbers[0]})`;
+  const where = addIntent() === "review" ? "خطة المراجعة" : "خطة الحفظ";
   renderBrowsePreview();
   renderDashboard();
   showToast(
-    `تمت إضافة ${ayahCountLabel(added)} من ${surahName}${span} إلى خطة المراجعة.`,
+    `تمت إضافة ${ayahCountLabel(added)} من ${surahName}${span} إلى ${where}.`,
     "success",
     plan.already.length ? `${ayahCountLabel(plan.already.length)} كانت مضافة` : undefined
   );
@@ -8411,6 +8510,7 @@ startUp("الإعدادات", initSettingsPanel);
 startUp("بطاقة الورد", initWirdCard);
 startUp("بطاقة المصحف", initMushafCard);
 startUp("تبويب التصفح", initBrowseTab);
+startUp("وجهة الإضافة", renderAddIntent);
 // Set on every launch, not only when the toggle is touched: the timer lives
 // in the page, and the page is new.
 startUp("تذكير الورد", scheduleWirdReminder);
