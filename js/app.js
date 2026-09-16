@@ -2435,6 +2435,11 @@ function watchNumerals() {
 // the wird is just reading, not new memorization. Reading happens in a
 // fullscreen, distraction-free reader (see openMushafReader below) rather
 // than inline on the dashboard.
+// How many pages an open reading loads when it starts from a page number.
+// Generous enough to keep turning, bounded so "no target" never means
+// fetching six hundred pages.
+const OPEN_READ_PAGES = 10;
+
 let selectedMushafSurah = null;
 let mushafInputMode = "range"; // "range" | "page"
 
@@ -2571,7 +2576,12 @@ async function openTodaysWirdReading() {
     // 2-page target starting from the requested page), matching what
     // range mode already does from an ayah - not just the single page
     // typed in, which read as ignoring the plan entirely.
-    const pageCount = state.wirdTargetType === "pages" ? Math.max(1, state.wirdTarget || 1) : 1;
+    // A page jump loads the day's worth of pages so it matches what range
+    // mode does. With no target there is no "day's worth", so it loads a run
+    // long enough to read freely and short enough that it is still one
+    // request per page and not the whole mushaf.
+    const pageCount = wirdIsOpen() ? OPEN_READ_PAGES
+      : (state.wirdTargetType === "pages" ? Math.max(1, state.wirdTarget || 1) : 1);
     try {
       const ayahs = [];
       for (let p = pageNumber; p < pageNumber + pageCount && p <= 604; p++) {
@@ -2643,6 +2653,14 @@ function defaultMushafSurah(surahs) {
 let pagesShortBy = 0;
 
 function computeMushafTo(ayahs, from) {
+  // No target, no end: the reading runs to the close of the surah and the
+  // person stops where they stop. It is not unbounded for all that - the
+  // reader pages what it is given, so a long surah arrives as pages to turn
+  // rather than as one enormous screen.
+  if (wirdIsOpen()) {
+    pagesShortBy = 0;
+    return ayahs.length;
+  }
   if (state.wirdTargetType === "pages") {
     const pages = groupAyahsIntoMushafPages(ayahs);
     let fromPageIdx = pages.findIndex((p) => p.ayahs[p.ayahs.length - 1].numberInSurah >= from);
@@ -2676,7 +2694,13 @@ async function pagesFromNextSurah(surahNumber, pageCount) {
 // Defaults the from/to range to wherever this surah's reading should pick
 // up (see defaultMushafSurah) and how far the wird plan says to go from
 // there, instead of an arbitrary fixed 1-5.
-async function updateMushafDefaultRange(surahNumber) {
+// Called with a surah when one is picked, and with nothing when the daily
+// target changes - the range's end is worked out from that target, so it has
+// to be redrawn. Defaulting to the surah already in hand is what makes the
+// second case safe: taking the bare parameter set the selection to undefined,
+// so changing the target silently unpicked the surah and "عرض للقراءة" then
+// answered "اختر سورة أولًا" over an input still showing its name.
+async function updateMushafDefaultRange(surahNumber = selectedMushafSurah) {
   selectedMushafSurah = surahNumber;
   if (!surahNumber) return;
   const fromInput = document.getElementById("mushaf-from");
@@ -2993,6 +3017,11 @@ function initWirdCard() {
     // box that asks for it goes away rather than sitting there disabled.
     if (field) field.classList.toggle("hidden", type === "open");
     if (openNote) openNote.classList.toggle("hidden", type !== "open");
+    // The end of the range is decided by the target, so with no target there
+    // is nothing for the person to set: the box goes, and the reading runs to
+    // the end of the surah instead.
+    const range = document.querySelector("#mushaf-range-controls .range-inputs");
+    if (range) range.classList.toggle("open-ended", type === "open");
   }
   updateTypeUI();
 

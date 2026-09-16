@@ -1550,6 +1550,19 @@ main#app {
   width: 100%;
 }
 .range-dash { color: var(--muted); padding-bottom: 9px; }
+/* An open reading has no end to type: the second box and the dash between
+   them go, and the first takes the width so it doesn't sit stranded at one
+   side of the card. */
+.range-inputs.open-ended .range-dash,
+.range-inputs.open-ended label:last-of-type { display: none; }
+.range-inputs.open-ended::after {
+  content: "إلى آخر السورة";
+  flex: 1 1 0;
+  align-self: end;
+  padding-bottom: 10px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
 
 .browse-add-divider {
   display: flex;
