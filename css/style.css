@@ -1451,7 +1451,19 @@ main#app {
 .pending-row-name { font-weight: 700; font-size: 0.92rem; color: var(--primary); }
 .pending-row-span { font-weight: 400; color: var(--muted); font-size: 0.82rem; }
 .pending-row-count { font-size: 0.76rem; color: var(--muted); }
+.pending-row-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .pending-row .btn { flex-shrink: 0; padding: 7px 12px; font-size: 0.8rem; }
+.pending-drop {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 6px;
+  cursor: pointer;
+  border-radius: 8px;
+}
+@media (hover: hover) { .pending-drop:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); } }
 
 /* Before adding: already memorized, or still to be? The answer decides
    whether an ayah lands in the review cycle or has to earn its way there,
@@ -2931,32 +2943,20 @@ main#app {
    and it lengthens into a lozenge for three rather than letting 100+ spill
    out of the ring - which is what a fixed 1.6em width did from البقرة 100
    onwards. min-width keeps the round shape where the number still fits. */
-/* The end-of-ayah mark as the mushaf draws it: an eight-pointed medallion
-   between two rings with a dot in each notch, and the ayah's number sitting
-   dead centre. The medallion is a background and the number is the element's
-   own text, centred by the flexbox - which is what puts it exactly in the
-   middle, where the ۝ character's own number placement is at the mercy of
-   whichever font happens to be installed. */
 .ayah-number-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.05em;
-  height: 2.05em;
-  flex-shrink: 0;
+  min-width: 1.7em;
+  height: 1.7em;
+  padding: 0 0.32em;
   font-size: 0.5em;
-  font-weight: 700;
   line-height: 1;
   vertical-align: middle;
+  border: 1.5px solid var(--accent);
+  border-radius: 999px;
   color: var(--accent);
-  background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64' width='64' height='64'><g fill='none' stroke='%23b98b2a' stroke-width='2' stroke-linejoin='round'><path d='M32.0 2.0L39.7 13.5L53.2 10.8L50.5 24.3L62.0 32.0L50.5 39.7L53.2 53.2L39.7 50.5L32.0 62.0L24.3 50.5L10.8 53.2L13.5 39.7L2.0 32.0L13.5 24.3L10.8 10.8L24.3 13.5Z'/><circle cx='32' cy='32' r='15.5'/></g><g fill='%23b98b2a'><circle cx='41.8' cy='8.4' r='1.5'/><circle cx='55.6' cy='22.2' r='1.5'/><circle cx='55.6' cy='41.8' r='1.5'/><circle cx='41.8' cy='55.6' r='1.5'/><circle cx='22.2' cy='55.6' r='1.5'/><circle cx='8.4' cy='41.8' r='1.5'/><circle cx='8.4' cy='22.2' r='1.5'/><circle cx='22.2' cy='8.4' r='1.5'/></g></svg>");
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: 100% 100%;
 }
-/* Three digits do not fit the ring at the size two do, so they are set
-   smaller rather than allowed to spill over the points. */
-.ayah-number-badge[data-len="3"] { font-size: 0.4em; }
 .mushaf-reader-footer .hidden { display: none; }
 .mushaf-reader-footer {
   display: flex;

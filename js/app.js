@@ -2846,10 +2846,7 @@ function renderMushafReaderPage() {
           text = rest;
         }
       }
-      // Plain digits: the numerals pass converts them to whichever style the
-      // person chose (see applyNumeralsTo), and hardcoding one here would
-      // quietly ignore that setting in the one place it matters most.
-      return `${text} <span class="ayah-number-badge" data-len="${String(a.numberInSurah).length}">${a.numberInSurah}</span>`;
+      return `${text} <span class="ayah-number-badge">${a.numberInSurah}</span>`;
     })
     .join(" ");
   document.getElementById("mushaf-reader-text").innerHTML = bismillahHTML + bodyHTML;
@@ -6424,6 +6421,17 @@ let seamIndex = 0;
 let seamTally = { right: 0, wrong: 0 };
 let seamAnswered = false;
 
+// A seam can be asked from either side, and asking it from one side only
+// teaches the join in one direction: plenty of people can carry on from an
+// ayah and cannot say what came before it. So the question varies -
+// sometimes what OPENS the next, sometimes what ENDED the one before, and
+// sometimes both about a single ayah, which is the join known properly.
+const SEAM_DIRECTIONS = ["forward", "backward", "both"];
+
+function ayahEnding(item) {
+  return quranWords(item.text).slice(-SEAM_OPENING_WORDS).join(" ");
+}
+
 function ayahOpening(item) {
   return quranWords(item.text).slice(0, SEAM_OPENING_WORDS).join(" ");
 }
@@ -6519,8 +6527,16 @@ function openSeamSession() {
     showToast("احفظ آيات متتالية أكثر أولًا — التمرين يحتاج مفاصل يختار من بينها.", "error");
     return;
   }
-  seamQueue = shuffleArray(seams).slice(0, SEAM_QUESTION_COUNT);
+  // "both" needs an ayah with a memorized neighbour on each side, so it is
+  // only offered where one exists; the other two need only the seam itself.
+  seamQueue = shuffleArray(seams).slice(0, SEAM_QUESTION_COUNT).map((seam) => {
+    const before = state.ayahs[`${seam.from.surah}:${seam.from.ayah - 1}`];
+    const canBoth = before && before.learningStage === "srs" && !before.temporary;
+    const choices = canBoth ? SEAM_DIRECTIONS : ["forward", "backward"];
+    return { ...seam, before, direction: choices[Math.floor(Math.random() * choices.length)] };
+  });
   seamIndex = 0;
+  seamPartIndex = 0;
   seamTally = { right: 0, wrong: 0 };
   document.getElementById("seam-overlay").classList.remove("modal-closed");
   renderSeamQuestion();
@@ -6541,56 +6557,110 @@ function closeSeamSession() {
   renderDashboard();
 }
 
+// Four options for one question: the right answer and three openings (or
+// endings) of other memorized ayahs - a plausible neighbour, not a random
+// phrase - preferring the same surah, where the confusion actually lives.
+function seamDistractors(correct, excludeKeys, sameSurah, take) {
+  const pool = Object.values(state.ayahs).filter(
+    (i) => i.learningStage === "srs" && !i.temporary && !excludeKeys.has(`${i.surah}:${i.ayah}`)
+  );
+  const seen = new Set([normalizeArabic(correct)]);
+  const out = [];
+  shuffleArray(pool.filter((i) => i.surah === sameSurah))
+    .concat(shuffleArray(pool.filter((i) => i.surah !== sameSurah)))
+    .forEach((i) => {
+      if (out.length >= 3) return;
+      const phrase = take(i);
+      const n = normalizeArabic(phrase);
+      if (seen.has(n)) return;
+      seen.add(n);
+      out.push(phrase);
+    });
+  return out;
+}
+
+// The one or two questions this seam asks, in the order they are asked.
+// Each carries the ayah it shows, what it wants, and how to find it.
+function seamParts(seam) {
+  const forward = {
+    key: "forward",
+    shown: seam.from,
+    question: "وبِمَ تبدأ الآية التي بعدها؟",
+    correct: ayahOpening(seam.to),
+    answerKey: `${seam.to.surah}:${seam.to.ayah}`,
+    take: ayahOpening,
+    suffix: " …",
+    trail: `${seam.from.ayah} ← ${seam.to.ayah}`,
+  };
+  const backward = {
+    key: "backward",
+    shown: seam.to,
+    question: "وبِمَ خُتمت الآية التي قبلها؟",
+    correct: ayahEnding(seam.from),
+    answerKey: `${seam.from.surah}:${seam.from.ayah}`,
+    take: ayahEnding,
+    suffix: "",
+    prefix: "… ",
+    trail: `${seam.from.ayah} ← ${seam.to.ayah}`,
+  };
+  if (seam.direction === "forward") return [forward];
+  if (seam.direction === "backward") return [backward];
+  // Both, about one ayah: what ended the one before it, then what opens the
+  // one after. That is the join known from both sides rather than one.
+  return [
+    {
+      ...backward,
+      shown: seam.from,
+      correct: ayahEnding(seam.before),
+      answerKey: `${seam.before.surah}:${seam.before.ayah}`,
+      trail: `${seam.before.ayah} ← ${seam.from.ayah}`,
+    },
+    { ...forward, shown: seam.from },
+  ];
+}
+
+let seamPartIndex = 0;
+
 function renderSeamQuestion() {
   const seam = seamQueue[seamIndex];
   if (!seam) return closeSeamSession();
   seamAnswered = false;
-  document.getElementById("seam-position").textContent = `المفصل ${seamIndex + 1} من ${seamQueue.length}`;
-  document.getElementById("seam-ref").textContent = `${seam.from.surahName} - الآية ${seam.from.ayah}`;
-  const cue = ayahCue(seam.from);
+  const parts = seamParts(seam);
+  const part = parts[seamPartIndex] || parts[0];
+  const shown = part.shown;
+
+  document.getElementById("seam-position").textContent =
+    `المفصل ${seamIndex + 1} من ${seamQueue.length}${parts.length > 1 ? ` · ${seamPartIndex + 1} من ${parts.length}` : ""}`;
+  document.getElementById("seam-ref").textContent = `${shown.surahName} - الآية ${shown.ayah}`;
+  const cue = ayahCue(shown);
   document.getElementById("seam-cue").textContent = cue.text;
   document.getElementById("seam-cue-label").textContent = cue.whole ? "هذه الآية…" : "أوّل هذه الآية وآخرها…";
+  document.querySelector(".seam-question").textContent = part.question;
   document.getElementById("seam-feedback").classList.add("hidden");
   document.getElementById("btn-seam-next").classList.add("hidden");
 
-  const correct = ayahOpening(seam.to);
-  // Wrong answers are openings of other memorized ayahs - a plausible next
-  // ayah, not a random phrase - preferring the same surah, where the
-  // confusion actually lives.
-  const pool = Object.values(state.ayahs)
-    .filter((i) => i.learningStage === "srs" && `${i.surah}:${i.ayah}` !== `${seam.to.surah}:${seam.to.ayah}` && `${i.surah}:${i.ayah}` !== `${seam.from.surah}:${seam.from.ayah}`)
-    .sort((a, b) => (a.surah === seam.from.surah ? -1 : 1) - (b.surah === seam.from.surah ? -1 : 1));
-  const seen = new Set([normalizeArabic(correct)]);
-  const distractors = [];
-  shuffleArray(pool.filter((i) => i.surah === seam.from.surah))
-    .concat(shuffleArray(pool.filter((i) => i.surah !== seam.from.surah)))
-    .forEach((i) => {
-      if (distractors.length >= 3) return;
-      const opening = ayahOpening(i);
-      const n = normalizeArabic(opening);
-      if (seen.has(n)) return;
-      seen.add(n);
-      distractors.push(opening);
-    });
+  const exclude = new Set([part.answerKey, `${shown.surah}:${shown.ayah}`]);
+  const distractors = seamDistractors(part.correct, exclude, shown.surah, part.take);
 
   const box = document.getElementById("seam-options");
   box.innerHTML = "";
-  shuffleArray([correct, ...distractors]).forEach((opening) => {
+  shuffleArray([part.correct, ...distractors]).forEach((phrase) => {
     const btn = document.createElement("button");
     btn.className = "btn seam-option";
-    btn.textContent = `${opening} …`;
-    btn.addEventListener("click", () => answerSeam(btn, opening === correct, correct));
+    btn.textContent = `${part.prefix || ""}${phrase}${part.suffix || ""}`;
+    btn.addEventListener("click", () => answerSeam(btn, phrase === part.correct, part.correct, part));
     box.appendChild(btn);
   });
 }
 
-function answerSeam(btn, isCorrect, correct) {
+function answerSeam(btn, isCorrect, correct, part) {
   if (seamAnswered) return;
   seamAnswered = true;
   const seam = seamQueue[seamIndex];
+  const label = `${part.prefix || ""}${correct}${part.suffix || ""}`;
   document.querySelectorAll("#seam-options .seam-option").forEach((b) => {
     b.disabled = true;
-    if (b.textContent.startsWith(correct)) b.classList.add("correct");
+    if (b.textContent === label) b.classList.add("correct");
   });
   if (isCorrect) {
     btn.classList.add("correct");
@@ -6602,14 +6672,25 @@ function answerSeam(btn, isCorrect, correct) {
     playErrorSound();
   }
   const feedback = document.getElementById("seam-feedback");
-  feedback.textContent = `${seam.from.surahName}: ${seam.from.ayah} ← ${seam.to.ayah}`;
+  feedback.textContent = `${seam.from.surahName}: ${part.trail}`;
   feedback.classList.remove("hidden");
+  // A two-sided seam is not finished until its other side is asked.
+  const more = seamPartIndex + 1 < seamParts(seam).length;
+  const last = !more && seamIndex + 1 >= seamQueue.length;
   const next = document.getElementById("btn-seam-next");
-  next.innerHTML = iconLabel(seamIndex + 1 >= seamQueue.length ? "checkDone" : "chevronLeft", seamIndex + 1 >= seamQueue.length ? "أنهِ التمرين" : "المفصل التالي");
+  next.innerHTML = iconLabel(last ? "checkDone" : "chevronLeft",
+    last ? "أنهِ التمرين" : more ? "والجهة الأخرى" : "المفصل التالي");
   next.classList.remove("hidden");
 }
 
 on("btn-seam-next", "click", () => {
+  const seam = seamQueue[seamIndex];
+  if (seam && seamPartIndex + 1 < seamParts(seam).length) {
+    seamPartIndex++;
+    renderSeamQuestion();
+    return;
+  }
+  seamPartIndex = 0;
   seamIndex++;
   if (seamIndex >= seamQueue.length) closeSeamSession();
   else renderSeamQuestion();
@@ -6872,6 +6953,7 @@ function loadReviewItem() {
   // Opens masked: showing the whole ayah and then asking "how well did you
   // remember it?" was asking about a recall that never happened.
   maskLevel = 1;
+  askReviewNeighbour(item);
   // A suggestion belongs to the recitation it was measured from, so it must
   // not survive into the next ayah - which is uncovered by hand and has no
   // measurement behind it.
@@ -6891,6 +6973,112 @@ function loadReviewItem() {
   fitReviewAyahHeight();
   scheduleAnswerDockUpdate();
   closeInfoModal();
+}
+
+// ---------- The neighbours, asked inside the review ----------
+//
+// Completing the ayah is one thing to know about it and not the only one:
+// where it sits is another, and an ayah known perfectly on its own is still
+// lost if nothing says what came before it. So a review sometimes opens with
+// its join instead - what ended the one before, what opens the one after, or
+// both - and then goes on to the ayah as usual. Sometimes, not always: the
+// review's own work is recalling the ayah, and a question in front of every
+// single one would be a toll rather than a variation.
+const REVIEW_NEIGHBOUR_CHANCE = 0.3;
+
+let reviewNeighbourParts = [];
+let reviewNeighbourIndex = 0;
+
+function memorizedNeighbour(item, offset) {
+  const other = state.ayahs[`${item.surah}:${item.ayah + offset}`];
+  return other && other.learningStage === "srs" && !other.temporary ? other : null;
+}
+
+function hideReviewNeighbour() {
+  reviewNeighbourParts = [];
+  reviewNeighbourIndex = 0;
+  const box = document.getElementById("review-neighbour");
+  if (box) box.classList.add("hidden");
+}
+
+function askReviewNeighbour(item) {
+  hideReviewNeighbour();
+  if (Math.random() > REVIEW_NEIGHBOUR_CHANCE) return;
+  const before = memorizedNeighbour(item, -1);
+  const after = memorizedNeighbour(item, 1);
+  if (!before && !after) return;
+
+  // Both only when both sides are actually there; otherwise whichever is.
+  const options = [];
+  if (before) options.push("backward");
+  if (after) options.push("forward");
+  if (before && after) options.push("both");
+  const pick = options[Math.floor(Math.random() * options.length)];
+
+  const backPart = before && {
+    lead: "قبل أن تسترجعها: بِمَ خُتمت الآية التي قبلها؟",
+    correct: ayahEnding(before),
+    answerKey: `${before.surah}:${before.ayah}`,
+    take: ayahEnding,
+    prefix: "… ",
+    suffix: "",
+  };
+  const fwdPart = after && {
+    lead: "وبِمَ تبدأ الآية التي بعدها؟",
+    correct: ayahOpening(after),
+    answerKey: `${after.surah}:${after.ayah}`,
+    take: ayahOpening,
+    prefix: "",
+    suffix: " …",
+  };
+  reviewNeighbourParts = pick === "both" ? [backPart, fwdPart] : pick === "backward" ? [backPart] : [fwdPart];
+  reviewNeighbourIndex = 0;
+  renderReviewNeighbour(item);
+}
+
+function renderReviewNeighbour(item) {
+  const part = reviewNeighbourParts[reviewNeighbourIndex];
+  const box = document.getElementById("review-neighbour");
+  const optionsBox = document.getElementById("review-neighbour-options");
+  if (!part || !box || !optionsBox) { hideReviewNeighbour(); return; }
+
+  document.getElementById("review-neighbour-lead").textContent = part.lead;
+  const exclude = new Set([part.answerKey, `${item.surah}:${item.ayah}`]);
+  const choices = shuffleArray([
+    part.correct,
+    ...seamDistractors(part.correct, exclude, item.surah, part.take),
+  ]);
+
+  optionsBox.innerHTML = "";
+  choices.forEach((phrase) => {
+    const btn = document.createElement("button");
+    btn.className = "mcq-btn";
+    btn.textContent = `${part.prefix}${phrase}${part.suffix}`;
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const right = phrase === part.correct;
+      optionsBox.querySelectorAll(".mcq-btn").forEach((b) => {
+        b.disabled = true;
+        if (b.textContent === `${part.prefix}${part.correct}${part.suffix}`) b.classList.add("correct");
+      });
+      if (right) playSuccessSound();
+      else { btn.classList.add("wrong"); playErrorSound(); }
+      // The answer stays on screen a moment so the right one can be read,
+      // then the other side - or the ayah itself - takes its place.
+      setTimeout(() => {
+        reviewNeighbourIndex++;
+        if (reviewNeighbourIndex < reviewNeighbourParts.length) renderReviewNeighbour(item);
+        else hideReviewNeighbour();
+        fitReviewAyahHeight();
+        scheduleAnswerDockUpdate();
+      }, right ? 700 : 1400);
+    });
+    optionsBox.appendChild(btn);
+  });
+
+  box.classList.remove("hidden");
+  fitReviewAyahHeight();
+  scheduleAnswerDockUpdate();
 }
 
 // Everything added to the plan that is not yet memorized: what is waiting to
@@ -6940,10 +7128,45 @@ function renderPendingCard() {
         <span class="pending-row-name">${g.name} <span class="pending-row-span">${span}</span></span>
         <span class="pending-row-count">${ayahCountLabel(g.items.length)} · ${g.stage === "verify" ? "تنتظر إثباتك" : "تنتظر دورها"}</span>
       </div>
-      <button class="btn ${g.stage === "verify" ? "primary" : ""}">${g.stage === "verify" ? "أثبت حفظك" : "ابدأ بها"}</button>`;
-    row.querySelector("button").addEventListener("click", () => startPendingGroup(g));
+      <div class="pending-row-actions">
+        <button class="btn ${g.stage === "verify" ? "primary" : ""}">${g.stage === "verify" ? "أثبت حفظك" : "ابدأ بها"}</button>
+        <button class="icon-btn pending-drop" title="أزِلها من الخطة" aria-label="أزِل ${g.name} ${span} من الخطة">✕</button>
+      </div>`;
+    row.querySelector(".btn").addEventListener("click", () => startPendingGroup(g));
+    row.querySelector(".pending-drop").addEventListener("click", () => dropPendingGroup(g, span));
     list.appendChild(row);
   });
+}
+
+// Added by mistake, or added and thought better of. Removing them takes the
+// surah out of "التقدم حسب السورة" too, since that list is built from whatever
+// is in the plan - a surah added and never started sat there at 0% with
+// nothing to show for itself.
+//
+// Only ever these two stages: an ayah that was actually memorized is not
+// swept away by a button meant for tidying a queue. Those are removed one at
+// a time from the plan list, where the choice is deliberate.
+function dropPendingGroup(group, span) {
+  const keys = group.items.map((i) => `${i.surah}:${i.ayah}`);
+  showConfirmModal(
+    "إزالة من الخطة",
+    `تُزيل ${ayahCountLabel(keys.length)} من ${group.name} (${span})؟ لم تُحفظ بعد، ولن يضيع بإزالتها شيء - ويمكنك إضافتها متى شئت.`,
+    "أزِلها",
+    () => {
+      keys.forEach((key) => {
+        const item = state.ayahs[key];
+        // Re-checked at the moment of removal, not only when the row was
+        // drawn: a round finished in another tab may have promoted one of
+        // these to memorized while the dialog was open.
+        if (item && (item.learningStage === "learning" || item.learningStage === "verify")) {
+          delete state.ayahs[key];
+        }
+      });
+      saveState();
+      renderDashboard();
+      showToast(`أُزيلت ${ayahCountLabel(keys.length)} من ${group.name}.`, "success");
+    }
+  );
 }
 
 // Points the memorizing at the first ayah of this group and goes there. The
@@ -7016,6 +7239,9 @@ function resetReviewChoices() {
   reviewChoiceAsked = 0;
   reviewChoiceMissed = new Set();
   closeReviewChoice();
+  // A neighbour question belongs to the ayah that raised it: revealing the
+  // text, grading, or moving on all end it, or it would sit over the next.
+  hideReviewNeighbour();
 }
 
 function closeReviewChoice() {
