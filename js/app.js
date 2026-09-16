@@ -174,6 +174,56 @@ function randomEncouragement() {
 // and "تابع المراجعة" below carries on past it whenever the person wants).
 const REVIEW_DAILY_CAP_DEFAULT = 20;
 
+// How many ayahs each surah has, by surah number. Written out rather than
+// read from the fetched surah list, because the dashboard is drawn before
+// that list arrives - and on a first run, or offline, it may not arrive at
+// all - and a card that says "0 سور قيد الحفظ" to someone in the middle of
+// البقرة is worse than no card. These numbers are fixed for all time; the
+// table sums to 6236, which is the ayah count the rest of the file uses.
+const SURAH_AYAH_COUNTS = [
+  7, 286, 200, 176, 120, 165, 206, 75, 129, 109, 123, 111, 43, 52, 99, 128, 111, 110, 98,
+  135, 112, 78, 118, 64, 77, 227, 93, 88, 69, 60, 34, 30, 73, 54, 45, 83, 182, 88,
+  75, 85, 54, 53, 89, 59, 37, 35, 38, 29, 18, 45, 60, 49, 62, 55, 78, 96, 29,
+  22, 24, 13, 14, 11, 11, 18, 12, 12, 30, 52, 52, 44, 28, 28, 20, 56, 40, 31,
+  50, 40, 46, 42, 29, 19, 36, 25, 22, 17, 19, 26, 30, 20, 15, 21, 11, 8, 8,
+  19, 5, 8, 8, 11, 11, 8, 3, 9, 5, 4, 7, 3, 6, 3, 5, 4, 5, 6
+];
+
+function surahAyahCount(surahNumber) {
+  return SURAH_AYAH_COUNTS[surahNumber - 1] || 0;
+}
+
+// The place the sequence had really reached: the first unmemorized ayah of
+// the earliest surah that was being worked through. Only applied when the
+// pointer is standing in a surah where nothing at all has been memorized and
+// on an ayah with no rounds behind it - which is what an abandoned jump looks
+// like, and never what deliberate progress looks like.
+function restoreStrandedPointer(parsed) {
+  const pointer = parsed.learningPointer;
+  const ayahs = parsed.ayahs || {};
+  const items = Object.values(ayahs);
+  const here = ayahs[`${pointer.surah}:${pointer.ayah}`];
+  const startedHere = items.some((i) => i.surah === pointer.surah && i.learningStage === "srs");
+  if (startedHere || (here && (here.roundStreak || 0) > 0)) return;
+
+  const surahsStarted = [...new Set(items.filter((i) => i.learningStage === "srs").map((i) => i.surah))].sort((a, b) => a - b);
+  for (const surah of surahsStarted) {
+    if (surah >= pointer.surah) break;
+    const count = surahAyahCount(surah);
+    let front = 1;
+    while (front <= count && (ayahs[`${surah}:${front}`] || {}).learningStage === "srs") front++;
+    if (front <= count) {
+      parsed.learningPointer = { surah, ayah: front };
+      // The ayah the stray pointer created just by being pointed at - no
+      // rounds, never chosen - goes with it.
+      if (here && here.learningStage === "learning" && !(here.roundStreak || 0)) {
+        delete ayahs[`${pointer.surah}:${pointer.ayah}`];
+      }
+      return;
+    }
+  }
+}
+
 function loadState() {
   try {
     const raw = localStorage.getItem(STATE_KEY);
@@ -182,6 +232,7 @@ function loadState() {
       parsed.ayahs = parsed.ayahs || {};
       parsed.activity = parsed.activity || {};
       parsed.learningPointer = parsed.learningPointer || { surah: 1, ayah: 1 };
+      parsed.learnDetour = parsed.learnDetour || null;
       parsed.dailyChallenge = parsed.dailyChallenge || { date: null, score: 0, total: 0 };
       parsed.reciter = parsed.reciter || RECITERS[0].id;
       parsed.theme = parsed.theme || THEMES[0].id;
@@ -260,6 +311,15 @@ function loadState() {
           if (!item.memorizedOn) item.memorizedOn = item.added || null;
         }
       });
+      // "ابدأ بها" on a waiting group used to move the sequential pointer
+      // itself and never give it back, so one tap could leave the tab in a
+      // surah far ahead of the one actually being memorized, with no way to
+      // find the way back. Detours have their own pointer now; this puts a
+      // pointer left stranded by the old behaviour back where it belongs.
+      if (!parsed.pointerRestored) {
+        parsed.pointerRestored = true;
+        restoreStrandedPointer(parsed);
+      }
       return parsed;
     }
   } catch (e) {
@@ -269,6 +329,10 @@ function loadState() {
     ayahs: {}, // key "surah:ayah" -> { surah, ayah, surahName, text, globalNumber, interval, repetition, ef, due, lastReviewed, added, learningStage, roundStreak, temporary }
     activity: {}, // "YYYY-MM-DD" -> true (for streak calculation)
     learningPointer: { surah: 1, ayah: 1 },
+    // A temporary side trip away from that sequence - an ayah added out of
+    // order that the person chose to work on now. The sequence keeps its
+    // place underneath and is returned to when the detour is finished.
+    learnDetour: null, // null | { surah, ayah }
     dailyChallenge: { date: null, score: 0, total: 0 },
     reciter: RECITERS[0].id,
     theme: THEMES[0].id,
@@ -299,6 +363,7 @@ function loadState() {
     addIntent: "learn",
     gilding: {}, // surah number -> 1 once its illumination is bought
     gildingMigrated: true, // a new plan has nothing from the three-degree scheme to sweep
+    pointerRestored: true, // a new plan has no pointer stranded by the old "ابدأ بها"
     lastBackupOn: null, // "YYYY-MM-DD" - the day a backup file was last saved
     backupNudgedOn: null, // "YYYY-MM-DD" - the day we last suggested saving one
     autoVaryModes: true, // rotate the test mode across an ayah's three rounds
@@ -1761,12 +1826,15 @@ function renderDashboard() {
 
   const planList = document.getElementById("plan-list");
   planList.innerHTML = "";
-  const srsItems = items.filter((i) => i.learningStage === "srs");
-  if (srsItems.length === 0) {
+  // The surahs being memorized live here too, alongside what they have
+  // already put into the review cycle: one surah, one place, whether a given
+  // ayah is finished or still under the rounds.
+  const planItems = items.filter((i) => i.learningStage === "srs" || i.learningStage === "learning");
+  if (planItems.length === 0) {
     planList.innerHTML = `<p class="muted">لا توجد آيات في جدول المراجعة بعد. أكمل حفظ آية من تبويب "ابدأ الحفظ" لتظهر هنا.</p>`;
   } else {
     const bySurah = new Map();
-    srsItems.forEach((item) => {
+    planItems.forEach((item) => {
       if (!bySurah.has(item.surah)) bySurah.set(item.surah, { name: item.surahName || item.surah, items: [] });
       bySurah.get(item.surah).items.push(item);
     });
@@ -1774,7 +1842,9 @@ function renderDashboard() {
       .sort((a, b) => a[0] - b[0])
       .forEach(([surahNum, group]) => {
         const items2 = [...group.items].sort((a, b) => a.ayah - b.ayah);
-        const dueInGroup = items2.filter((i) => i.due <= today).length;
+        const dueInGroup = items2.filter((i) => i.learningStage === "srs" && i.due <= today).length;
+        const learningInGroup = items2.filter((i) => i.learningStage === "learning");
+        const memorizedInGroup = items2.length - learningInGroup.length;
         const details = document.createElement("details");
         details.className = "plan-surah-group";
         // renderDashboard rebuilds this list from scratch on every call (a
@@ -1799,8 +1869,47 @@ function renderDashboard() {
         summary.className = "plan-surah-summary";
         summary.innerHTML = `
           <span class="plan-surah-name">📖 ${group.name}</span>
-          <span class="plan-surah-meta">${items2.length} آية${dueInGroup ? ` <span class="badge due">${dueInGroup} مستحقة</span>` : ""}</span>
+          <span class="plan-surah-meta">${memorizedInGroup} آية${dueInGroup ? ` <span class="badge due">${dueInGroup} مستحقة</span>` : ""}${
+            learningInGroup.length ? ` <span class="badge learning">${learningInGroup.length} قيد الحفظ</span>` : ""
+          }</span>
         `;
+        // A surah with ayahs still under the rounds can be taken up now
+        // without disturbing the place in the sequence - unless the learn
+        // tab is already standing on it, in which case there is nowhere to go.
+        const activePointer = activeLearnPointer();
+        if (learningInGroup.length && activePointer.surah !== surahNum) {
+          const go = document.createElement("button");
+          go.type = "button";
+          go.className = "plan-resume-btn";
+          go.title = `تابع حفظ ${group.name} من الآية ${learningInGroup[0].ayah}`;
+          go.setAttribute("aria-label", `تابع حفظ ${group.name} من الآية ${learningInGroup[0].ayah}`);
+          go.textContent = "تابِع";
+          go.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            startLearnDetour(surahNum, learningInGroup[0].ayah);
+          });
+          summary.querySelector(".plan-surah-meta").appendChild(go);
+        }
+        // Added and thought better of: clears this surah's unmemorized ayahs
+        // in one go. Only those - what is already memorized is removed one
+        // ayah at a time, from its own row, where the choice is deliberate.
+        if (learningInGroup.length) {
+          const nums = learningInGroup.map((i) => i.ayah);
+          const span = nums.length > 1 ? `${nums[0]}–${nums[nums.length - 1]}` : `${nums[0]}`;
+          const drop = document.createElement("button");
+          drop.type = "button";
+          drop.className = "plan-drop-btn";
+          drop.textContent = "✕";
+          drop.title = `أزِل ما لم يُحفظ من ${group.name}`;
+          drop.setAttribute("aria-label", `أزِل ${group.name} ${span} مما لم يُحفظ بعد`);
+          drop.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropPendingGroup({ surah: surahNum, name: group.name, items: learningInGroup }, span);
+          });
+          summary.querySelector(".plan-surah-meta").appendChild(drop);
+        }
         if (offer) {
           const btn = document.createElement("button");
           btn.type = "button";
@@ -3099,11 +3208,19 @@ function initWirdCard() {
 
 function buildPlanItemRow(item, today) {
   const div = document.createElement("div");
-  const isDue = item.due <= today;
-  div.className = `plan-item${isDue ? " due-now" : ""}`;
+  // An ayah still under its rounds has no schedule to be due against: it
+  // shows how far along it is instead, and does not open a review.
+  const inProgress = item.learningStage === "learning";
+  const isDue = !inProgress && item.due <= today;
+  div.className = `plan-item${isDue ? " due-now" : ""}${inProgress ? " in-progress" : ""}`;
   let badge = "scheduled";
   let badgeText = `\u064a\u064f\u0633\u062a\u062d\u0642: ${item.due}`;
   if (isDue) { badge = "due"; badgeText = "\u0645\u0633\u062a\u062d\u0642\u0629 \u0627\u0644\u0622\u0646"; }
+  if (inProgress) {
+    badge = "learning";
+    const needed = roundsNeededFor(item);
+    badgeText = `\u0642\u064a\u062f \u0627\u0644\u062d\u0641\u0638 \u00b7 \u062c\u0648\u0644\u0629 ${(item.roundStreak || 0) + 1} \u0645\u0646 ${needed}`;
+  }
   const tempBadge = item.temporary
     ? `<span class="badge temp" title="\u0644\u0627 \u062a\u064f\u062d\u062a\u0633\u0628 \u0636\u0645\u0646 \u0646\u0633\u0628\u0629 \u0627\u0644\u062a\u0642\u062f\u0645">\u0645\u0631\u0627\u062c\u0639\u0629 \u0645\u0624\u0642\u062a\u0629</span>`
     : "";
@@ -3128,6 +3245,7 @@ function buildPlanItemRow(item, today) {
     e.stopPropagation();
     const key = e.currentTarget.dataset.key;
     delete state.ayahs[key];
+    normalizeLearnDetour();
     saveState();
     renderDashboard();
   });
@@ -4503,8 +4621,70 @@ function hideKhatm() {
   panel.classList.add("hidden");   // ...except this one
 }
 
+// ---------- The sequence, and detours off it ----------
+//
+// "ابدأ الحفظ" walks one pointer through the Mushaf in order; that pointer is
+// the person's place and nothing may quietly move it. Ayahs added out of
+// order - a surah picked from the browse tab, something claimed as already
+// memorized and waiting to be proved - are worked on as a *detour*: a second
+// pointer that takes over the tab while it lasts, and is dropped the moment
+// that little group is finished, leaving the real place exactly where it was.
+
+function learnDetourItems(surah) {
+  return Object.values(state.ayahs)
+    .filter((i) => i.surah === surah && (i.learningStage === "learning" || i.learningStage === "verify"))
+    .sort((a, b) => a.ayah - b.ayah);
+}
+
+// The detour is over when nothing in the group is left unmemorized - or when
+// what it pointed at was removed from the plan underneath it.
+function normalizeLearnDetour() {
+  const d = state.learnDetour;
+  if (!d) return null;
+  const item = state.ayahs[`${d.surah}:${d.ayah}`];
+  if (item && (item.learningStage === "learning" || item.learningStage === "verify")) return d;
+  const next = learnDetourItems(d.surah).find((i) => i.ayah > d.ayah);
+  state.learnDetour = next ? { surah: next.surah, ayah: next.ayah } : null;
+  return state.learnDetour;
+}
+
+function activeLearnPointer() {
+  return normalizeLearnDetour() || state.learningPointer;
+}
+
+function startLearnDetour(surah, ayah) {
+  state.learnDetour = { surah, ayah };
+  saveState();
+  switchTab("learn");
+  loadLearnAyah();
+}
+
+function endLearnDetour() {
+  state.learnDetour = null;
+  saveState();
+  loadLearnAyah();
+  renderDashboard();
+}
+
+function renderLearnDetourBanner() {
+  const banner = document.getElementById("learn-detour");
+  if (!banner) return;
+  const d = state.learnDetour;
+  if (!d) { banner.classList.add("hidden"); return; }
+  const left = learnDetourItems(d.surah).filter((i) => i.ayah >= d.ayah).length;
+  const name = (state.ayahs[`${d.surah}:${d.ayah}`] || {}).surahName || `سورة ${d.surah}`;
+  banner.classList.remove("hidden");
+  document.getElementById("learn-detour-text").textContent =
+    `${name} — ${ayahCountLabel(left)} خارج تسلسلك. مكانك محفوظ: ${pointerLabel(state.learningPointer)}.`;
+}
+
+function pointerLabel(pointer) {
+  const meta = (surahListCache || []).find((x) => x.number === pointer.surah);
+  return `${meta ? meta.name : `سورة ${pointer.surah}`} : ${pointer.ayah}`;
+}
+
 async function loadLearnAyah() {
-  const pointer = state.learningPointer;
+  const pointer = activeLearnPointer();
   closeInfoModal();
   // The pointer walking past surah 114 is one way to arrive here; adding
   // the last ayahs from the browse tab is another, and it never moves the
@@ -4525,6 +4705,13 @@ async function loadLearnAyah() {
 
   let ayahObj = ayahs.find((a) => a.numberInSurah === pointer.ayah);
   if (!ayahObj) {
+    // A detour that ran off the end of its surah is simply finished - the
+    // sequence underneath it is untouched and takes over again.
+    if (state.learnDetour) {
+      state.learnDetour = null;
+      saveState();
+      return loadLearnAyah();
+    }
     // surah finished -> advance to next surah
     if (pointer.surah < 114) {
       state.learningPointer = { surah: pointer.surah + 1, ayah: 1 };
@@ -4555,6 +4742,7 @@ async function loadLearnAyah() {
   document.getElementById("learn-ref").textContent = `${meta.name} - الآية ${pointer.ayah}`;
   renderSimilarButton("btn-learn-similar", pointer.surah, pointer.ayah);
   renderLearnRoundInfo();
+  renderLearnDetourBanner();
   renderBalanceBanner();
   updateRoundDots(item.roundStreak || 0);
   renderSurahInfoCaption("learn-surah-info", meta);
@@ -5231,9 +5419,17 @@ function masterCurrentLearningAyah(item) {
   // A hand-picked mode was for that ayah; the next one starts the ramp again.
   learnModeManualOverride = false;
 
-  // advance the sequential learning pointer to the next ayah
-  const nextAyah = item.ayah + 1;
-  state.learningPointer = { surah: item.surah, ayah: nextAyah };
+  // Advance - but only the pointer that is actually driving the tab. On a
+  // detour that is the detour's own pointer, which hops to the next ayah of
+  // the group still waiting and then gets out of the way; the sequential
+  // pointer keeps the place it had before the detour started.
+  if (state.learnDetour && state.learnDetour.surah === item.surah && state.learnDetour.ayah === item.ayah) {
+    const next = learnDetourItems(item.surah).find((i) => i.ayah > item.ayah);
+    state.learnDetour = next ? { surah: next.surah, ayah: next.ayah } : null;
+    if (!next) showToast("انتهت الآيات التي بدأت بها — عدنا بك إلى موضعك في التسلسل.", "success");
+  } else {
+    state.learningPointer = { surah: item.surah, ayah: item.ayah + 1 };
+  }
   saveState();
   setTimeout(() => loadLearnAyah(), 1400);
 }
@@ -6453,25 +6649,6 @@ function ayahCue(item) {
   };
 }
 
-// How many ayahs each surah has, by surah number. Written out rather than
-// read from the fetched surah list, because the dashboard is drawn before
-// that list arrives - and on a first run, or offline, it may not arrive at
-// all - and a card that says "0 سور قيد الحفظ" to someone in the middle of
-// البقرة is worse than no card. These numbers are fixed for all time; the
-// table sums to 6236, which is the ayah count the rest of the file uses.
-const SURAH_AYAH_COUNTS = [
-  7, 286, 200, 176, 120, 165, 206, 75, 129, 109, 123, 111, 43, 52, 99, 128, 111, 110, 98,
-  135, 112, 78, 118, 64, 77, 227, 93, 88, 69, 60, 34, 30, 73, 54, 45, 83, 182, 88,
-  75, 85, 54, 53, 89, 59, 37, 35, 38, 29, 18, 45, 60, 49, 62, 55, 78, 96, 29,
-  22, 24, 13, 14, 11, 11, 18, 12, 12, 30, 52, 52, 44, 28, 28, 20, 56, 40, 31,
-  50, 40, 46, 42, 29, 19, 36, 25, 22, 17, 19, 26, 30, 20, 15, 21, 11, 8, 8,
-  19, 5, 8, 8, 11, 11, 8, 3, 9, 5, 4, 7, 3, 6, 3, 5, 4, 5, 6
-];
-
-function surahAyahCount(surahNumber) {
-  return SURAH_AYAH_COUNTS[surahNumber - 1] || 0;
-}
-
 // "Which surahs am I on?" - which is what a person means by قيد الحفظ, and
 // not what the card used to answer. It counted ayahs still inside their
 // three rounds, so someone working steadily through البقرة and آل عمران saw
@@ -7081,26 +7258,20 @@ function renderReviewNeighbour(item) {
   scheduleAnswerDockUpdate();
 }
 
-// Everything added to the plan that is not yet memorized: what is waiting to
-// be learnt, and what is waiting to be proved. It has to be visible - an ayah
-// added and then never seen again reads as an ayah the app swallowed - but it
-// is kept apart from "خطة الحفظ الحالية", which is the review cycle, because
-// none of this is in that cycle or in the count yet.
+// Only what was claimed as *already memorized* and still owes its proof. A
+// surah being memorized belongs in "خطة الحفظ الحالية" with the rest of that
+// surah - it is the same work, at an earlier point, and splitting it across
+// two cards made one memorization look like two separate things.
 function pendingGroups() {
   const groups = new Map();
   Object.values(state.ayahs).forEach((item) => {
-    const stage = item.learningStage;
-    if (stage !== "learning" && stage !== "verify") return;
-    const key = `${item.surah}|${stage}`;
-    if (!groups.has(key)) {
-      groups.set(key, { surah: item.surah, stage, name: item.surahName || `سورة ${item.surah}`, items: [] });
+    if (item.learningStage !== "verify") return;
+    if (!groups.has(item.surah)) {
+      groups.set(item.surah, { surah: item.surah, stage: "verify", name: item.surahName || `سورة ${item.surah}`, items: [] });
     }
-    groups.get(key).items.push(item);
+    groups.get(item.surah).items.push(item);
   });
-  return [...groups.values()]
-    // Proving comes first: it is one round away from counting, while the
-    // rest is a queue that waits on the memorizing reaching it.
-    .sort((a, b) => (a.stage === b.stage ? a.surah - b.surah : a.stage === "verify" ? -1 : 1));
+  return [...groups.values()].sort((a, b) => a.surah - b.surah);
 }
 
 function renderPendingCard() {
@@ -7111,25 +7282,23 @@ function renderPendingCard() {
   card.classList.toggle("hidden", groups.length === 0);
   if (!groups.length) return;
 
-  const toVerify = groups.filter((g) => g.stage === "verify").reduce((n, g) => n + g.items.length, 0);
-  document.getElementById("pending-heading").textContent = toVerify ? "📥 بانتظارك" : "📥 في انتظار الحفظ";
-  document.getElementById("pending-lead").textContent = toVerify
-    ? "آياتٌ أضفتَها ولم تدخل المراجعة بعد. ما قلتَ إنك تحفظه يحتاج جولةً واحدة يُثبته، وما سواه ينتظر دوره."
-    : "آياتٌ أضفتَها للحفظ. لا تدخل المراجعة ولا تُحتسب محفوظةً حتى تحفظها.";
+  document.getElementById("pending-heading").textContent = "📥 بانتظار إثباتك";
+  document.getElementById("pending-lead").textContent =
+    "آياتٌ قلتَ إنك تحفظها. جولةٌ واحدة تُثبتها فتدخل المراجعة وتُحتسب — ولن يتغيّر موضعك في «ابدأ الحفظ».";
 
   list.innerHTML = "";
   groups.forEach((g) => {
     const nums = g.items.map((i) => i.ayah).sort((a, b) => a - b);
     const span = nums.length > 1 ? `${nums[0]}–${nums[nums.length - 1]}` : `${nums[0]}`;
     const row = document.createElement("div");
-    row.className = `pending-row${g.stage === "verify" ? " to-verify" : ""}`;
+    row.className = "pending-row to-verify";
     row.innerHTML = `
       <div class="pending-row-text">
         <span class="pending-row-name">${g.name} <span class="pending-row-span">${span}</span></span>
-        <span class="pending-row-count">${ayahCountLabel(g.items.length)} · ${g.stage === "verify" ? "تنتظر إثباتك" : "تنتظر دورها"}</span>
+        <span class="pending-row-count">${ayahCountLabel(g.items.length)} · تنتظر إثباتك</span>
       </div>
       <div class="pending-row-actions">
-        <button class="btn ${g.stage === "verify" ? "primary" : ""}">${g.stage === "verify" ? "أثبت حفظك" : "ابدأ بها"}</button>
+        <button class="btn primary">أثبت حفظك</button>
         <button class="icon-btn pending-drop" title="أزِلها من الخطة" aria-label="أزِل ${g.name} ${span} من الخطة">✕</button>
       </div>`;
     row.querySelector(".btn").addEventListener("click", () => startPendingGroup(g));
@@ -7162,6 +7331,8 @@ function dropPendingGroup(group, span) {
           delete state.ayahs[key];
         }
       });
+      // The detour may have been standing on one of these.
+      normalizeLearnDetour();
       saveState();
       renderDashboard();
       showToast(`أُزيلت ${ayahCountLabel(keys.length)} من ${group.name}.`, "success");
@@ -7169,15 +7340,12 @@ function dropPendingGroup(group, span) {
   );
 }
 
-// Points the memorizing at the first ayah of this group and goes there. The
-// learn tab walks a pointer rather than a queue, so this is what "reaching"
-// an ayah added out of sequence actually means.
+// Works this group now without losing the place in the sequence: the learn
+// tab is handed a detour pointer, and the sequential one is left exactly
+// where it stands to be resumed the moment the group is done.
 function startPendingGroup(group) {
   const first = group.items.map((i) => i.ayah).sort((a, b) => a - b)[0];
-  state.learningPointer = { surah: group.surah, ayah: first };
-  saveState();
-  switchTab("learn");
-  loadLearnAyah();
+  startLearnDetour(group.surah, first);
 }
 
 // Picks which word indices to hide for a given mask level (0 = none, higher
@@ -7936,6 +8104,7 @@ on("btn-khatm-read", "click", () => { switchTab("dashboard"); setTimeout(() => {
   if (card) card.scrollIntoView({ behavior: "smooth", block: "center" });
 }, 120); });
 on("btn-khatm-share", "click", () => shareProgress());
+on("btn-learn-detour-end", "click", endLearnDetour);
 on("btn-review-listen", "click", toggleListenMode);
 on("btn-listen-continue", "click", listenContinue);
 on("btn-listen-again", "click", listenFromStart);
