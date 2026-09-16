@@ -218,10 +218,6 @@ function loadState() {
       parsed.wirdPlan = parsed.wirdPlan || null;
       parsed.wirdNotifiedOn = parsed.wirdNotifiedOn || null;
       parsed.lastBackupOn = parsed.lastBackupOn || null;
-      // Nobody who has been using the app has this yet; seed it from the
-      // balance, which is the closest honest guess (it undercounts whatever
-      // they have already spent, and never overcounts).
-      if (parsed.pointsEarned == null) parsed.pointsEarned = parsed.points || 0;
       parsed.listenMode = parsed.listenMode === true;
       parsed.backupNudgedOn = parsed.backupNudgedOn || null;
       parsed.autoVaryModes = parsed.autoVaryModes !== false;
@@ -273,7 +269,6 @@ function loadState() {
     wirdPlan: null, // {anchor, time:"HH:MM", place, notify} - the when/where commitment
     wirdNotifiedOn: null, // "YYYY-MM-DD" - the day the reminder last went out, so it goes out once
     listenMode: false, // review by ear: the ayah veiled, its opening played, you continue
-    pointsEarned: 0, // lifetime points earned; the balance is spent, this is not
     lastBackupOn: null, // "YYYY-MM-DD" - the day a backup file was last saved
     backupNudgedOn: null, // "YYYY-MM-DD" - the day we last suggested saving one
     autoVaryModes: true, // rotate the test mode across an ayah's three rounds
@@ -535,13 +530,6 @@ function checkWirdCompletionReward() {
 function addPoints(amount) {
   if (!amount) return;
   state.points += amount;
-  // Kept separately from the balance because the balance is spent and this
-  // is not: once everything in the shop is owned - 1,840 points buys all of
-  // it, which a daily user passes in a few months - the balance stops
-  // meaning anything and just climbs. The lifetime figure is what the
-  // header keeps showing after that, and it only ever goes up because it
-  // is a record of work done rather than money in a pocket.
-  state.pointsEarned = (state.pointsEarned || 0) + amount;
   saveState();
   renderPointsDisplay();
 }
@@ -560,6 +548,23 @@ function allCollectibles() {
 function everythingOwned() {
   return allCollectibles().every(({ items, owned }) =>
     items.every((i) => (owned || []).includes(i.id)));
+}
+
+// What has been earned all told, worked out rather than counted. A counter
+// added partway through starts at whatever the balance happened to be that
+// day, so for anyone who had already bought things it understated the total
+// badly - the note said "منذ البداية" over a number that began last week.
+// Buying a collectible is the only thing that ever spends a point (see
+// purchaseOrSelect), so the balance plus the price of everything owned IS
+// the lifetime figure - exact, and exact for an old plan as much as a new one.
+function lifetimePoints() {
+  let spent = 0;
+  allCollectibles().forEach(({ items, owned }) => {
+    items.forEach((i) => {
+      if (i.points && (owned || []).includes(i.id)) spent += i.points;
+    });
+  });
+  return state.points + spent;
 }
 
 function cheapestUnowned() {
@@ -605,7 +610,7 @@ function renderPointsDisplay() {
   const done = everythingOwned();
   // With nothing left to buy, a balance is just a number going up. The
   // lifetime total at least says what it counts.
-  const shown = done ? (state.pointsEarned || state.points) : state.points;
+  const shown = done ? lifetimePoints() : state.points;
   const el = document.getElementById("points-display");
   if (el) el.textContent = shown;
   const headerEl = document.getElementById("header-points-value");
@@ -657,12 +662,29 @@ function computeStreak() {
 
 // Days actually used out of the last 7 - the honest number behind a
 // forgiven streak, and the one a weekly goal is measured against.
+// This week, not the last seven days. A rolling window is permanently near
+// full for anyone keeping a streak - every day that drops off the back was
+// also worked - so "6 من 7" sat under a ten-day streak and meant nothing.
+// The calendar week empties itself on its first day, which is what makes
+// the line worth reading: it says how this week is going. Same week the wird
+// strip draws, so the two never disagree.
+function startOfLocalWeek() {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - ((start.getDay() - localFirstWeekday() + 7) % 7));
+  return start;
+}
+
 function activeDaysThisWeek() {
+  const start = startOfLocalWeek();
+  const today = todayISO();
   let n = 0;
-  const cursor = new Date();
   for (let i = 0; i < 7; i++) {
-    if (state.activity[isoOf(cursor)]) n++;
-    cursor.setDate(cursor.getDate() - 1);
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    const iso = isoOf(d);
+    if (iso > today) break; // days that have not arrived are not misses
+    if (state.activity[iso]) n++;
   }
   return n;
 }
