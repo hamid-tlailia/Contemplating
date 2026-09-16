@@ -1323,11 +1323,7 @@ main#app {
 }
 @media (hover: hover) { .icon-btn:hover { color: var(--danger); } }
 
-/* The gilded rows carry a frame with padding of its own, so every row gets
-   the same side padding - otherwise the illuminated ones sit 8px wider and
-   their progress bars fall out of line with the rest of the list. */
 .surah-progress-list { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
-.surah-progress-row { padding: 6px 8px; }
 .surah-progress-row { display: flex; align-items: center; gap: 10px; }
 /* 140px when there is room for it, so the bars line up down the list, but
    allowed to give way on a narrow phone - the row now carries a buy button
@@ -1357,77 +1353,94 @@ main#app {
 .surah-progress-row .pct { width: 48px; text-align: end; font-size: 0.8rem; color: var(--muted); }
 
 /* ---------- The illuminated surah ---------- */
-/* Three degrees, and each has to read as more than the one before it at a
-   glance - a person scanning this list should see which surahs are finished
-   without reading a single percentage. So they escalate in kind and not
-   just in amount: a mark, then the name itself in gold, then the row set
-   apart with a frame and the name inside ornament brackets. */
-.gild-orn {
-  color: var(--accent, var(--primary));
-  font-size: 0.95em;
-  opacity: 0.9;
+/* A surah memorized whole can be gilded, once, and the frame is the whole
+   of the reward - so it is drawn properly rather than tinted: a gold
+   gradient border with a bevel in it, an arabesque end-piece at each end,
+   a hairline inside the fill, and a warm glow around the outside.
+   It sits on the group in "خطة الحفظ الحالية" rather than on a shelf of its
+   own: the illumination is a fact about that surah, and that is the row
+   which already names it. */
+.plan-surah-group.gilded {
+  /* A transparent border filled by the second background layer - the only
+     way to get a gradient border that still follows border-radius. */
+  border: 3px solid transparent;
+  border-radius: 14px;
+  background:
+    linear-gradient(var(--bg), var(--bg)) padding-box,
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--accent) 55%, #fff),
+      var(--accent) 28%,
+      color-mix(in srgb, var(--accent) 35%, #fff) 50%,
+      var(--accent) 72%,
+      color-mix(in srgb, var(--accent) 70%, #000)) border-box;
+  box-shadow: 0 0 22px -6px color-mix(in srgb, var(--accent) 70%, transparent);
+  /* The glow has to be let out of the box that draws it. */
+  overflow: visible;
 }
-/* Gold, not green: --accent is the gold in every one of the themes, and the
-   thing being bought is gilding. Led by --primary it read as "this row is
-   selected" rather than as an illuminated surah. */
-.surah-progress-row.gilded-1 .name { color: color-mix(in srgb, var(--accent) 60%, var(--text)); }
-.surah-progress-row.gilded-2 .name {
+.plan-surah-group.gilded .plan-surah-summary {
+  position: relative;
+  border-radius: 11px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+  /* Room at both ends for the arabesque, so neither the name nor the arrow
+     is ever drawn on top of it - and the row may take a second line rather
+     than push its own text under the ornament, which is what a narrow phone
+     was doing to "تمَّ الحفظ". */
+  padding-inline: 40px;
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+.plan-surah-group.gilded .plan-surah-meta { flex-wrap: wrap; row-gap: 4px; }
+/* The end-pieces, one at each end of the row. Drawn on an overlay rather
+   than as the summary's own background so they sit above the fill and take
+   no clicks - the whole row is the details' toggle. */
+.plan-surah-group.gilded .plan-surah-summary::after {
+  content: "";
+  position: absolute;
+  inset-block: 3px;
+  inset-inline: 4px;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='46' height='54' viewBox='0 0 46 54'><g fill='none' stroke='%23b98b2a' stroke-opacity='0.75' stroke-width='1.5' stroke-linejoin='round' stroke-linecap='round'><path d='M44 2C24 2 6 8 2 16'/><path d='M44 52C24 52 6 46 2 38'/><path d='M44 8C27 8 12 13 8 19'/><path d='M44 46C27 46 12 41 8 35'/><path d='M23 18c4 4 4 6 0 9-4-3-4-5 0-9Z'/><path d='M23 36c4-4 4-6 0-9-4 3-4 5 0 9Z'/><path d='M14 27c4-4 6-4 9 0-3 4-5 4-9 0Z'/><path d='M32 27c-4-4-6-4-9 0 3 4 5 4 9 0Z'/><path d='M23 16c-3-4-3-8 0-11 3 3 3 7 0 11'/><path d='M23 38c-3 4-3 8 0 11 3-3 3-7 0-11'/><path d='M33 27c4 0 7 2 9 5M33 27c4 0 7-2 9-5'/><path d='M13 27c-3 0-5 2-7 5M13 27c-3 0-5-2-7-5'/></g></svg>"), url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='46' height='54' viewBox='0 0 46 54'><g fill='none' stroke='%23b98b2a' stroke-opacity='0.75' stroke-width='1.5' stroke-linejoin='round' stroke-linecap='round'><path d='M44 2C24 2 6 8 2 16'/><path d='M44 52C24 52 6 46 2 38'/><path d='M44 8C27 8 12 13 8 19'/><path d='M44 46C27 46 12 41 8 35'/><path d='M23 18c4 4 4 6 0 9-4-3-4-5 0-9Z'/><path d='M23 36c4-4 4-6 0-9-4 3-4 5 0 9Z'/><path d='M14 27c4-4 6-4 9 0-3 4-5 4-9 0Z'/><path d='M32 27c-4-4-6-4-9 0 3 4 5 4 9 0Z'/><path d='M23 16c-3-4-3-8 0-11 3 3 3 7 0 11'/><path d='M23 38c-3 4-3 8 0 11 3-3 3-7 0-11'/><path d='M33 27c4 0 7 2 9 5M33 27c4 0 7-2 9-5'/><path d='M13 27c-3 0-5 2-7 5M13 27c-3 0-5-2-7-5'/></g></svg>");
+  background-repeat: no-repeat, no-repeat;
+  background-position: right center, left center;
+  background-size: 32px 100%, 32px 100%;
+}
+.plan-surah-group.gilded .plan-surah-name {
+  color: color-mix(in srgb, var(--accent) 88%, var(--text));
+}
+.plan-surah-group.gilded .plan-surah-summary::before { color: var(--accent); }
+
+/* Said in words as well as in gold, for whoever does not read the frame. */
+.gild-seal {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
   color: color-mix(in srgb, var(--accent) 85%, var(--text));
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 0.68rem;
   font-weight: 600;
-}
-.surah-progress-row.gilded-2 .progress-fill {
-  background: linear-gradient(90deg, var(--primary), var(--accent));
-}
-.surah-progress-row.gilded-3 {
-  background: linear-gradient(90deg,
-    color-mix(in srgb, var(--accent) 16%, transparent),
-    color-mix(in srgb, var(--accent) 5%, transparent));
-  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
-  border-radius: 10px;
-}
-.surah-progress-row.gilded-3 .name {
-  color: color-mix(in srgb, var(--accent) 92%, var(--text));
-  font-weight: 700;
-}
-.surah-progress-row.gilded-3 .progress-fill {
-  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 60%, #fff));
+  white-space: nowrap;
 }
 
-/* Buy the next degree. Kept to the price and a mark: the row is already
-   four things wide on a phone, and a worded button would push the bar out. */
+/* Offered only on a surah standing finished and unilluminated. */
 .gild-btn {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  padding: 3px 7px;
+  padding: 2px 8px;
   border-radius: 999px;
   border: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent);
   background: none;
   color: color-mix(in srgb, var(--accent) 80%, var(--text));
   font-family: inherit;
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   cursor: pointer;
+  white-space: nowrap;
 }
 @media (hover: hover) {
   .gild-btn:hover { background: color-mix(in srgb, var(--accent) 16%, transparent); }
 }
-.gild-btn-mark { font-size: 0.85em; }
 .gild-btn-price { font-variant-numeric: tabular-nums; }
-.gild-lead { margin: 6px 0 0; font-size: 0.8rem; line-height: 1.7; }
-.gild-lead.hidden { display: none; }
-/* The same three degrees wherever a surah is named. */
-.gilded-name-1 { color: color-mix(in srgb, var(--accent) 60%, var(--text)); }
-.gilded-name-2 { color: color-mix(in srgb, var(--accent) 85%, var(--text)); font-weight: 600; }
-.gilded-name-3 { color: color-mix(in srgb, var(--accent) 92%, var(--text)); font-weight: 700; }
-/* Nothing left to buy for this surah - the mark stands on its own. */
-.gild-done {
-  flex-shrink: 0;
-  color: var(--accent, var(--primary));
-  font-size: 0.9rem;
-  width: 22px;
-  text-align: center;
-}
 
 /* Stacked, each row taking the card's full width - the same shape the
    mushaf card's controls already have. As a wrapping row the surah box and
