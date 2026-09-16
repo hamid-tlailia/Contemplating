@@ -1219,11 +1219,16 @@ main#app {
   background: var(--bg);
   overflow: hidden;
 }
+/* Two columns: everything that describes the surah, then the arrow. The
+   arrow keeps a column of its own rather than riding along in the flow, so a
+   row carrying badges and two buttons lays its extra out on a second line
+   instead of squeezing the name into a three-line stack - which is what a
+   single flex row did on a phone. */
 .plan-surah-summary {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  column-gap: 10px;
   padding: 12px 14px;
   cursor: pointer;
   list-style: none;
@@ -1236,12 +1241,57 @@ main#app {
   font-size: 0.7rem;
   color: var(--accent);
   transition: transform .2s ease;
-  order: 2;
-  margin-inline-start: auto;
+  grid-column: 2;
+  grid-row: 1;
 }
 .plan-surah-group[open] .plan-surah-summary::before { transform: rotate(-90deg); }
-.plan-surah-name { color: var(--primary); }
-.plan-surah-meta { font-size: 0.78rem; font-weight: 400; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.plan-surah-body {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+/* Never broken mid-name: the badges move down instead. */
+.plan-surah-name { color: var(--primary); white-space: nowrap; }
+.plan-surah-meta {
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.plan-surah-count { white-space: nowrap; }
+/* The row's buttons travel together: they hug the far end when there is room
+   on the line, and move down as one block when there isn't - rather than one
+   of them dangling alone on a line of its own. */
+.plan-surah-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.plan-surah-actions:empty { display: none; }
+.plan-surah-body > .badge,
+.plan-surah-meta .badge { font-size: 0.68rem; padding: 2px 7px; }
+/* Phones: every pixel of the panel's side padding is a pixel the row cannot
+   use, and these rows carry the most per line of anything in the app - a name,
+   a count, two badges and two buttons. The gutter narrows so the row does not
+   have to stack. */
+@media (max-width: 430px) {
+  .panel { padding-inline: 14px; }
+  .plan-surah-summary { padding-inline: 11px; }
+  .plan-surah-items { padding-inline: 9px; }
+}
+@media (max-width: 360px) {
+  .plan-surah-name { font-size: 0.92rem; }
+  .plan-surah-summary { padding-inline: 8px; }
+  .plan-surah-body { gap: 5px 8px; }
+}
 .plan-surah-items {
   display: flex;
   flex-direction: column;
@@ -1501,6 +1551,14 @@ main#app {
 /* Added but not yet memorized: waiting its turn, or waiting to be proved.
    Set apart from the review plan below it by a dashed edge - it is a holding
    area, not a schedule, and it empties itself as the ayahs are learnt. */
+/* Why the veil is absent on a short ayah, said once, quietly. */
+.listen-skip-note {
+  text-align: center;
+  font-size: 0.78rem;
+  margin: 4px 0 8px;
+  line-height: 1.6;
+}
+
 .pending-card { border: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent); }
 .pending-card.hidden { display: none; }
 .pending-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }

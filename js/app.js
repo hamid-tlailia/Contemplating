@@ -1867,12 +1867,22 @@ function renderDashboard() {
         if (gilded) details.classList.add("gilded");
         const summary = document.createElement("summary");
         summary.className = "plan-surah-summary";
+        // Name and badges share one wrapper that wraps onto a second line by
+        // itself when the row runs out of width; the disclosure arrow sits in
+        // a column of its own so it stays put at any screen size, and the
+        // name is never broken across lines to make room for a badge.
         summary.innerHTML = `
-          <span class="plan-surah-name">📖 ${group.name}</span>
-          <span class="plan-surah-meta">${memorizedInGroup} آية${dueInGroup ? ` <span class="badge due">${dueInGroup} مستحقة</span>` : ""}${
-            learningInGroup.length ? ` <span class="badge learning">${learningInGroup.length} قيد الحفظ</span>` : ""
-          }</span>
+          <span class="plan-surah-body">
+            <span class="plan-surah-name">📖 ${group.name}</span>
+            <span class="plan-surah-meta">${memorizedInGroup ? `<span class="plan-surah-count">${memorizedInGroup} آية</span>` : ""}${
+              dueInGroup ? `<span class="badge due">${dueInGroup} مستحقة</span>` : ""
+            }${
+              learningInGroup.length ? `<span class="badge learning">${learningInGroup.length} قيد الحفظ</span>` : ""
+            }</span>
+            <span class="plan-surah-actions"></span>
+          </span>
         `;
+        const actions = summary.querySelector(".plan-surah-actions");
         // A surah with ayahs still under the rounds can be taken up now
         // without disturbing the place in the sequence - unless the learn
         // tab is already standing on it, in which case there is nowhere to go.
@@ -1889,7 +1899,7 @@ function renderDashboard() {
             e.stopPropagation();
             startLearnDetour(surahNum, learningInGroup[0].ayah);
           });
-          summary.querySelector(".plan-surah-meta").appendChild(go);
+          actions.appendChild(go);
         }
         // Added and thought better of: clears this surah's unmemorized ayahs
         // in one go. Only those - what is already memorized is removed one
@@ -1908,7 +1918,7 @@ function renderDashboard() {
             e.stopPropagation();
             dropPendingGroup({ surah: surahNum, name: group.name, items: learningInGroup }, span);
           });
-          summary.querySelector(".plan-surah-meta").appendChild(drop);
+          actions.appendChild(drop);
         }
         if (offer) {
           const btn = document.createElement("button");
@@ -1925,7 +1935,7 @@ function renderDashboard() {
             e.stopPropagation();
             gildSurah(surahNum);
           });
-          summary.querySelector(".plan-surah-meta").appendChild(btn);
+          actions.appendChild(btn);
         }
         details.appendChild(summary);
         const itemsContainer = document.createElement("div");
@@ -7144,7 +7154,8 @@ function loadReviewItem() {
   // the whole session rather than being re-chosen at every ayah.
   listenPrimed = false;
   listenCutAt = null;
-  if (listenModeOn()) primeListening();
+  renderListenButton();
+  if (listenModeOn() && listenSuitsAyah(item.text)) primeListening();
   else applyListenVeil();
 
   fitReviewAyahHeight();
@@ -7503,6 +7514,21 @@ function listenModeOn() {
   return state.listenMode === true;
 }
 
+// The mode only means anything on an ayah long enough that hearing its
+// opening still leaves something to recall. «الٓمٓ» and «ٱلرَّحْمَٰنِ ٱلرَّحِيمِ»
+// are over before any cut can land: the reciter says the whole ayah, and the
+// veil then lifts on something that was just read aloud. Six words is where
+// a third of the way in is still a beginning - below it the prompt and the
+// ayah are the same thing, so the option is not offered at all.
+const LISTEN_MIN_WORDS = 6;
+function listenSuitsAyah(text) {
+  return quranWords(text || "").length >= LISTEN_MIN_WORDS;
+}
+function listenSuitsCurrentReview() {
+  const item = reviewQueue && reviewQueue[reviewIndex];
+  return !item || listenSuitsAyah(item.text);
+}
+
 // About a third of the way in, bounded either side: less than a second and
 // a half is not a prompt, more than six gives the ayah away.
 function listenCutPoint(duration) {
@@ -7603,8 +7629,14 @@ function setListenLead(text) {
 function renderListenButton() {
   const btn = document.getElementById("btn-review-listen");
   if (!btn) return;
+  const suits = listenSuitsCurrentReview();
   btn.innerHTML = iconLabel("headphones", listenModeOn() ? "أغلق وضع السمع" : "راجع بالسمع");
   btn.classList.toggle("active", listenModeOn());
+  btn.classList.toggle("hidden", !suits);
+  // Says why the veil is not there on an ayah too short for it, so the mode
+  // staying on across the queue does not read as the mode having broken.
+  const note = document.getElementById("listen-skip-note");
+  if (note) note.classList.toggle("hidden", suits || !listenModeOn());
 }
 
 // The veil hides the ayah without unmounting it: the masked words, the
@@ -7621,7 +7653,7 @@ function applyListenVeil() {
 
 function primeListening() {
   const audio = document.getElementById("review-audio");
-  if (!audio) return;
+  if (!audio || !listenSuitsCurrentReview()) return;
   clearListenCutTimer();
   listenPrimed = true;
   listenCutAt = null;
