@@ -887,6 +887,17 @@ h1, h2 { font-family: 'Tajawal', sans-serif; margin: 0; }
   color: #eab308;
 }
 .coin-icon svg { width: 15px; height: 15px; }
+/* The same coin, sized for running text and for the small pills - a price on
+   a button, a lock on a swatch, a reward under a result. */
+.coin-sm svg { width: 12px; height: 12px; }
+.points-amount {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  vertical-align: -2px;
+}
 /* A couple of px down: digit glyphs sit slightly high within their own
    line box compared to the icon's true visual center, so the two read as
    misaligned even though both are flex-centered on the same row. */
@@ -1245,39 +1256,48 @@ main#app {
   grid-row: 1;
 }
 .plan-surah-group[open] .plan-surah-summary::before { transform: rotate(-90deg); }
+/* Two fixed lines, always in the same order: the surah and how much of it
+   is memorized above, everything that is a state or an action below. Letting
+   them share one wrapping line meant a row's shape depended on how long its
+   name happened to be, and no two rows in the list looked alike. */
 .plan-surah-body {
   grid-column: 1;
   grid-row: 1;
   min-width: 0;
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 10px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
 }
-/* Never broken mid-name: the badges move down instead. */
+.plan-surah-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  min-width: 0;
+}
+/* Never broken mid-name: the count follows it, and the rest is a line down. */
 .plan-surah-name { color: var(--primary); white-space: nowrap; }
-.plan-surah-meta {
-  font-size: 0.78rem;
-  font-weight: 400;
-  color: var(--muted);
+.plan-surah-tags {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   min-width: 0;
 }
-.plan-surah-count { white-space: nowrap; }
-/* The row's buttons travel together: they hug the far end when there is room
-   on the line, and move down as one block when there isn't - rather than one
-   of them dangling alone on a line of its own. */
+.plan-surah-count {
+  white-space: nowrap;
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: var(--muted);
+}
 .plan-surah-actions {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 .plan-surah-actions:empty { display: none; }
-.plan-surah-body > .badge,
-.plan-surah-meta .badge { font-size: 0.68rem; padding: 2px 7px; }
+.plan-surah-tags .badge { font-size: 0.68rem; padding: 2px 7px; }
 /* Phones: every pixel of the panel's side padding is a pixel the row cannot
    use, and these rows carry the most per line of anything in the app - a name,
    a count, two badges and two buttons. The gutter narrows so the row does not
@@ -1290,7 +1310,7 @@ main#app {
 @media (max-width: 360px) {
   .plan-surah-name { font-size: 0.92rem; }
   .plan-surah-summary { padding-inline: 8px; }
-  .plan-surah-body { gap: 5px 8px; }
+  .plan-surah-body { gap: 6px; }
 }
 .plan-surah-items {
   display: flex;
@@ -1449,7 +1469,7 @@ main#app {
   filter: drop-shadow(0 2px 6px rgba(0,0,0,0.22));
 }
 .plan-surah-group.gilded .plan-surah-name,
-.plan-surah-group.gilded .plan-surah-meta,
+.plan-surah-group.gilded .plan-surah-count,
 .plan-surah-group.gilded .plan-surah-summary::before {
   /* Dark on the cream panel, not on the page - one colour, right in every
      theme, because the panel it sits on is the same cream in all of them. */
@@ -1485,6 +1505,7 @@ main#app {
   .gild-btn:hover { background: color-mix(in srgb, var(--accent) 16%, transparent); }
 }
 .gild-btn-price { font-variant-numeric: tabular-nums; }
+.gild-btn .coin-icon { color: inherit; }
 
 /* Picks a surah's unfinished ayahs up again, from the row that already names
    it - shaped like the gilding offer next to it so the summary keeps one
@@ -1505,17 +1526,23 @@ main#app {
   .plan-resume-btn:hover { background: color-mix(in srgb, var(--primary) 14%, transparent); }
 }
 
+/* The glyph sits on its own baseline, which in a 22px circle puts it low and
+   off to one side. Centring it as a flex item - rather than trusting the
+   line box - is what actually puts it in the middle of the ring. */
 .plan-drop-btn {
   flex-shrink: 0;
-  width: 22px;
-  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border-radius: 999px;
   border: 1px solid var(--border);
   background: none;
   color: var(--muted);
   font-family: inherit;
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   line-height: 1;
   cursor: pointer;
 }

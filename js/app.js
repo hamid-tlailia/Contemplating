@@ -146,6 +146,27 @@ function iconLabel(iconKey, text) {
 // different marks for one thing read as two different things.
 document.querySelectorAll(".coin-icon").forEach((el) => { el.innerHTML = ICONS.coin; });
 
+// One mark for points, everywhere they are named. The app had grown three -
+// the drawn coin in the header, a 🪙 emoji in toasts and dialogs, and a ✦ on
+// the gilding button - and three marks for one currency read as three
+// different things to earn. Wherever markup is allowed it is this coin;
+// wherever only plain text can go (a toast, a button label) the word نقطة
+// stands in, rather than an emoji standing in for the icon.
+function coinIconHTML(cls) {
+  return `<span class="coin-icon${cls ? ` ${cls}` : ""}">${ICONS.coin}</span>`;
+}
+function pointsHTML(amount, cls) {
+  return `<span class="points-amount">${amount}${coinIconHTML(cls)}</span>`;
+}
+// ١ نقطة · نقطتان · ٣-١٠ نقاط · ١١+ نقطة - the same shape ayahCountLabel uses.
+function pointsText(amount) {
+  const n = Number(amount) || 0;
+  if (n === 1) return "نقطة واحدة";
+  if (n === 2) return "نقطتان";
+  if (n >= 3 && n <= 10) return `${n} نقاط`;
+  return `${n} نقطة`;
+}
+
 function audioSrcFor(globalAyahNumber) {
   const reciter = RECITERS.find((r) => r.id === state.reciter) || RECITERS[0];
   return `${AUDIO_CDN}/${reciter.bitrate}/${reciter.id}/${globalAyahNumber}.mp3`;
@@ -639,7 +660,7 @@ function addPoints(amount) {
 // "+15" under a finished round is a promise. Once the counting has stopped
 // it is a promise the app no longer keeps, so it stops being made.
 function rewardSuffix(amount) {
-  return everythingOwned() ? "" : ` · +${amount}`;
+  return everythingOwned() ? "" : ` · +${pointsText(amount)}`;
 }
 
 // ---------- Illuminating the mushaf ----------
@@ -694,14 +715,14 @@ function pendingGildings() {
 function gildSurah(surahNumber) {
   if (!canGild(surahNumber)) return;
   if (state.points < GILD_PRICE) {
-    showToast(`🪙 يتطلب تذهيب السورة ${GILD_PRICE} نقطة ولا تملك ما يكفي (رصيدك: ${state.points}).`, "error");
+    showToast(`يتطلب تذهيب السورة ${pointsText(GILD_PRICE)} ولا تملك ما يكفي (رصيدك: ${pointsText(state.points)}).`, "error");
     return;
   }
   const name = surahDisplayName(surahNumber);
   showConfirmModal(
     "تذهيب السورة",
-    `تُذهّب "${name}" وقد حفظتها كاملة — مقابل ${GILD_PRICE} 🪙 (رصيدك: ${state.points})؟`,
-    `أنفق ${GILD_PRICE} 🪙 وذهّبها`,
+    `تُذهّب "${name}" وقد حفظتها كاملة — مقابل ${pointsHTML(GILD_PRICE)} (رصيدك: ${pointsHTML(state.points)})؟`,
+    `أنفق ${pointsText(GILD_PRICE)} وذهّبها`,
     () => {
       state.points -= GILD_PRICE;
       state.gilding = state.gilding || {};
@@ -784,8 +805,8 @@ function purchaseOrSelect(item, ownedList, { onSelect, confirmTitle, unlockedNou
   if (state.points >= item.points) {
     showConfirmModal(
       confirmTitle,
-      `افتح "${item.name}" مقابل ${item.points} 🪙 (رصيدك: ${state.points})؟`,
-      `أنفق ${item.points} 🪙 وافتحه`,
+      `افتح "${item.name}" مقابل ${pointsHTML(item.points)} (رصيدك: ${pointsHTML(state.points)})؟`,
+      `أنفق ${pointsText(item.points)} وافتحه`,
       () => {
         state.points -= item.points;
         ownedList.push(item.id);
@@ -797,7 +818,7 @@ function purchaseOrSelect(item, ownedList, { onSelect, confirmTitle, unlockedNou
       }
     );
   } else {
-    showToast(`🪙 يتطلب فتح ${thisNoun} ${item.points} نقطة ولا تملك ما يكفي (رصيدك: ${state.points}).`, "error");
+    showToast(`يتطلب فتح ${thisNoun} ${pointsText(item.points)} ولا تملك ما يكفي (رصيدك: ${pointsText(state.points)}).`, "error");
   }
 }
 
@@ -816,7 +837,7 @@ function renderPointsDisplay() {
   if (note) {
     note.textContent = done
       ? "فتحتَ كل المقتنيات — بلغت النقاط منتهاها وتوقّف عدّها. هذا حصادك كلّه."
-      : `أقرب ما يمكنك فتحه: ${cheapestUnowned()} نقطة`;
+      : `أقرب ما يمكنك فتحه: ${pointsText(cheapestUnowned())}`;
     note.classList.toggle("hidden", !done && cheapestUnowned() === null);
   }
   const label = document.getElementById("points-display-label");
@@ -1873,13 +1894,15 @@ function renderDashboard() {
         // name is never broken across lines to make room for a badge.
         summary.innerHTML = `
           <span class="plan-surah-body">
-            <span class="plan-surah-name">📖 ${group.name}</span>
-            <span class="plan-surah-meta">${memorizedInGroup ? `<span class="plan-surah-count">${memorizedInGroup} آية</span>` : ""}${
+            <span class="plan-surah-head">
+              <span class="plan-surah-name">📖 ${group.name}</span>
+              ${memorizedInGroup ? `<span class="plan-surah-count">${memorizedInGroup} آية</span>` : ""}
+            </span>
+            <span class="plan-surah-tags">${
               dueInGroup ? `<span class="badge due">${dueInGroup} مستحقة</span>` : ""
             }${
               learningInGroup.length ? `<span class="badge learning">${learningInGroup.length} قيد الحفظ</span>` : ""
-            }</span>
-            <span class="plan-surah-actions"></span>
+            }<span class="plan-surah-actions"></span></span>
           </span>
         `;
         const actions = summary.querySelector(".plan-surah-actions");
@@ -1924,9 +1947,9 @@ function renderDashboard() {
           const btn = document.createElement("button");
           btn.type = "button";
           btn.className = "gild-btn";
-          btn.title = `حفظتها كاملة — ذهّبها مقابل ${GILD_PRICE} نقطة`;
-          btn.setAttribute("aria-label", `تذهيب ${group.name} مقابل ${GILD_PRICE} نقطة`);
-          btn.innerHTML = `<span class="gild-btn-mark">✦</span><span class="gild-btn-price">${GILD_PRICE}</span>`;
+          btn.title = `حفظتها كاملة — ذهّبها مقابل ${pointsText(GILD_PRICE)}`;
+          btn.setAttribute("aria-label", `تذهيب ${group.name} مقابل ${pointsText(GILD_PRICE)}`);
+          btn.innerHTML = `<span class="gild-btn-price">${GILD_PRICE}</span>${coinIconHTML("coin-sm")}`;
           // Inside a <summary>, a click is the toggle - so the button has to
           // take the event out of the summary's hands or buying would open
           // and close the group underneath the confirm dialog.
@@ -1937,6 +1960,12 @@ function renderDashboard() {
           });
           actions.appendChild(btn);
         }
+        // The lower line is a fixed place, not a spillover: badges and
+        // buttons always sit there and never mix into the name's line, so
+        // every row in the list reads the same way. It disappears only when
+        // there is genuinely nothing to put on it.
+        const tags = summary.querySelector(".plan-surah-tags");
+        tags.classList.toggle("hidden", !tags.querySelector(".badge") && !actions.childElementCount);
         details.appendChild(summary);
         const itemsContainer = document.createElement("div");
         itemsContainer.className = "plan-surah-items";
@@ -3088,7 +3117,7 @@ async function finishMushafReading() {
     // A long-lived toast (see .toast timing) that layers above the modal
     // stack (toast-container's z-index), so it stays visible even though
     // the person was mid-modal when this fired, not just after closing it.
-    showToast(`🎉 تجاوزت هدف اليوم بـ ${surplus} ${type === "pages" ? "صفحة" : "آية"}`, "success", `+${bonus}`);
+    showToast(`🎉 تجاوزت هدف اليوم بـ ${surplus} ${type === "pages" ? "صفحة" : "آية"}`, "success", `+${pointsText(bonus)}`);
   } else {
     showToast("🌙 أُضيفت قراءتك ضمن ورد اليوم.", "success");
   }
@@ -5731,6 +5760,8 @@ function startDailyChallenge() {
   isChallengeMode = true;
   isSingleItemReview = false;
   challengeCorrectCount = 0;
+  challengeNeighbourRight = 0;
+  challengeNeighbourTotal = 0;
   switchTab("review");
   document.getElementById("challenge-banner").classList.remove("hidden");
   document.getElementById("review-empty").classList.add("hidden");
@@ -6347,7 +6378,7 @@ function exportBackup() {
     saveState();
     renderStorageStatus();
     const s = backupSummary(payload);
-    showToast("💾 حُفظت نسختك", "success", `${ayahCountLabel(s.ayahs)} · ${s.points} نقطة`);
+    showToast("💾 حُفظت نسختك", "success", `${ayahCountLabel(s.ayahs)} · ${pointsText(s.points)}`);
   } catch (e) {
     showToast("تعذّر حفظ النسخة على هذا الجهاز.", "error");
   }
@@ -6374,7 +6405,7 @@ function importBackupFile(file) {
     const current = backupSummary({ state });
     showConfirmModal(
       "استعادة نسخة",
-      `النسخة المحفوظة${incoming.savedAt ? ` بتاريخ ${incoming.savedAt}` : ""} فيها <strong>${ayahCountLabel(incoming.ayahs)}</strong> منها ${incoming.mastered} محفوظة، و<strong>${incoming.points} نقطة</strong>.<br><br>ستحلّ محلّ ما على هذا الجهاز الآن (${ayahCountLabel(current.ayahs)} · ${current.points} نقطة)، ولا يمكن التراجع.`,
+      `النسخة المحفوظة${incoming.savedAt ? ` بتاريخ ${incoming.savedAt}` : ""} فيها <strong>${ayahCountLabel(incoming.ayahs)}</strong> منها ${incoming.mastered} محفوظة، و<strong>${pointsText(incoming.points)}</strong>.<br><br>ستحلّ محلّ ما على هذا الجهاز الآن (${ayahCountLabel(current.ayahs)} · ${pointsText(current.points)})، ولا يمكن التراجع.`,
       "استعد هذه النسخة",
       () => {
         try {
@@ -6738,7 +6769,7 @@ function closeSeamSession() {
   showToast(
     `🔗 وصلت ${seamTally.right} من ${done} مفصلًا`,
     seamTally.wrong ? undefined : "success",
-    earned ? `+${earned}` : undefined
+    earned ? `+${pointsText(earned)}` : undefined
   );
   renderSeamEntry();
   renderDashboard();
@@ -7140,12 +7171,16 @@ function loadReviewItem() {
   // Opens masked: showing the whole ayah and then asking "how well did you
   // remember it?" was asking about a recall that never happened.
   maskLevel = 1;
-  askReviewNeighbour(item);
   // A suggestion belongs to the recitation it was measured from, so it must
   // not survive into the next ayah - which is uncovered by hand and has no
   // measurement behind it.
   clearGradeSuggestion();
   renderMaskedText();
+  // After the text, not before it: drawing the masked ayah resets the
+  // question row along with the word choices, so a neighbour question raised
+  // ahead of it was created and then wiped in the same breath - which is why
+  // it never actually appeared in a session.
+  askReviewNeighbour(item);
 
   const audio = document.getElementById("review-audio");
   audio.src = audioSrcFor(item.globalNumber);
@@ -7176,6 +7211,10 @@ const REVIEW_NEIGHBOUR_CHANCE = 0.3;
 
 let reviewNeighbourParts = [];
 let reviewNeighbourIndex = 0;
+// The challenge's own tally of the join questions, kept apart from the ayah
+// gradings so the result can say what each half went like.
+let challengeNeighbourRight = 0;
+let challengeNeighbourTotal = 0;
 
 function memorizedNeighbour(item, offset) {
   const other = state.ayahs[`${item.surah}:${item.ayah + offset}`];
@@ -7191,7 +7230,11 @@ function hideReviewNeighbour() {
 
 function askReviewNeighbour(item) {
   hideReviewNeighbour();
-  if (Math.random() > REVIEW_NEIGHBOUR_CHANCE) return;
+  // In the daily challenge it is not a variation but part of the test: the
+  // challenge asks what is missing from the ayah, and where the ayah sits is
+  // the other half of knowing it. So every ayah with a memorized neighbour
+  // gets the question, and the answers are counted into the result.
+  if (!isChallengeMode && Math.random() > REVIEW_NEIGHBOUR_CHANCE) return;
   const before = memorizedNeighbour(item, -1);
   const after = memorizedNeighbour(item, 1);
   if (!before && !after) return;
@@ -7245,6 +7288,10 @@ function renderReviewNeighbour(item) {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
       const right = phrase === part.correct;
+      if (isChallengeMode) {
+        challengeNeighbourTotal++;
+        if (right) challengeNeighbourRight++;
+      }
       optionsBox.querySelectorAll(".mcq-btn").forEach((b) => {
         b.disabled = true;
         if (b.textContent === `${part.prefix}${part.correct}${part.suffix}`) b.classList.add("correct");
@@ -8315,8 +8362,9 @@ function finishReviewOrChallenge() {
     fireConfetti(true);
     playMasterySound();
     empty.innerHTML = `<p>⚡ تعاهدت ${challengeCorrectCount} من ${reviewQueue.length} آية اليوم</p>
+      ${challengeNeighbourTotal ? `<p class="muted">ومواضعها: أصبت ${challengeNeighbourRight} من ${challengeNeighbourTotal} في ما قبلها وما بعدها.</p>` : ""}
       <p class="muted">${randomEncouragement()}</p>
-      ${everythingOwned() ? "" : `<p class="reward-note">+${POINTS.dailyChallenge}</p>`}`;
+      ${everythingOwned() ? "" : `<p class="reward-note">+${pointsHTML(POINTS.dailyChallenge, "coin-sm")}</p>`}`;
     isChallengeMode = false;
     document.getElementById("challenge-banner").classList.add("hidden");
   } else if (isEphemeralReview) {
@@ -8438,7 +8486,7 @@ function renderCollectibleGrid({ gridId, items, ownedList, activeId, extraClass,
   grid.innerHTML = items.map((item) => {
     const owned = ownedList.includes(item.id);
     const active = activeId === item.id;
-    const sub = item.points === 0 ? "مجاني" : owned ? "مملوك ✓" : `🔒 ${item.points} نقطة`;
+    const sub = item.points === 0 ? "مجاني" : owned ? "مملوك ✓" : `🔒 ${pointsHTML(item.points, "coin-sm")}`;
     return `
       <button class="swatch ${extraClass ? extraClass(item) : ""} ${active ? "active" : ""} ${owned ? "" : "locked"}" data-id="${item.id}">
         ${previewHTML ? previewHTML(item) : `<span class="swatch-name">${item.name}</span>`}
