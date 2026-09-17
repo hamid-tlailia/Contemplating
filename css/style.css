@@ -1594,6 +1594,23 @@ main#app {
 .review-session.neighbour-pending .mode-controls,
 .review-session.neighbour-pending #grade-suggestion { display: none !important; }
 
+/* The connection is gone. A thin band rather than a dialog: nothing here is
+   blocked by it, and most of the app does not need the network at all. */
+.offline-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: color-mix(in srgb, var(--warn) 18%, var(--surface));
+  color: color-mix(in srgb, var(--warn) 45%, var(--text));
+  border-bottom: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  text-align: center;
+}
+.offline-bar-mark { font-size: 1rem; flex: none; }
+
 /* Why the veil is absent on a short ayah, said once, quietly. */
 .listen-skip-note {
   text-align: center;

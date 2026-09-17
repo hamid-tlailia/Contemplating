@@ -9059,13 +9059,56 @@ function showUpdateToast() {
 const PULL_TRIGGER = 78;   // px of travel before the release does anything
 const PULL_MAX = 120;      // the indicator stops following the thumb here
 
+// navigator.onLine is only trustworthy when it says false: a phone on a dead
+// data connection reports true. So the bar goes up on the events (and on a
+// definite false at start), and comes down when the browser says the
+// connection is back - and the app's own fetches keep their error messages
+// for the case the bar is wrong.
+function renderOfflineBar() {
+  const bar = document.getElementById("offline-bar");
+  if (bar) bar.classList.toggle("hidden", navigator.onLine !== false);
+}
+window.addEventListener("offline", renderOfflineBar);
+window.addEventListener("online", renderOfflineBar);
+renderOfflineBar();
+
+// Root-relative, because the app answers at /review and /learn/settings too:
+// a relative "index.html" from there asks for /review/index.html, and the
+// worker's own shell entries are the root ones.
+const SHELL_FILES = ["/", "/index.html", "/css/style.css", "/js/app.js"];
+
+// The shell is REPLACED, never emptied. It used to be deleted outright and
+// the fresh copy left to the reload that followed - which is fine until the
+// reload has no network, and then a registered worker has nothing at all to
+// serve and every attempt after it is the browser's "site can't be reached".
+// navigator.onLine does not protect against this: a phone on a dead data
+// connection reports itself online. So the new copies are fetched first, and
+// only a complete set replaces what is there; anything less leaves the old
+// shell exactly where it was.
+async function refreshShell() {
+  if (!window.caches) return false;
+  const keys = await caches.keys();
+  const name = keys.find((k) => k.startsWith("tadabbur-shell"));
+  if (!name) return false;
+  // The ?shell-refresh marker makes the worker stand aside, so this reaches
+  // the network or fails - it cannot be answered from the cache it is trying
+  // to replace, which would let a refresh with no connection report success
+  // and change nothing.
+  const fresh = await Promise.all(
+    SHELL_FILES.map((u) =>
+      fetch(`${u}${u.includes("?") ? "&" : "?"}shell-refresh=${Date.now()}`, { cache: "reload" })
+        .then((r) => (r && r.ok ? r : null))
+        .catch(() => null)
+    )
+  );
+  if (fresh.some((r) => !r)) return false;
+  const cache = await caches.open(name);
+  await Promise.all(SHELL_FILES.map((u, i) => cache.put(u, fresh[i])));
+  return true;
+}
+
 async function hardReload() {
-  try {
-    if (navigator.onLine !== false && window.caches) {
-      const keys = await caches.keys();
-      await Promise.all(keys.filter((k) => k.startsWith("tadabbur-shell")).map((k) => caches.delete(k)));
-    }
-  } catch (e) { /* no cache access; the reload below is still worth doing */ }
+  try { await refreshShell(); } catch (e) { /* keep whatever is cached */ }
   location.reload();
 }
 
