@@ -1578,6 +1578,22 @@ main#app {
 /* Added but not yet memorized: waiting its turn, or waiting to be proved.
    Set apart from the review plan below it by a dashed edge - it is a holding
    area, not a schedule, and it empties itself as the ayahs are learnt. */
+/* While a join question is standing, the ayah is not answerable: it is still
+   there to be read, but dimmed and untappable, and everything that would let
+   the question be walked past - the word choice, the grading, the mask and
+   audio controls - is out of the way until it is answered. */
+.review-session.neighbour-pending .ayah-scroll {
+  pointer-events: none;
+  opacity: 0.4;
+  transition: opacity .25s ease;
+}
+.review-session.neighbour-pending #review-choice,
+.review-session.neighbour-pending #grade-controls,
+.review-session.neighbour-pending #review-reveal-hint,
+.review-session.neighbour-pending #review-audio-controls,
+.review-session.neighbour-pending .mode-controls,
+.review-session.neighbour-pending #grade-suggestion { display: none !important; }
+
 /* Why the veil is absent on a short ayah, said once, quietly. */
 .listen-skip-note {
   text-align: center;

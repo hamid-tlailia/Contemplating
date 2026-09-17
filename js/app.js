@@ -7190,8 +7190,14 @@ function loadReviewItem() {
   listenPrimed = false;
   listenCutAt = null;
   renderListenButton();
-  if (listenModeOn() && listenSuitsAyah(item.text)) primeListening();
-  else applyListenVeil();
+  const startListening = () => {
+    if (listenModeOn() && listenSuitsAyah(item.text)) primeListening();
+    else applyListenVeil();
+  };
+  // A join question asked first means first: the reciter waits for it rather
+  // than playing the opening underneath it.
+  if (reviewNeighbourParts.length) reviewNeighbourThen = startListening;
+  else startListening();
 
   fitReviewAyahHeight();
   scheduleAnswerDockUpdate();
@@ -7215,6 +7221,38 @@ let reviewNeighbourIndex = 0;
 // gradings so the result can say what each half went like.
 let challengeNeighbourRight = 0;
 let challengeNeighbourTotal = 0;
+// What to do once the join has been answered - in listen mode, starting the
+// reciter, which must not begin under a question about where the ayah sits.
+let reviewNeighbourThen = null;
+
+// "قبل أن تسترجعها" has to mean it. While a join question is standing, the
+// ayah underneath is out of reach: its hidden words cannot be tapped, the
+// grading is not offered, and the mask and audio controls are put away -
+// otherwise the whole question can be walked past by answering the words
+// below it and grading, which is exactly what happened.
+function setNeighbourBlock(on) {
+  const session = document.getElementById("review-session");
+  if (session) session.classList.toggle("neighbour-pending", on);
+  if (on) closeReviewChoice();
+}
+
+// Puts the hint and the grading back to whatever the ayah's own state says,
+// without redrawing it - redrawing would clear the words already uncovered.
+function refreshReviewGate() {
+  const text = document.getElementById("review-text");
+  if (!text) return;
+  const stillHidden = text.querySelectorAll(".word.masked").length;
+  makeRevealGate({
+    scrollId: "review-ayah-scroll",
+    actionsId: "grade-controls",
+    hintId: "review-reveal-hint",
+    fit: fitReviewAyahHeight,
+    ask: maskLevel > 0,
+  })(stillHidden, null);
+  // The veil has its own claim on the grading: it comes after the recall,
+  // not before it.
+  if (listenModeOn() && listenPrimed) document.getElementById("grade-controls").classList.add("hidden");
+}
 
 function memorizedNeighbour(item, offset) {
   const other = state.ayahs[`${item.surah}:${item.ayah + offset}`];
@@ -7224,8 +7262,19 @@ function memorizedNeighbour(item, offset) {
 function hideReviewNeighbour() {
   reviewNeighbourParts = [];
   reviewNeighbourIndex = 0;
+  reviewNeighbourThen = null;
+  setNeighbourBlock(false);
   const box = document.getElementById("review-neighbour");
   if (box) box.classList.add("hidden");
+}
+
+// Answered through to the end: the ayah is handed back, and whatever was
+// waiting on the question - the reciter, in listen mode - goes ahead.
+function finishReviewNeighbour() {
+  const after = reviewNeighbourThen;
+  hideReviewNeighbour();
+  refreshReviewGate();
+  if (after) after();
 }
 
 function askReviewNeighbour(item) {
@@ -7264,6 +7313,7 @@ function askReviewNeighbour(item) {
   };
   reviewNeighbourParts = pick === "both" ? [backPart, fwdPart] : pick === "backward" ? [backPart] : [fwdPart];
   reviewNeighbourIndex = 0;
+  setNeighbourBlock(true);
   renderReviewNeighbour(item);
 }
 
@@ -7303,7 +7353,7 @@ function renderReviewNeighbour(item) {
       setTimeout(() => {
         reviewNeighbourIndex++;
         if (reviewNeighbourIndex < reviewNeighbourParts.length) renderReviewNeighbour(item);
-        else hideReviewNeighbour();
+        else finishReviewNeighbour();
         fitReviewAyahHeight();
         scheduleAnswerDockUpdate();
       }, right ? 700 : 1400);
@@ -7481,6 +7531,10 @@ function closeReviewChoice() {
 function askReviewChoice(idx, word, el, reveal) {
   const box = document.getElementById("review-choice");
   const optionsBox = document.getElementById("review-choice-options");
+  // The join question comes first, and the block is not only visual: a tap
+  // that arrives anyway (a stray synthetic event, a stale handler) still
+  // finds the ayah closed.
+  if (reviewNeighbourParts.length) return;
   if (!box || !optionsBox) { reveal(); return; }
   closeReviewChoice();
   el.classList.add("asking");
@@ -8327,6 +8381,9 @@ function revealForGrading(accuracy) {
 
 document.querySelectorAll(".grade-buttons button").forEach((btn) => {
   btn.addEventListener("click", () => {
+    // Same guard as the word choice: nothing about this ayah is settled
+    // while its join question is still standing.
+    if (reviewNeighbourParts.length) return;
     const quality = Number(btn.dataset.quality);
     const item = reviewQueue[reviewIndex];
     const key = `${item.surah}:${item.ayah}`;
