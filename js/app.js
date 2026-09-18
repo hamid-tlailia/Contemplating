@@ -736,6 +736,26 @@ function gildSurah(surahNumber) {
   );
 }
 
+// «تمَّ الحفظ» on the illuminated row: the words between two rub-el-hizb
+// rosettes - the Mushaf's own mark for the end of a portion - rather than a
+// tick, which belongs to a checklist and not to this.
+const GILD_SEAL_ORNAMENT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" aria-hidden="true">
+  <path d="M4.6 4.6h14.8v14.8H4.6z"/>
+  <path d="M12 1.4 22.6 12 12 22.6 1.4 12z"/>
+  <circle cx="12" cy="12" r="2.1" fill="currentColor" stroke="none"/>
+</svg>`;
+
+function gildSealNode() {
+  const el = document.createElement("span");
+  el.className = "gild-seal";
+  el.title = "حفظتَها كاملة، وذهّبتها";
+  el.innerHTML = `
+    <span class="gild-seal-orn">${GILD_SEAL_ORNAMENT}</span>
+    <span class="gild-seal-text">تمَّ الحفظ</span>
+    <span class="gild-seal-orn">${GILD_SEAL_ORNAMENT}</span>`;
+  return el;
+}
+
 function surahDisplayName(surahNumber) {
   const meta = (surahListCache || []).find((s) => s.number === surahNumber);
   if (meta) return meta.name;
@@ -757,11 +777,32 @@ function allCollectibles() {
 function everythingOwned() {
   const gridsDone = allCollectibles().every(({ items, owned }) =>
     items.every((i) => (owned || []).includes(i.id)));
-  // The gilding counts as shop stock: while a surah still has a degree
-  // waiting, there is something to spend on, so the points keep counting.
-  // It goes quiet by itself when the memorizing pauses, and starts again
-  // with the next surah - which is the behaviour wanted, not a special case.
-  return gridsDone && pendingGildings().length === 0;
+  // The counting stops at the real end and nowhere before it. It used to
+  // stop whenever nothing was gildable *today* - so illuminating الفاتحة,
+  // with a hundred and thirteen surahs still ahead, read as "you have bought
+  // everything". There is something to spend on for as long as a single
+  // surah of the Mushaf is unilluminated, which is why the end of the points
+  // is the end of the whole thing: every collectible owned, and the Mushaf
+  // memorized and illuminated entire.
+  return gridsDone && gildedSurahCount() >= 114;
+}
+
+function gildedSurahCount() {
+  return Object.keys(state.gilding || {}).length;
+}
+
+// Six figures in a header badge push the brand off the row. Past ten
+// thousand the exact digits stop being the point anyway - what is being read
+// is the size of the harvest - so it is said in thousands from there on, and
+// exactly below it.
+function compactNumber(n) {
+  const v = Number(n) || 0;
+  // Written in plain digits either way: the app's own numerals pass turns
+  // them into ١٢٣ afterwards if that is what the person chose.
+  const round = (x) => (x >= 100 ? Math.round(x) : Math.round(x * 10) / 10);
+  if (v < 10000) return String(v);
+  if (v < 1000000) return `${round(v / 1000)}k`;
+  return `${round(v / 1000000)}m`;
 }
 
 // What has been earned all told, worked out rather than counted. A counter
@@ -830,15 +871,20 @@ function renderPointsDisplay() {
   // number this counter will ever produce.
   const shown = done ? lifetimePoints() : state.points;
   const el = document.getElementById("points-display");
-  if (el) el.textContent = shown;
+  if (el) { el.textContent = compactNumber(shown); el.title = `${shown}`; }
   const headerEl = document.getElementById("header-points-value");
-  if (headerEl) headerEl.textContent = shown;
+  if (headerEl) { headerEl.textContent = compactNumber(shown); headerEl.title = `${shown}`; }
   const note = document.getElementById("points-note");
   if (note) {
+    const cheapest = cheapestUnowned();
+    // Three states, not two: something to buy now, nothing to buy *today*
+    // but the gilding still ahead, and the true end.
     note.textContent = done
-      ? "فتحتَ كل المقتنيات — بلغت النقاط منتهاها وتوقّف عدّها. هذا حصادك كلّه."
-      : `أقرب ما يمكنك فتحه: ${pointsText(cheapestUnowned())}`;
-    note.classList.toggle("hidden", !done && cheapestUnowned() === null);
+      ? "ذهّبت المصحف كلّه وفتحت كلّ المقتنيات — بلغت النقاط منتهاها. هذا حصادك كلّه."
+      : cheapest !== null
+        ? `أقرب ما يمكنك فتحه: ${pointsText(cheapest)}`
+        : `${pointsText(GILD_PRICE)} لتذهيب كلّ سورة تُتمّها — والنقاط تتراكم لها.`;
+    note.classList.remove("hidden");
   }
   const label = document.getElementById("points-display-label");
   if (label) label.textContent = done ? "حصادك" : "نقاطك";
@@ -1965,7 +2011,14 @@ function renderDashboard() {
         // every row in the list reads the same way. It disappears only when
         // there is genuinely nothing to put on it.
         const tags = summary.querySelector(".plan-surah-tags");
-        tags.classList.toggle("hidden", !tags.querySelector(".badge") && !actions.childElementCount);
+        // The seal only goes on a surah that is illuminated - which already
+        // means memorized whole - so what it says is true whenever it is
+        // there, and it comes off with the frame if an ayah leaves the plan.
+        if (gilded) tags.insertBefore(gildSealNode(), tags.firstChild);
+        tags.classList.toggle(
+          "hidden",
+          !tags.querySelector(".badge") && !tags.querySelector(".gild-seal") && !actions.childElementCount
+        );
         details.appendChild(summary);
         const itemsContainer = document.createElement("div");
         itemsContainer.className = "plan-surah-items";
@@ -7236,6 +7289,24 @@ function setNeighbourBlock(on) {
   if (on) closeReviewChoice();
 }
 
+// While the join is being asked, the ayah is shown whole.
+//
+// Asking "what comes after this one" over an ayah with half its words hidden
+// is asking about an ayah the person cannot identify - and among the
+// mutashabihat, or on a short ayah, the few words left visible name nothing
+// at all. So the text is uncovered for the question and covered again the
+// moment it is answered: what is being tested here is the join, not the
+// recall, and the recall is still waiting untouched underneath.
+let keepNeighbourWhileRendering = false;
+function renderAyahForNeighbour(reveal) {
+  const saved = maskLevel;
+  keepNeighbourWhileRendering = true;
+  if (reveal) maskLevel = 0;
+  renderMaskedText();
+  maskLevel = saved;
+  keepNeighbourWhileRendering = false;
+}
+
 // Puts the hint and the grading back to whatever the ayah's own state says,
 // without redrawing it - redrawing would clear the words already uncovered.
 function refreshReviewGate() {
@@ -7272,7 +7343,11 @@ function hideReviewNeighbour() {
 // waiting on the question - the reciter, in listen mode - goes ahead.
 function finishReviewNeighbour() {
   const after = reviewNeighbourThen;
+  const wasRevealed = !(listenModeOn() && listenPrimed);
   hideReviewNeighbour();
+  // Covered again at its own mask level, so the recall that was always the
+  // point of the review is still to come.
+  if (wasRevealed) renderMaskedText();
   refreshReviewGate();
   if (after) after();
 }
@@ -7314,6 +7389,10 @@ function askReviewNeighbour(item) {
   reviewNeighbourParts = pick === "both" ? [backPart, fwdPart] : pick === "backward" ? [backPart] : [fwdPart];
   reviewNeighbourIndex = 0;
   setNeighbourBlock(true);
+  // Not in listen mode: there the ayah is behind its veil on purpose, and
+  // uncovering it for the question would hand over the very thing the veil
+  // is there to withhold.
+  if (!(listenModeOn() && listenSuitsAyah(item.text))) renderAyahForNeighbour(true);
   renderReviewNeighbour(item);
 }
 
@@ -7517,7 +7596,8 @@ function resetReviewChoices() {
   closeReviewChoice();
   // A neighbour question belongs to the ayah that raised it: revealing the
   // text, grading, or moving on all end it, or it would sit over the next.
-  hideReviewNeighbour();
+  // Except when the question is the very thing redrawing the ayah.
+  if (!keepNeighbourWhileRendering) hideReviewNeighbour();
 }
 
 function closeReviewChoice() {

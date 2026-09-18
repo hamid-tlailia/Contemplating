@@ -1458,6 +1458,12 @@ main#app {
   border-color: transparent;
   /* Top and bottom are 0: the middle patch carries the gold bars itself. */
   border-width: 0 46px;
+  /* The cream panel is the middle 12..52 of the artwork's 64 units, so it
+     occupies the middle ~62% of however tall the row becomes. The padding
+     has to keep the content inside that band at one line and at two, which
+     needs roughly a third of the content height - 18px covers both, and the
+     words never end up sitting on the gold bar. */
+  padding-block: 18px;
   padding-inline: 6px;
   background: none;
   border-image-source: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 240 64' width='240' height='64'%3E %3Cdefs%3E %3ClinearGradient id='gb' x1='0' y1='0' x2='0' y2='1'%3E %3Cstop offset='0' stop-color='%23fbf0cf'/%3E%3Cstop offset='.18' stop-color='%23e3bf6a'/%3E %3Cstop offset='.42' stop-color='%23c9992f'/%3E%3Cstop offset='.58' stop-color='%23f2dca2'/%3E %3Cstop offset='.8' stop-color='%23b07f22'/%3E%3Cstop offset='1' stop-color='%238a6018'/%3E %3C/linearGradient%3E %3ClinearGradient id='pb' x1='0' y1='0' x2='0' y2='1'%3E %3Cstop offset='0' stop-color='%23fdf6e4'/%3E%3Cstop offset='.5' stop-color='%23f3e4c2'/%3E %3Cstop offset='1' stop-color='%23e6d3a8'/%3E %3C/linearGradient%3E %3ClinearGradient id='rb' x1='0' y1='0' x2='0' y2='1'%3E %3Cstop offset='0' stop-color='%23f7e4b4'/%3E%3Cstop offset='.5' stop-color='%23c2912a'/%3E %3Cstop offset='1' stop-color='%238f6519'/%3E %3C/linearGradient%3E %3C/defs%3E %3C!-- the whole silhouette. Each wing is three sharp points - a horn up, the far point at mid-height, a horn down - joined by curves that bow back toward the body, which is what makes them slender crescents rather than the blunt arrowheads a straight control point gives. --%3E %3Cpath fill='url(%23gb)' d=' M54 6 C46 6 40 4 36 0 C40 12 34 22 8 32 C34 42 40 52 36 64 C40 60 46 58 54 58 L186 58 C194 58 200 60 204 64 C200 52 206 42 232 32 C206 22 200 12 204 0 C200 4 194 6 186 6 Z'/%3E %3C!-- the panel the words sit on: a plain rectangle, as in the original - square corners, and the curls kept outside it where the wings attach --%3E %3Crect x='52' y='12' width='136' height='40' fill='url(%23pb)'/%3E %3C!-- the gold line around it --%3E %3Crect x='52' y='12' width='136' height='40' fill='none' stroke='url(%23rb)' stroke-width='2.6'/%3E %3C!-- the curl where each wing meets the panel --%3E %3Cg fill='none' stroke='%238f6519' stroke-opacity='.55' stroke-width='1.4' stroke-linecap='round'%3E %3Cpath d='M46 8C41 18 41 46 46 56'/%3E %3Cpath d='M194 8c5 10 5 28 0 38'/%3E %3C/g%3E %3C!-- a highlight along the upper edge of each wing, so the gold reads bevelled --%3E %3Cg fill='none' stroke='%23fdf3d6' stroke-opacity='.6' stroke-width='1.5' stroke-linecap='round'%3E %3Cpath d='M37 3C40 13 34 22 12 31'/%3E %3Cpath d='M203 3c-3 10 3 19 25 28'/%3E %3C/g%3E %3C/svg%3E");
@@ -1468,6 +1474,15 @@ main#app {
   border-image-repeat: stretch;
   filter: drop-shadow(0 2px 6px rgba(0,0,0,0.22));
 }
+/* The wings are the widest fixed thing in the app: at 46px a side they left
+   a phone barely 180px of panel, which is not enough for the seal and a
+   badge on one line. Narrower on a phone, the artwork unchanged. */
+@media (max-width: 430px) {
+  .plan-surah-group.gilded .plan-surah-summary {
+    border-width: 0 34px;
+    border-image-width: 0 34px;
+  }
+}
 .plan-surah-group.gilded .plan-surah-name,
 .plan-surah-group.gilded .plan-surah-count,
 .plan-surah-group.gilded .plan-surah-summary::before {
@@ -1477,6 +1492,30 @@ main#app {
 }
 .plan-surah-group.gilded .plan-surah-name { font-weight: 700; }
 /* The ayah list hangs below the banner, tied to it by a gold edge. */
+/* The seal. Deep gold on the banner's cream panel - the one colour that is
+   the same cream in every theme, so this needs no theme variants either. */
+.gild-seal {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(143, 101, 25, 0.5);
+  box-shadow: inset 0 0 0 1px rgba(253, 243, 214, 0.75);
+  background: linear-gradient(180deg, rgba(253,246,228,.85), rgba(230,211,168,.7));
+  color: #6b4a12;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+.gild-seal-orn {
+  display: inline-flex;
+  color: rgba(143, 101, 25, 0.75);
+}
+.gild-seal-orn svg { width: 11px; height: 11px; }
+.gild-seal-text { letter-spacing: .3px; }
+
 .plan-surah-group.gilded .plan-surah-items {
   border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
   border-radius: 12px;
@@ -1583,8 +1622,11 @@ main#app {
    the question be walked past - the word choice, the grading, the mask and
    audio controls - is out of the way until it is answered. */
 .review-session.neighbour-pending .ayah-scroll {
+  /* Readable, because the question is about where THIS ayah sits and it
+     cannot be answered without seeing it - but not answerable, because the
+     recall it hides is still to come. */
   pointer-events: none;
-  opacity: 0.4;
+  opacity: 0.88;
   transition: opacity .25s ease;
 }
 .review-session.neighbour-pending #review-choice,
