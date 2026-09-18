@@ -736,23 +736,21 @@ function gildSurah(surahNumber) {
   );
 }
 
-// «تمَّ الحفظ» on the illuminated row: the words between two rub-el-hizb
-// rosettes - the Mushaf's own mark for the end of a portion - rather than a
-// tick, which belongs to a checklist and not to this.
-const GILD_SEAL_ORNAMENT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" aria-hidden="true">
-  <path d="M4.6 4.6h14.8v14.8H4.6z"/>
-  <path d="M12 1.4 22.6 12 12 22.6 1.4 12z"/>
-  <circle cx="12" cy="12" r="2.1" fill="currentColor" stroke="none"/>
-</svg>`;
-
-function gildSealNode() {
+// A tick beside the name, and nothing more. The first seal said «تمَّ الحفظ»
+// in full between two rosettes, which was a second line's worth of saying
+// what the gilded frame around it already says: this surah is finished. One
+// mark on the name is the whole of it.
+function gildCheckNode() {
   const el = document.createElement("span");
-  el.className = "gild-seal";
+  el.className = "gild-check";
   el.title = "حفظتَها كاملة، وذهّبتها";
-  el.innerHTML = `
-    <span class="gild-seal-orn">${GILD_SEAL_ORNAMENT}</span>
-    <span class="gild-seal-text">تمَّ الحفظ</span>
-    <span class="gild-seal-orn">${GILD_SEAL_ORNAMENT}</span>`;
+  el.setAttribute("aria-label", "تمَّ حفظها");
+  el.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="12" cy="12" r="10.2" fill="currentColor" opacity=".16"/>
+    <circle cx="12" cy="12" r="10.2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <path d="M7.4 12.5 10.6 15.6 16.7 8.8" fill="none" stroke="currentColor"
+          stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>`;
   return el;
 }
 
@@ -2010,15 +2008,15 @@ function renderDashboard() {
         // buttons always sit there and never mix into the name's line, so
         // every row in the list reads the same way. It disappears only when
         // there is genuinely nothing to put on it.
-        const tags = summary.querySelector(".plan-surah-tags");
-        // The seal only goes on a surah that is illuminated - which already
+        // The tick only goes on a surah that is illuminated - which already
         // means memorized whole - so what it says is true whenever it is
         // there, and it comes off with the frame if an ayah leaves the plan.
-        if (gilded) tags.insertBefore(gildSealNode(), tags.firstChild);
-        tags.classList.toggle(
-          "hidden",
-          !tags.querySelector(".badge") && !tags.querySelector(".gild-seal") && !actions.childElementCount
-        );
+        if (gilded) {
+          const nameEl = summary.querySelector(".plan-surah-name");
+          nameEl.parentNode.insertBefore(gildCheckNode(), nameEl.nextSibling);
+        }
+        const tags = summary.querySelector(".plan-surah-tags");
+        tags.classList.toggle("hidden", !tags.querySelector(".badge") && !actions.childElementCount);
         details.appendChild(summary);
         const itemsContainer = document.createElement("div");
         itemsContainer.className = "plan-surah-items";
