@@ -3144,12 +3144,18 @@ main#app {
 
 /* The page itself: cream, ruled, and mostly empty until it is recited onto. */
 .recite-body { padding-inline: 14px; }
+/* One running text, justified, the way a Mushaf page runs - the ayahs are
+   not rows, they are a flow with the ۝ marking where each one ends. */
 .recite-page {
   background: color-mix(in srgb, var(--accent) 5%, var(--surface));
   border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
   border-radius: 14px;
-  padding: 16px 14px;
+  padding: 18px 14px;
   min-height: 60vh;
+  text-align: justify;
+  text-align-last: center;
+  line-height: 2.7;
+  word-spacing: 2px;
 }
 .recite-surah-head {
   text-align: center;
@@ -3161,14 +3167,9 @@ main#app {
   border-bottom: 1px dashed color-mix(in srgb, var(--accent) 35%, transparent);
 }
 .recite-surah-head:first-child { margin-top: 0; }
-.recite-ayah {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 10px 7px;
-  padding: 8px 0;
-}
+/* The heading is the one block on the page; everything else is the flow. */
+.recite-surah-head { line-height: 1.6; text-align-last: center; }
+.recite-ayah { display: contents; }
 .recite-slot {
   position: relative;
   display: inline-block;
@@ -3201,8 +3202,8 @@ main#app {
 }
 .recite-badge {
   font-size: 0.7rem;
-  flex: none;
-  align-self: center;
+  vertical-align: middle;
+  margin-inline: 2px;
 }
 
 .recite-actions {

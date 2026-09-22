@@ -7025,6 +7025,11 @@ function startRecitePage() {
 // The page. Every word is a slot as wide as the word it is waiting for, so
 // the shape of the ayah - and how much of it is left - is visible before a
 // single word has been said.
+//
+// And the ayahs run on, as they do in the Mushaf: not one to a line, but one
+// after another in justified lines with the ۝ between them. A page with an
+// ayah per row is a list, and nobody memorizes from a list - the shape of
+// the line, and which word sits where on it, is half of what the eye keeps.
 function renderRecitePage() {
   const page = document.getElementById("recite-page");
   page.innerHTML = "";
@@ -7037,9 +7042,11 @@ function renderRecitePage() {
       page.appendChild(head);
       lastSurah = a.surah;
     }
-    const row = document.createElement("div");
-    row.className = "recite-ayah";
-    row.dataset.ai = String(ai);
+    // display:contents - the wrapper groups the ayah for the code without
+    // taking a box of its own, so its words join the line that is running.
+    const run = document.createElement("span");
+    run.className = "recite-ayah";
+    run.dataset.ai = String(ai);
     a.words.forEach((w, wi) => {
       const slot = document.createElement("span");
       slot.className = "recite-slot";
@@ -7048,13 +7055,17 @@ function renderRecitePage() {
       // The blank keeps the word's own width without showing it: the letters
       // are there, invisible, and a rule is drawn under them.
       slot.innerHTML = `<span class="recite-word">${w}</span>`;
-      row.appendChild(slot);
+      run.appendChild(slot);
+      // A real space, not a margin: it is what the line breaks at and what
+      // justification stretches.
+      run.appendChild(document.createTextNode(" "));
     });
     const badge = document.createElement("span");
     badge.className = "ayah-number-badge recite-badge";
     badge.textContent = String(a.ayah);
-    row.appendChild(badge);
-    page.appendChild(row);
+    run.appendChild(badge);
+    run.appendChild(document.createTextNode(" "));
+    page.appendChild(run);
   });
   paintRecitePage();
 }
