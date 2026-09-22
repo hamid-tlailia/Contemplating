@@ -3008,7 +3008,7 @@ async function openTodaysWirdReading() {
     const spill = state.wirdTargetType === "pages" && reachesEnd && pagesShortBy > 0
       ? await pagesFromNextSurah(surahNumber, pagesShortBy)
       : [];
-    openMushafReader(matches.concat(spill));
+    openMushafReader(await completeEdgePages(matches.concat(spill)));
   } catch (e) {
     showToast("تعذّر تحميل النص. تحقق من الاتصال بالإنترنت.", "error");
   }
@@ -3061,6 +3061,53 @@ function computeMushafTo(ayahs, from) {
   }
   pagesShortBy = 0;
   return Math.min(from + (state.wirdTarget || 5) - 1, ayahs.length);
+}
+
+// A page of the Mushaf is a page, not a page of one surah. Where a surah
+// ends partway down the paper, the surah after it begins on that same page -
+// and a reading assembled from one surah stops at the cover, leaving the
+// bottom of the page blank and calling it a page. The same at the other end:
+// opening at a surah's first ayah lands mid-page, with the tail of the surah
+// before it missing from the top.
+//
+// So both edges of the reading are completed from the neighbouring surah, by
+// the page number the ayahs themselves carry. Nothing in between needs it -
+// a range inside one surah has no edge that is not its own.
+//
+// The page-number path does not come through here: /page/N already returns
+// every surah that has a foot on that page.
+async function completeEdgePages(list) {
+  if (!list || !list.length) return list || [];
+  let out = list;
+
+  const last = out[out.length - 1];
+  const lastSurah = last.surahNumberForReader;
+  if (lastSurah < 114 && last.numberInSurah >= surahAyahCount(lastSurah)) {
+    const tail = await ayahsOnMushafPage(lastSurah + 1, last.page);
+    if (tail.length) out = out.concat(tail);
+  }
+
+  const first = out[0];
+  const firstSurah = first.surahNumberForReader;
+  if (firstSurah > 1 && first.numberInSurah === 1) {
+    const head = await ayahsOnMushafPage(firstSurah - 1, first.page);
+    if (head.length) out = head.concat(out);
+  }
+  return out;
+}
+
+// Whatever of this surah sits on that page of the Mushaf. Silent on failure:
+// an incomplete page is a smaller loss than no reading at all.
+async function ayahsOnMushafPage(surahNumber, pageNumber) {
+  if (!pageNumber || surahNumber < 1 || surahNumber > 114) return [];
+  try {
+    const ayahs = await fetchSurahAyahs(surahNumber);
+    return ayahs
+      .filter((a) => (a.page || 0) === pageNumber)
+      .map((a) => ({ ...a, surahNumberForReader: surahNumber }));
+  } catch (e) {
+    return [];
+  }
 }
 
 // The opening pages of the surah after this one, enough to finish a wird
@@ -3214,23 +3261,30 @@ function closeMushafReader() {
 function renderMushafReaderPage() {
   const page = mushafPages[mushafPageIndex];
   mushafVisitedPages.add(page.pageNumber);
-  let bismillahHTML = "";
+  // A page can now hold the end of one surah and the start of the next, so
+  // the name and the basmala go where the surah actually begins rather than
+  // at the top of the page - which is where a single hoisted line put them,
+  // over ayahs belonging to the surah before it.
   const bodyHTML = page.ayahs
     .map((a) => {
       let text = a.text;
-      if (a.numberInSurah === 1 && a.surahNumberForReader !== 1) {
-        const { bismillah, rest } = splitBismillah(text);
-        if (bismillah) {
-          // A span (not a <p>, which browsers won't let nest inside the
-          // outer #mushaf-reader-text <p> without auto-correcting the DOM)
-          bismillahHTML = `<span class="mushaf-bismillah">${bismillah}</span>`;
-          text = rest;
+      let before = "";
+      if (a.numberInSurah === 1) {
+        before = `<span class="mushaf-surah-mark">${surahDisplayName(a.surahNumberForReader)}</span>`;
+        if (a.surahNumberForReader !== 1) {
+          const { bismillah, rest } = splitBismillah(text);
+          if (bismillah) {
+            // A span (not a <p>, which browsers won't let nest inside the
+            // outer #mushaf-reader-text <p> without auto-correcting the DOM)
+            before += `<span class="mushaf-bismillah">${bismillah}</span>`;
+            text = rest;
+          }
         }
       }
-      return `${text} <span class="ayah-number-badge">${a.numberInSurah}</span>`;
+      return `${before}${text} <span class="ayah-number-badge">${a.numberInSurah}</span>`;
     })
     .join(" ");
-  document.getElementById("mushaf-reader-text").innerHTML = bismillahHTML + bodyHTML;
+  document.getElementById("mushaf-reader-text").innerHTML = bodyHTML;
   document.getElementById("mushaf-reader-page-label").textContent = `الصفحة ${mushafPageIndex + 1} من ${mushafPages.length}`;
   document.getElementById("mushaf-reader-body").scrollTop = 0;
   rememberMushafPage();

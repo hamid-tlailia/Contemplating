@@ -3489,6 +3489,25 @@ main#app {
   margin: 0 0 20px;
   text-align: center;
 }
+/* The surah's name where it begins. A page can start a surah halfway down
+   now, and the reader was giving no sign of it - the words simply carried on
+   into a different surah. This is the Mushaf's own band, in small. */
+.mushaf-surah-mark {
+  display: block;
+  margin: 26px auto 10px;
+  padding: 5px 18px;
+  max-width: max-content;
+  border-top: 1.5px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  border-bottom: 1.5px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  color: color-mix(in srgb, var(--accent) 75%, var(--text));
+  font-family: "Tajawal", system-ui, sans-serif;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-align: center;
+  letter-spacing: .3px;
+}
+.mushaf-surah-mark:first-child { margin-top: 0; }
 /* The ayah's number at the end of its ayah. A circle for one or two digits,
    and it lengthens into a lozenge for three rather than letting 100+ spill
    out of the ring - which is what a fixed 1.6em width did from البقرة 100
