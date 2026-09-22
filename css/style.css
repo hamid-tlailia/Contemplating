@@ -3257,10 +3257,32 @@ main#app {
   cursor: pointer;
 }
 .recite-said { cursor: pointer; }
-.recite-badge {
-  font-size: 0.7rem;
+/* The number goes inside its ring and is meant to be read. Sized from the
+   page's own ayah font rather than a fixed 0.7rem - which on a phone came
+   out a few pixels tall - and given a round box with the digits centred in
+   it instead of padding that pushed them off to one side. */
+/* Both classes are on the same element and both are one class deep, so
+   plain .recite-badge lost to whichever came later in the file - which is
+   .ayah-number-badge, several hundred lines down. Naming both wins it back
+   without moving either block. */
+.ayah-number-badge.recite-badge {
+  /* Absolute, not relative to the ayah font: tied to it, the number came out
+     eight pixels tall at the smaller text settings - a dot with a ring round
+     it. This is a size that can be read at any of them. */
+  width: 23px;
+  height: 23px;
+  min-width: 0;
+  padding: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-family: "Tajawal", system-ui, sans-serif;
+  line-height: 1;
+  border-width: 1.6px;
   vertical-align: middle;
-  margin-inline: 2px;
+  margin-inline: 3px;
+  /* The digits sit slightly high in their own line box; this puts the
+     glyph, not the box, in the middle of the ring. */
+  padding-top: 1px;
 }
 
 .recite-actions { padding-top: 10px; }

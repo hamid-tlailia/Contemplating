@@ -7292,7 +7292,7 @@ function renderRecitePage() {
     run.appendChild(document.createTextNode(" "));
     page.appendChild(run);
   });
-  paintRecitePage();
+  paintReciteAll();
 }
 
 function updateRecitePosition() {
@@ -7344,6 +7344,18 @@ function paintRecitePage() {
   if (recitePaintQueued) return;
   recitePaintQueued = true;
   requestAnimationFrame(() => { recitePaintQueued = false; paintReciteNow(); });
+}
+
+// A freshly drawn page has no state on any slot, and the incremental paint
+// only ever touches the range around the pointer - so everything past it was
+// left with no class at all, which is the one state that shows the word.
+// The page opened fully written. A full render paints every slot once; after
+// that the cheap path takes over.
+function paintReciteAll() {
+  recitePaintQueued = false;
+  for (let i = 0; i < reciteSlotEls.length; i++) paintSlot(i);
+  recitePainted = recitePointer;
+  updateRecitePosition();
 }
 
 function paintReciteNow() {
@@ -7575,6 +7587,18 @@ function stopReciteListening() {
 // What the page produced: not a mark, a list of places to go back to.
 function finishRecitePage() {
   stopReciteListening();
+  // A page seen through to the end has no place left to keep. Next time this
+  // surah is opened it is blank from its first ayah, which is the whole
+  // point of the page - the saved place exists for the evening you stopped
+  // halfway, not as a high-water mark that never comes down.
+  const reachedEnd = recitePointer >= reciteFlat.length;
+  if (reachedEnd && recitePlan.length) {
+    const surah = recitePlan[0].surah;
+    if (state.recitePlace && state.recitePlace[String(surah)] != null) {
+      delete state.recitePlace[String(surah)];
+      saveState();
+    }
+  }
   const missedAyahs = new Map();
   reciteStumbles.forEach((idx) => {
     const f = reciteFlat[idx];
