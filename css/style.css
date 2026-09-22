@@ -1492,6 +1492,31 @@ main#app {
 }
 .plan-surah-group.gilded .plan-surah-name { font-weight: 700; }
 /* The ayah list hangs below the banner, tied to it by a gold edge. */
+/* How much of the surah is memorized, in the row of marks under its name. */
+.surah-ring {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  color: var(--primary);
+}
+.surah-ring svg { width: 18px; height: 18px; }
+.surah-ring-track { fill: none; stroke: currentColor; stroke-width: 2.4; opacity: .22; }
+.surah-ring-fill {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  transition: stroke-dasharray .3s ease;
+}
+.surah-ring-pct {
+  font-size: 0.66rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.surah-ring.full { color: var(--good); }
+.plan-surah-group.gilded .surah-ring { color: #6b4a12; }
+
 /* The tick, beside the name. Deep gold on the banner's cream panel - the one
    colour that is the same cream in every theme, so it needs no variants. */
 .gild-check {
@@ -3238,13 +3263,27 @@ main#app {
   margin-inline: 2px;
 }
 
-.recite-actions {
-  display: flex;
+.recite-actions { padding-top: 10px; }
+/* The microphone in the middle of the bar, where the thumb reaches it
+   without looking; what keeps the place on one side and what ends the page
+   on the other, both the same width so it really is the middle. */
+.recite-bar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
 }
-.recite-actions .btn { flex: none; white-space: nowrap; padding-inline: 16px; }
+.recite-side {
+  white-space: nowrap;
+  padding: 9px 10px;
+  font-size: 0.78rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#btn-recite-save { justify-self: start; }
+#btn-recite-finish { justify-self: end; }
+.recite-status { text-align: center; margin: 0 0 8px; }
 .recite-status {
   flex: 1;
   margin: 0;
@@ -3254,29 +3293,38 @@ main#app {
   line-height: 1.5;
 }
 .mic-fab {
+  justify-self: center;
   flex: none;
-  width: 58px;
-  height: 58px;
+  width: 60px;
+  height: 60px;
   border-radius: 999px;
   border: none;
-  background: var(--primary);
   color: #fff;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   box-shadow: 0 3px 10px rgba(0,0,0,0.18);
+  transition: background .2s ease;
 }
 .mic-fab svg { width: 26px; height: 26px; }
-.mic-fab.listening {
-  background: var(--danger);
-  animation: micPulse 1.4s ease-in-out infinite;
+@media (prefers-reduced-motion: reduce) {
+  .mic-btn.listening, .mic-btn.resuming,
+  .voice-mic-btn.listening, .voice-mic-btn.resuming { animation: none; }
 }
-@keyframes micPulse {
-  0%, 100% { box-shadow: 0 3px 10px rgba(0,0,0,0.18), 0 0 0 0 color-mix(in srgb, var(--danger) 45%, transparent); }
-  50% { box-shadow: 0 3px 10px rgba(0,0,0,0.18), 0 0 0 12px transparent; }
+
+.recite-resume { margin-bottom: 10px; }
+.recite-resume-btn {
+  width: 100%;
+  border-color: var(--primary);
+  color: var(--primary);
+  font-weight: 700;
 }
-@media (prefers-reduced-motion: reduce) { .mic-fab.listening { animation: none; } }
+
+/* An ayah on the page that is not in the plan - recited like the rest, and
+   nothing about it scheduled either way. */
+.recite-outside .recite-slot .recite-word { opacity: .8; }
+.recite-outside .recite-badge { opacity: .7; }
 
 .recite-summary {
   flex-shrink: 0;
@@ -3475,6 +3523,18 @@ main#app {
    opposite, but here the question the colour answers is not "am I recording?"
    - it is "may I recite now?" */
 .voice-mic-btn.listening { background: var(--good); animation: micBeat 1s ease-in-out infinite; }
+
+/* The same three states wherever a microphone appears - the tasmee' modal
+   and the page alike. Green: it is hearing you, carry on. Amber: the gap
+   after a pause, while it comes back; anything said into it is lost. Red:
+   it is not listening. The colour answers "may I recite now?", which is the
+   only question a reciter is asking of it. */
+.voice-mic-btn, .mic-btn { background: var(--danger); }
+.voice-mic-btn.resuming, .mic-btn.resuming {
+  background: var(--warn);
+  animation: micBeat 1.6s ease-in-out infinite;
+}
+.mic-btn.listening { background: var(--good); animation: micBeat 1s ease-in-out infinite; }
 
 .mic-pulse-ring {
   position: absolute;

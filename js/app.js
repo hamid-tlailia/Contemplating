@@ -254,6 +254,7 @@ function loadState() {
       parsed.activity = parsed.activity || {};
       parsed.learningPointer = parsed.learningPointer || { surah: 1, ayah: 1 };
       parsed.learnDetour = parsed.learnDetour || null;
+      parsed.recitePlace = parsed.recitePlace || {};
       parsed.dailyChallenge = parsed.dailyChallenge || { date: null, score: 0, total: 0 };
       parsed.reciter = parsed.reciter || RECITERS[0].id;
       parsed.theme = parsed.theme || THEMES[0].id;
@@ -354,6 +355,11 @@ function loadState() {
     // order that the person chose to work on now. The sequence keeps its
     // place underneath and is returned to when the detour is finished.
     learnDetour: null, // null | { surah, ayah }
+    // Where the free reciting stopped, per surah: { "2": 164 }. Reopening
+    // that surah offers to carry on from there instead of from the first
+    // ayah - a long surah is not something anyone recites from the top every
+    // evening, and starting over was the whole cost of stopping.
+    recitePlace: {},
     dailyChallenge: { date: null, score: 0, total: 0 },
     reciter: RECITERS[0].id,
     theme: THEMES[0].id,
@@ -740,6 +746,30 @@ function gildSurah(surahNumber) {
 // in full between two rosettes, which was a second line's worth of saying
 // what the gilded frame around it already says: this surah is finished. One
 // mark on the name is the whole of it.
+// How far this surah has got, as a ring that fills - the same number
+// «التقدم حسب السورة» reports, said in the row that names the surah so it is
+// answered where it is asked. A finished surah wears a full ring, and the
+// tick beside it says it was also illuminated.
+function surahProgressRingNode(surahNumber, name) {
+  const total = surahAyahCount(surahNumber);
+  const done = Object.values(state.ayahs)
+    .filter((i) => i.surah === surahNumber && i.learningStage === "srs" && !i.temporary).length;
+  const pct = total ? Math.min(100, Math.round((done / total) * 100)) : 0;
+  // 2πr for r = 8.6, so the dash length is the arc the percentage covers.
+  const circumference = 54.04;
+  const el = document.createElement("span");
+  el.className = `surah-ring${pct >= 100 ? " full" : ""}`;
+  el.title = `${name}: ${done} من ${total} — ${pct}%`;
+  el.setAttribute("aria-label", `حفظتَ ${pct} بالمئة من ${name}`);
+  el.innerHTML = `<svg viewBox="0 0 22 22" aria-hidden="true">
+      <circle cx="11" cy="11" r="8.6" class="surah-ring-track"/>
+      <circle cx="11" cy="11" r="8.6" class="surah-ring-fill"
+              stroke-dasharray="${(circumference * pct / 100).toFixed(2)} ${circumference}"
+              transform="rotate(-90 11 11)"/>
+    </svg><span class="surah-ring-pct">${pct}</span>`;
+  return el;
+}
+
 function gildCheckNode() {
   const el = document.createElement("span");
   el.className = "gild-check";
@@ -2135,11 +2165,13 @@ function renderDashboard() {
         // The tick only goes on a surah that is illuminated - which already
         // means memorized whole - so what it says is true whenever it is
         // there, and it comes off with the frame if an ayah leaves the plan.
-        if (gilded) {
-          const nameEl = summary.querySelector(".plan-surah-name");
-          nameEl.parentNode.insertBefore(gildCheckNode(), nameEl.nextSibling);
-        }
         const tags = summary.querySelector(".plan-surah-tags");
+        // Under the name, in one row with the badges and the buttons: how
+        // much of the surah is memorized, drawn as a ring, and the tick when
+        // it is all of it and illuminated. A mark left up beside the name was
+        // a second row's worth of marks in two different places.
+        tags.insertBefore(surahProgressRingNode(surahNum, group.name), tags.firstChild);
+        if (gilded) tags.insertBefore(gildCheckNode(), tags.children[1] || null);
         tags.classList.toggle("hidden", !tags.querySelector(".badge") && !actions.childElementCount);
         details.appendChild(summary);
         const itemsContainer = document.createElement("div");
@@ -5924,6 +5956,7 @@ function startSingleItemReview(item) {
   isSingleItemReview = true; // ...then this narrows it to just this ayah
   reviewQueue = [item];
   reviewIndex = 0;
+  hideReviewEntries();
   document.getElementById("challenge-banner").classList.add("hidden");
   document.getElementById("review-empty").classList.add("hidden");
   hideReviewSurahList();
@@ -5943,6 +5976,7 @@ function startDailyChallenge() {
   challengeNeighbourRight = 0;
   challengeNeighbourTotal = 0;
   switchTab("review");
+  hideReviewEntries();
   document.getElementById("challenge-banner").classList.remove("hidden");
   document.getElementById("review-empty").classList.add("hidden");
   hideReviewSurahList();
@@ -6915,7 +6949,7 @@ function renderSeamEntry() {
   const seams = memorizedSeams();
   // Four options need four different openings to choose between, so the
   // exercise stays out of sight until there is enough memorized to build one.
-  entry.classList.toggle("hidden", seams.length < 4);
+  entry.classList.toggle("hidden", seams.length < 4 || reviewSessionOpen());
   btn.innerHTML = iconLabel("repeat", `وصل الآيات (${seams.length})`);
 }
 
@@ -6945,10 +6979,14 @@ let reciteFlat = [];          // every word of the plan in order, with its ayah
 let recitePointer = 0;        // how far into reciteFlat the reciting has got
 let reciteRecognition = null;
 let reciteListening = false;
-let reciteBaseText = "";
 let reciteFinalSegments = [];
+let reciteFinalWords = [];    // every finalized segment, cleaned, as words
+let reciteFinalDone = 0;      // how many segment slots have been folded in
 let reciteSeenWords = [];     // the transcript as last read, word by word
 let reciteScope = { kind: "all", surah: null, from: null, to: null };
+// The gap after a pause: start() has returned but the microphone is not yet
+// live. Anything recited into it is simply not heard, so it is said out loud.
+let reciteWaking = false;
 let reciteStumbles = new Set();
 
 // How far ahead a missed word may be found before the reciter is taken to be
@@ -6971,12 +7009,38 @@ function recitableSurahs() {
   return [...out.values()].sort((a, b) => a.surah - b.surah);
 }
 
+// A surah is recited whole. Only the memorized ayahs were on the page
+// before, so a plan with gaps in it produced a page with gaps in it - and a
+// page that skips from ayah 5 to ayah 12 is not a page of the Mushaf, it is
+// a list of what happens to be in a database. The ayahs not in the plan are
+// there and recited like the rest; nothing about them is scheduled either
+// way, which is the whole nature of this mode.
+let reciteSurahTextCache = {};
+
 function reciteItemsForScope(scope) {
   if (scope.kind === "all") return memorizedAyahsInOrder();
-  return memorizedAyahsInOrder((i) =>
-    i.surah === scope.surah
-    && (scope.from == null || i.ayah >= scope.from)
-    && (scope.to == null || i.ayah <= scope.to));
+  const whole = reciteSurahTextCache[scope.surah];
+  const memorized = memorizedAyahsInOrder((i) => i.surah === scope.surah);
+  const name = (memorized[0] && memorized[0].surahName) || surahDisplayName(scope.surah);
+  const inRange = (n) => (scope.from == null || n >= scope.from) && (scope.to == null || n <= scope.to);
+  if (whole) {
+    return whole
+      .filter((a) => inRange(a.numberInSurah))
+      .map((a) => state.ayahs[`${scope.surah}:${a.numberInSurah}`]
+        || { surah: scope.surah, ayah: a.numberInSurah, surahName: name, text: a.text, notInPlan: true });
+  }
+  return memorized.filter((i) => inRange(i.ayah));
+}
+
+// Fetched once per surah and kept for the session. Falls back silently to
+// what the plan holds - offline, the memorized ayahs are all there is, and
+// a page of those is better than no page.
+async function loadReciteSurahText(surah) {
+  if (reciteSurahTextCache[surah]) return;
+  try {
+    const ayahs = await fetchSurahAyahs(surah);
+    if (Array.isArray(ayahs) && ayahs.length) reciteSurahTextCache[surah] = ayahs;
+  } catch (e) { /* the plan's own ayahs stand in */ }
 }
 
 function renderReciteEntry() {
@@ -6985,8 +7049,24 @@ function renderReciteEntry() {
   if (!entry || !btn) return;
   const n = memorizedAyahsInOrder().length;
   // Nothing to recite from is not an empty page, it is a confusing one.
-  entry.classList.toggle("hidden", n < 3 || !voiceSupported());
+  entry.classList.toggle("hidden", n < 3 || !voiceSupported() || reviewSessionOpen());
   btn.innerHTML = iconLabel("mic", `سمِّع على الصفحة (${n})`);
+}
+
+// A drill is running on this page. The ways in belong to the page you land
+// on, not over the top of the ayah you are in the middle of answering - and
+// the challenge in particular is a fixed run of five that nothing should
+// offer to leave halfway.
+function hideReviewEntries() {
+  ["tasmee-entry", "seam-entry", "recite-entry"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add("hidden");
+  });
+}
+
+function reviewSessionOpen() {
+  const session = document.getElementById("review-session");
+  return isChallengeMode || (!!session && !session.classList.contains("hidden"));
 }
 
 function openReciteSession(preset) {
@@ -7001,6 +7081,7 @@ function openReciteSession(preset) {
   reciteScope = preset || { kind: "all", surah: null, from: null, to: null };
   document.getElementById("recite-overlay").classList.remove("modal-closed");
   showReciteSetup();
+  if (reciteScope.kind === "surah") loadReciteSurahText(reciteScope.surah).then(renderReciteScope);
 }
 
 function closeReciteSession() {
@@ -7043,9 +7124,9 @@ function renderReciteScope() {
   });
   surahs.forEach((s) => {
     addBtn(s.name, ayahCountLabel(s.count), reciteScope.kind === "surah" && reciteScope.surah === s.surah, () => {
-      const nums = memorizedAyahsInOrder((i) => i.surah === s.surah).map((i) => i.ayah);
-      reciteScope = { kind: "surah", surah: s.surah, from: nums[0], to: nums[nums.length - 1] };
+      reciteScope = { kind: "surah", surah: s.surah, from: 1, to: surahAyahCount(s.surah) || null };
       renderReciteScope();
+      loadReciteSurahText(s.surah).then(renderReciteScope);
     });
   });
 
@@ -7053,13 +7134,14 @@ function renderReciteScope() {
   const range = document.getElementById("recite-range");
   range.classList.toggle("hidden", reciteScope.kind !== "surah");
   if (reciteScope.kind === "surah") {
-    const nums = memorizedAyahsInOrder((i) => i.surah === reciteScope.surah).map((i) => i.ayah);
+    const last = surahAyahCount(reciteScope.surah)
+      || memorizedAyahsInOrder((i) => i.surah === reciteScope.surah).slice(-1)[0].ayah;
     const from = document.getElementById("recite-from");
     const to = document.getElementById("recite-to");
-    from.min = to.min = nums[0];
-    from.max = to.max = nums[nums.length - 1];
-    from.value = reciteScope.from;
-    to.value = reciteScope.to;
+    from.min = to.min = 1;
+    from.max = to.max = last;
+    from.value = reciteScope.from || 1;
+    to.value = reciteScope.to || last;
   }
   updateReciteCount();
 }
@@ -7070,11 +7152,42 @@ function updateReciteCount() {
   const words = items.reduce((n, i) => n + quranWords(i.text).length, 0);
   el.textContent = items.length
     ? `${ayahCountLabel(items.length)} · ${words} كلمة`
-    : "لا آيات محفوظة في هذا النطاق.";
+    : "لا آيات في هذا النطاق.";
   document.getElementById("btn-recite-start").disabled = items.length === 0;
+
+  // Where it was left off, offered rather than imposed.
+  const resume = document.getElementById("recite-resume");
+  const place = reciteScope.kind === "surah" ? recitePlaceFor(reciteScope.surah) : null;
+  const inRange = place && items.some((i) => i.ayah === place);
+  resume.classList.toggle("hidden", !inRange);
+  if (inRange) {
+    resume.innerHTML = "";
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn recite-resume-btn";
+    btn.textContent = `تابِع من الآية ${place}`;
+    btn.addEventListener("click", () => startRecitePage({ fromAyah: place }));
+    resume.appendChild(btn);
+  }
 }
 
-function startRecitePage() {
+// The ayah the reciting had got to when it was last saved for this surah.
+function recitePlaceFor(surah) {
+  return (state.recitePlace || {})[String(surah)] || null;
+}
+
+function saveRecitePlace() {
+  const cur = reciteFlat[recitePointer] || reciteFlat[reciteFlat.length - 1];
+  if (!cur) return;
+  const a = recitePlan[cur.ai];
+  state.recitePlace = state.recitePlace || {};
+  state.recitePlace[String(a.surah)] = a.ayah;
+  saveState();
+  showToast(`💾 حُفظ موضعك: ${a.surahName} : ${a.ayah}`, "success",
+    "تفتح السورة من هنا في المرّة القادمة.");
+}
+
+function startRecitePage(opts) {
   const items = reciteItemsForScope(reciteScope);
   if (!items.length) return;
   recitePlan = items.map((i) => ({
@@ -7083,6 +7196,7 @@ function startRecitePage() {
     ayah: i.ayah,
     surahName: i.surahName || `سورة ${i.surah}`,
     words: quranWords(i.text),
+    notInPlan: !!i.notInPlan,
   }));
   reciteFlat = [];
   reciteAyahStart = [];
@@ -7093,8 +7207,17 @@ function startRecitePage() {
   recitePointer = 0;
   reciteStumbles = new Set();
   reciteSeenWords = [];
-  reciteBaseText = "";
   reciteFinalSegments = [];
+  reciteFinalWords = [];
+  reciteFinalDone = 0;
+
+  // Carrying on from a saved place puts the pointer there; everything before
+  // it stands written, because it was recited - on an earlier evening.
+  const fromAyah = opts && opts.fromAyah;
+  if (fromAyah) {
+    const at = recitePlan.findIndex((a) => a.ayah === fromAyah);
+    if (at > 0) recitePointer = reciteAyahStart[at];
+  }
 
   document.getElementById("recite-setup").classList.add("hidden");
   document.getElementById("recite-summary").classList.add("hidden");
@@ -7135,7 +7258,7 @@ function renderRecitePage() {
     // display:contents - the wrapper groups the ayah for the code without
     // taking a box of its own, so its words join the line that is running.
     const run = document.createElement("span");
-    run.className = "recite-ayah";
+    run.className = `recite-ayah${a.notInPlan ? " recite-outside" : ""}`;
     run.dataset.ai = String(ai);
     a.words.forEach((w, wi) => {
       const slot = document.createElement("span");
@@ -7305,9 +7428,43 @@ function advanceRecitePointer(idx, span) {
 // and it is compared that way rather than by length, because a live engine
 // revises the tail it has not committed to yet, and a revision that made the
 // text shorter would otherwise leave the page stuck where it stood.
-function feedReciteTranscript(transcript) {
-  const words = mergeMaddSplits(mergeDetachedConjunctions(transcript || ""))
-    .split(/\s+/).filter(Boolean);
+//
+// Only the CURRENT session's text is handed in. Everything the engine
+// finalized before the last pause is already placed and cannot change, so
+// re-cleaning and re-splitting it on every interim result - several times a
+// second, over a transcript that only grows - was work done again and again
+// for an answer that was settled. A long recitation was paying for its own
+// length on every word. Now the cost is the length of the breath, and a
+// pause resets it.
+function cleanReciteWords(text) {
+  return mergeMaddSplits(mergeDetachedConjunctions(text || "")).split(/\s+/).filter(Boolean);
+}
+
+// A segment the engine has marked final will not change again, so it is
+// cleaned once and kept as words. Only the interim tail - the part still
+// being revised, a few words at most - is re-cleaned on every result. This
+// is what stops a long recitation from paying for its own length: the
+// regexes no longer run over the whole of it several times a second.
+function foldFinishedReciteSegments() {
+  for (let i = reciteFinalDone; i < reciteFinalSegments.length; i++) {
+    const seg = reciteFinalSegments[i];
+    if (!seg) continue;
+    const add = cleanReciteWords(seg);
+    // A مدّ split can fall across the boundary between two segments, where
+    // neither of them can see it alone.
+    const last = reciteFinalWords[reciteFinalWords.length - 1];
+    if (last && add.length) {
+      const joined = cleanReciteWords(`${last} ${add[0]}`);
+      if (joined.length === 1) { reciteFinalWords[reciteFinalWords.length - 1] = joined[0]; add.shift(); }
+    }
+    for (const w of add) reciteFinalWords.push(w);
+  }
+  reciteFinalDone = reciteFinalSegments.length;
+}
+
+function feedReciteSession(interimText) {
+  foldFinishedReciteSegments();
+  const words = reciteFinalWords.concat(cleanReciteWords(interimText));
   let common = 0;
   while (common < words.length && common < reciteSeenWords.length
          && words[common] === reciteSeenWords[common]) common++;
@@ -7322,22 +7479,31 @@ function toggleReciteListening() {
   else startReciteListening();
 }
 
-function updateReciteMic() {
+// The same three states the tasmee' modal has, said the same way and drawn
+// the same way: green while it is hearing you, amber in the gap after a
+// pause while the microphone comes back, red when it is not listening at
+// all. One vocabulary - a reciter should not have to learn the button twice.
+function updateReciteMic(mode) {
   const btn = document.getElementById("btn-recite-mic");
   if (!btn) return;
-  btn.innerHTML = ICONS.mic;
-  btn.classList.toggle("listening", reciteListening);
-  btn.setAttribute("aria-label", reciteListening ? "أوقف التسميع" : "ابدأ التسميع");
+  const state = mode || (reciteListening ? (reciteWaking ? "resuming" : "listening") : "idle");
+  if (!btn.querySelector("svg")) btn.innerHTML = ICONS.mic;
+  btn.classList.toggle("listening", state === "listening");
+  btn.classList.toggle("resuming", state === "resuming");
+  btn.setAttribute("aria-label", state === "idle" ? "ابدأ التسميع" : "أوقف التسميع");
 }
 
 function startReciteListening() {
   const recognition = createVoiceRecognitionInstance();
   reciteRecognition = recognition;
   reciteListening = true;
-  reciteBaseText = "";
+  reciteWaking = true;
   reciteFinalSegments = [];
+  reciteFinalWords = [];
+  reciteFinalDone = 0;
+  reciteSeenWords = [];
   updateReciteMic();
-  setReciteStatus("يستمع… اقرأ على مهلك.");
+  setReciteStatus("جارٍ فتح الميكروفون…");
 
   recognition.onresult = (e) => {
     let interim = "";
@@ -7353,13 +7519,25 @@ function startReciteListening() {
     // several times a second. On a page it is not needed: the matcher only
     // ever moves forward, so a repeat finds nothing ahead of it to match and
     // is simply ignored. This is the other half of the lag.
-    const merged = [...reciteFinalSegments.filter(Boolean), interim].join(" ");
-    feedReciteTranscript(`${reciteBaseText} ${merged}`.trim());
+    feedReciteSession(interim);
+  };
+  recognition.onaudiostart = () => {
+    reciteWaking = false;
+    updateReciteMic();
+    setReciteStatus("أخضر — يستمع الآن. اقرأ على مهلك.");
+    playListeningCue();
+  };
+  recognition.onaudioend = () => {
+    if (!reciteListening) return;
+    reciteWaking = true;
+    updateReciteMic();
+    setReciteStatus("توقّف… انتظر الضوء الأخضر.");
   };
   recognition.onerror = (e) => {
     if (e.error === "aborted") return;
     if (VOICE_FATAL_ERRORS.has(e.error)) {
       reciteListening = false;
+      reciteWaking = false;
       updateReciteMic();
       setReciteStatus(`تعذّر الاستماع (${e.error}).`);
     }
@@ -7368,9 +7546,15 @@ function startReciteListening() {
   // on the same instance, so stopping to breathe is not stopping.
   recognition.onend = () => {
     if (!reciteListening) return;
-    reciteBaseText = `${reciteBaseText} ${reciteFinalSegments.filter(Boolean).join(" ")}`.trim();
+    // The session that just ended is placed and done with. Nothing of it is
+    // carried forward - the pointer holds the place, which is the only part
+    // of it that mattered.
     reciteFinalSegments = [];
-    // The base text is already matched and will not be rescanned.
+    reciteFinalWords = [];
+    reciteFinalDone = 0;
+    reciteSeenWords = [];
+    reciteWaking = true;
+    updateReciteMic();
     attemptRecognitionStart(recognition);
   };
   attemptRecognitionStart(recognition);
@@ -7378,6 +7562,7 @@ function startReciteListening() {
 
 function stopReciteListening() {
   reciteListening = false;
+  reciteWaking = false;
   const recognition = reciteRecognition;
   reciteRecognition = null;
   updateReciteMic();
@@ -7444,6 +7629,7 @@ function startAyahListReview(items) {
   isSingleItemReview = true;
   reviewQueue = items;
   reviewIndex = 0;
+  hideReviewEntries();
   document.getElementById("challenge-banner").classList.add("hidden");
   document.getElementById("review-empty").classList.add("hidden");
   hideReviewSurahList();
@@ -7454,7 +7640,8 @@ function startAyahListReview(items) {
 
 on("btn-open-recite", "click", () => openReciteSession());
 on("btn-recite-close", "click", closeReciteSession);
-on("btn-recite-start", "click", startRecitePage);
+on("btn-recite-start", "click", () => startRecitePage());
+on("btn-recite-save", "click", saveRecitePlace);
 on("btn-recite-mic", "click", toggleReciteListening);
 on("btn-recite-finish", "click", finishRecitePage);
 on("recite-from", "input", () => {
@@ -7645,8 +7832,9 @@ on("btn-open-seam", "click", openSeamSession);
 
 function renderTasmeeEntry() {
   const entry = document.getElementById("tasmee-entry");
-  if (entry) entry.classList.toggle("hidden", getTodaysReviewQueue().length === 0);
+  if (entry) entry.classList.toggle("hidden", getTodaysReviewQueue().length === 0 || reviewSessionOpen());
   renderSeamEntry();
+  renderReciteEntry();
 }
 
 function openTasmeeSession() {
@@ -7867,6 +8055,7 @@ function startSurahReview(surahNumber, ignoreDailyCap = reviewIgnoreCap) {
   reviewQueue = group.items;
   reviewIndex = 0;
   hideReviewSurahList();
+  hideReviewEntries();
   document.getElementById("review-empty").classList.add("hidden");
   document.getElementById("review-session").classList.remove("hidden");
   const banner = document.getElementById("review-surah-banner");

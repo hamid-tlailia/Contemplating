@@ -946,7 +946,8 @@
       <label>إلى آية <input type="number" id="recite-to" min="1" value="1" inputmode="numeric"></label>
     </div>
     <p class="muted recite-count" id="recite-count"></p>
-    <button class="btn primary" id="btn-recite-start">ابدأ</button>
+    <div class="recite-resume hidden" id="recite-resume"></div>
+    <button class="btn primary" id="btn-recite-start">ابدأ من أوّلها</button>
   </div>
 
   <div class="tasmee-body recite-body hidden" id="recite-body">
@@ -955,10 +956,15 @@
 
   <div class="recite-summary hidden" id="recite-summary"></div>
 
+  <!-- The mic in the middle, where a thumb finds it without looking; what
+       keeps the place on one side of it and what ends the page on the other. -->
   <div class="tasmee-actions recite-actions hidden" id="recite-actions">
     <p class="recite-status" id="recite-status"></p>
-    <button class="mic-fab" id="btn-recite-mic" aria-label="ابدأ التسميع"></button>
-    <button class="btn" id="btn-recite-finish">أنهِ</button>
+    <div class="recite-bar">
+      <button class="btn recite-side" id="btn-recite-save">احفظ موضعي</button>
+      <button class="mic-btn mic-fab" id="btn-recite-mic" aria-label="ابدأ التسميع"></button>
+      <button class="btn recite-side" id="btn-recite-finish">أنهِ</button>
+    </div>
   </div>
 </div>
 
