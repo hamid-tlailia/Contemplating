@@ -2086,9 +2086,10 @@ function renderDashboard() {
           <span class="plan-surah-body">
             <span class="plan-surah-head">
               <span class="plan-surah-name">📖 ${group.name}</span>
-              ${memorizedInGroup ? `<span class="plan-surah-count">${memorizedInGroup} آية</span>` : ""}
             </span>
             <span class="plan-surah-tags">${
+              memorizedInGroup ? `<span class="plan-surah-count">${memorizedInGroup} آية</span>` : ""
+            }${
               dueInGroup ? `<span class="badge due">${dueInGroup} مستحقة</span>` : ""
             }${
               learningInGroup.length ? `<span class="badge learning">${learningInGroup.length} قيد الحفظ</span>` : ""
@@ -2116,6 +2117,11 @@ function renderDashboard() {
         }
         // Straight from the surah whose row this is: recite it onto the blank
         // page. Offered only where there is something memorized to recite.
+        // The microphone and the tick sit with the name, not down in the row
+        // of marks: they are what this surah IS and what you do with it,
+        // while the ring, the badges and the buttons are its state and its
+        // housekeeping.
+        const head = summary.querySelector(".plan-surah-head");
         if (memorizedInGroup > 0 && voiceSupported()) {
           const say = document.createElement("button");
           say.type = "button";
@@ -2129,7 +2135,7 @@ function renderDashboard() {
             const nums = items2.filter((i) => i.learningStage === "srs").map((i) => i.ayah);
             openReciteSession({ kind: "surah", surah: surahNum, from: nums[0], to: nums[nums.length - 1] });
           });
-          actions.appendChild(say);
+          head.appendChild(say);
         }
         // Added and thought better of: clears this surah's unmemorized ayahs
         // in one go. Only those - what is already memorized is removed one
@@ -2183,8 +2189,16 @@ function renderDashboard() {
         if (ring) tags.insertBefore(ring, tags.firstChild);
         // The tick is for the surah being memorized whole, which is what it
         // says; the gold frame around it already says it was illuminated.
-        if (surahFullyMemorized(surahNum)) tags.insertBefore(gildCheckNode(), tags.firstChild);
-        tags.classList.toggle("hidden", !tags.querySelector(".badge") && !actions.childElementCount);
+        if (surahFullyMemorized(surahNum)) {
+          const nameEl = summary.querySelector(".plan-surah-name");
+          nameEl.parentNode.insertBefore(gildCheckNode(), nameEl.nextSibling);
+        }
+        // The row hides only when it is genuinely empty. It used to ask about
+        // badges alone, and now that the count and the ring live here too, a
+        // surah with neither a badge nor a button - آل عمران, four ayahs in,
+        // nothing due - had its count and its ring hidden along with the row.
+        const hasMarks = tags.querySelector(".plan-surah-count, .badge, .surah-ring");
+        tags.classList.toggle("hidden", !hasMarks && !actions.childElementCount);
         details.appendChild(summary);
         const itemsContainer = document.createElement("div");
         itemsContainer.className = "plan-surah-items";
