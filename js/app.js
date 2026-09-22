@@ -7499,7 +7499,14 @@ function updateReciteMic(mode) {
   const btn = document.getElementById("btn-recite-mic");
   if (!btn) return;
   const state = mode || (reciteListening ? (reciteWaking ? "resuming" : "listening") : "idle");
-  if (!btn.querySelector("svg")) btn.innerHTML = ICONS.mic;
+  // Both glyphs live in the button and swap on the same class the state
+  // already toggles - the microphone to start, a stop square while it is
+  // running, exactly as the tasmee' modal does it. One button, one meaning,
+  // wherever it appears.
+  if (!btn.querySelector("svg")) {
+    btn.innerHTML = `${ICONS.mic.replace("<svg", '<svg class="mic-glyph"')}
+      <svg class="stop-glyph" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2.5"/></svg>`;
+  }
   btn.classList.toggle("listening", state === "listening");
   btn.classList.toggle("resuming", state === "resuming");
   btn.setAttribute("aria-label", state === "idle" ? "ابدأ التسميع" : "أوقف التسميع");

@@ -3330,6 +3330,7 @@ main#app {
   transition: background .2s ease;
 }
 .mic-fab svg { width: 26px; height: 26px; }
+.mic-fab .stop-glyph { width: 22px; height: 22px; }
 @media (prefers-reduced-motion: reduce) {
   .mic-btn.listening, .mic-btn.resuming,
   .voice-mic-btn.listening, .voice-mic-btn.resuming { animation: none; }
@@ -3536,9 +3537,19 @@ main#app {
    rather than still showing a microphone. Both glyphs sit in the button
    and swap on the same .listening class the recording state already
    toggles, so there's no second source of truth to keep in sync. */
-.voice-mic-btn .stop-glyph { display: none; }
-.voice-mic-btn.listening .mic-glyph { display: none; }
-.voice-mic-btn.listening .stop-glyph { display: block; }
+/* The same swap wherever a microphone button appears: while it is running
+   the button offers "stop", so it shows a stop square rather than still
+   showing a microphone. The amber gap counts as running - the way out of it
+   is the same button. */
+.voice-mic-btn .stop-glyph, .mic-btn .stop-glyph { display: none; }
+.voice-mic-btn.listening .mic-glyph,
+.voice-mic-btn.resuming .mic-glyph,
+.mic-btn.listening .mic-glyph,
+.mic-btn.resuming .mic-glyph { display: none; }
+.voice-mic-btn.listening .stop-glyph,
+.voice-mic-btn.resuming .stop-glyph,
+.mic-btn.listening .stop-glyph,
+.mic-btn.resuming .stop-glyph { display: block; }
 @media (hover: hover) { .voice-mic-btn:hover { transform: scale(1.04); } }
 /* Green is "go": the microphone is live and the recitation may carry on.
    Red is "stop": it is not hearing you yet. Recording apps use red for the
