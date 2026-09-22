@@ -755,10 +755,16 @@ function surahProgressRingNode(surahNumber, name) {
   const done = Object.values(state.ayahs)
     .filter((i) => i.surah === surahNumber && i.learningStage === "srs" && !i.temporary).length;
   const pct = total ? Math.min(100, Math.round((done / total) * 100)) : 0;
+  // A full ring and a tick beside it say the same thing twice. Once the
+  // surah is whole the ring goes and the tick speaks for it.
+  if (pct >= 100) return null;
   // 2πr for r = 8.6, so the dash length is the arc the percentage covers.
   const circumference = 54.04;
   const el = document.createElement("span");
-  el.className = `surah-ring${pct >= 100 ? " full" : ""}`;
+  el.className = "surah-ring";
+  // The number is in the ring's own title rather than printed beside it: the
+  // arc already says how far along the surah is at a glance, and the digits
+  // next to it were a second answer to a question already answered.
   el.title = `${name}: ${done} من ${total} — ${pct}%`;
   el.setAttribute("aria-label", `حفظتَ ${pct} بالمئة من ${name}`);
   el.innerHTML = `<svg viewBox="0 0 22 22" aria-hidden="true">
@@ -766,15 +772,15 @@ function surahProgressRingNode(surahNumber, name) {
       <circle cx="11" cy="11" r="8.6" class="surah-ring-fill"
               stroke-dasharray="${(circumference * pct / 100).toFixed(2)} ${circumference}"
               transform="rotate(-90 11 11)"/>
-    </svg><span class="surah-ring-pct">${pct}</span>`;
+    </svg>`;
   return el;
 }
 
 function gildCheckNode() {
   const el = document.createElement("span");
   el.className = "gild-check";
-  el.title = "حفظتَها كاملة، وذهّبتها";
-  el.setAttribute("aria-label", "تمَّ حفظها");
+  el.title = "حفظتَها كاملة";
+  el.setAttribute("aria-label", "تمَّ حفظها كاملة");
   el.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">
     <circle cx="12" cy="12" r="10.2" fill="currentColor" opacity=".16"/>
     <circle cx="12" cy="12" r="10.2" fill="none" stroke="currentColor" stroke-width="1.5"/>
@@ -2173,8 +2179,11 @@ function renderDashboard() {
         // much of the surah is memorized, drawn as a ring, and the tick when
         // it is all of it and illuminated. A mark left up beside the name was
         // a second row's worth of marks in two different places.
-        tags.insertBefore(surahProgressRingNode(surahNum, group.name), tags.firstChild);
-        if (gilded) tags.insertBefore(gildCheckNode(), tags.children[1] || null);
+        const ring = surahProgressRingNode(surahNum, group.name);
+        if (ring) tags.insertBefore(ring, tags.firstChild);
+        // The tick is for the surah being memorized whole, which is what it
+        // says; the gold frame around it already says it was illuminated.
+        if (surahFullyMemorized(surahNum)) tags.insertBefore(gildCheckNode(), tags.firstChild);
         tags.classList.toggle("hidden", !tags.querySelector(".badge") && !actions.childElementCount);
         details.appendChild(summary);
         const itemsContainer = document.createElement("div");
