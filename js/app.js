@@ -7073,6 +7073,9 @@ let reciteListening = false;
 let reciteFinalSegments = [];
 let reciteFinalWords = [];    // every finalized segment, cleaned, as words
 let reciteFinalDone = 0;      // how many segment slots have been folded in
+// What the engine has actually committed to. recitePointer/reciteStumbles are
+// this plus whatever the interim is currently guessing.
+let reciteCommitted = { pointer: 0, stumbles: new Set() };
 let reciteSeenWords = [];     // the transcript as last read, word by word
 let reciteScope = { kind: "all", surah: null, from: null, to: null };
 // The gap after a pause: start() has returned but the microphone is not yet
@@ -7080,6 +7083,12 @@ let reciteScope = { kind: "all", surah: null, from: null, to: null };
 let reciteWaking = false;
 let reciteStartAyah = 0;   // the ayah the page was opened at, to count from
 let reciteStumbles = new Set();
+// A word the reciter has judged for himself, by tapping it. The stumbles set
+// is rebuilt from the committed state on every result, so a correction that
+// lived only in it would be wiped by the next word said; these two survive
+// the rebuild and are laid over it.
+let reciteManualSaid = new Set();
+let reciteManualMissed = new Set();
 
 // How far ahead a missed word may be found before the reciter is taken to be
 // somewhere else entirely. Three covers a dropped word or two - which the
@@ -7237,6 +7246,9 @@ function closeReciteSession() {
   reciteFlat = [];
   recitePointer = 0;
   reciteStumbles = new Set();
+  reciteCommitted = { pointer: 0, stumbles: new Set() };
+  reciteManualSaid = new Set();
+  reciteManualMissed = new Set();
 }
 
 function showReciteSetup() {
@@ -7356,6 +7368,8 @@ function startRecitePage(opts) {
   reciteFinalSegments = [];
   reciteFinalWords = [];
   reciteFinalDone = 0;
+  reciteManualSaid = new Set();
+  reciteManualMissed = new Set();
 
   // Carrying on from a saved place puts the pointer there; everything before
   // it stands written, because it was recited - on an earlier evening.
@@ -7364,6 +7378,9 @@ function startRecitePage(opts) {
     const at = recitePlan.findIndex((a) => a.ayah === fromAyah);
     if (at > 0) recitePointer = reciteAyahStart[at];
   }
+  // The committed state starts where the page does - after the resume, so a
+  // page taken up again commits from the place it was left at, not from zero.
+  reciteCommitted = { pointer: recitePointer, stumbles: new Set() };
   reciteStartAyah = currentReciteAyahIndex();
 
   document.getElementById("recite-setup").classList.add("hidden");
@@ -7422,8 +7439,15 @@ function renderRecitePage() {
       // takes the mark off, and tapping again puts it back.
       slot.addEventListener("click", () => {
         if (flatIdx >= recitePointer) return;
-        if (reciteStumbles.has(flatIdx)) reciteStumbles.delete(flatIdx);
-        else reciteStumbles.add(flatIdx);
+        if (reciteStumbles.has(flatIdx)) {
+          reciteStumbles.delete(flatIdx);
+          reciteManualMissed.delete(flatIdx);
+          reciteManualSaid.add(flatIdx);
+        } else {
+          reciteStumbles.add(flatIdx);
+          reciteManualSaid.delete(flatIdx);
+          reciteManualMissed.add(flatIdx);
+        }
         slot.dataset.state = "";
         paintSlot(flatIdx);
       });
@@ -7552,24 +7576,34 @@ function paintReciteNow() {
 // words while it hears three must not be stopped by it. Anything that cannot
 // be placed at all is ignored rather than counted against him - it is far
 // more often the engine mishearing than the reciter inventing.
-function placeRecitedWords(words, i) {
+function placeRecitedWords(st, words, i) {
   const said = words[i];
+  // An echo of the word just placed. The engine repeats itself at the seam
+  // between a guess and its correction, and a repeat is harmless right up
+  // until the ayah ahead happens to contain the same words - which in
+  // ٱلْفَاتِحَة it does: «ٱلرَّحْمَٰنِ ٱلرَّحِيمِ» closes the basmala and is then
+  // the whole of the third ayah. The second «الرحمن الرحيم» was matching
+  // four words ahead and marking «ٱلْحَمْدُ لِلَّهِ رَبِّ ٱلْعَٰلَمِينَ» as skipped
+  // over an ayah the reciter had not reached yet.
+  const justSaid = reciteFlat[st.pointer - 1];
+  if (justSaid && answerMatchesQuranWord(said, justSaid.w)) return 1;
+
   for (let ahead = 0; ahead <= RECITE_LOOKAHEAD; ahead++) {
-    const idx = recitePointer + ahead;
+    const idx = st.pointer + ahead;
     const slot = reciteFlat[idx];
     if (!slot) break;
     if (answerMatchesQuranWord(said, slot.w)) {
-      advanceRecitePointer(idx, 1);
+      advanceRecitePointer(st, idx, 1);
       return 1;
     }
     const next = reciteFlat[idx + 1];
     if (next && answerMatchesQuranWord(said, `${slot.w} ${next.w}`.replace(/\s+/g, ""))) {
-      advanceRecitePointer(idx, 2);
+      advanceRecitePointer(st, idx, 2);
       return 1;
     }
     const spelled = spelledLettersMatch(words, i, slot.w);
     if (spelled) {
-      advanceRecitePointer(idx, 1);
+      advanceRecitePointer(st, idx, 1);
       return spelled;
     }
   }
@@ -7577,9 +7611,21 @@ function placeRecitedWords(words, i) {
 }
 
 // Everything stepped over on the way was not said - that is the stumble.
-function advanceRecitePointer(idx, span) {
-  for (let k = recitePointer; k < idx; k++) reciteStumbles.add(k);
-  recitePointer = idx + span;
+function advanceRecitePointer(st, idx, span) {
+  for (let k = st.pointer; k < idx; k++) st.stumbles.add(k);
+  st.pointer = idx + span;
+}
+
+// The reciter's own judgement, laid over whatever the engine decided.
+function applyReciteManual(st) {
+  reciteManualSaid.forEach((idx) => st.stumbles.delete(idx));
+  reciteManualMissed.forEach((idx) => { if (idx < st.pointer) st.stumbles.add(idx); });
+  return st;
+}
+
+function placeReciteRun(st, words) {
+  for (let i = 0; i < words.length; ) i += Math.max(1, placeRecitedWords(st, words, i));
+  return st;
 }
 
 // The transcript arrives whole and re-arrives whole, a little longer each
@@ -7604,6 +7650,17 @@ function cleanReciteWords(text) {
 // being revised, a few words at most - is re-cleaned on every result. This
 // is what stops a long recitation from paying for its own length: the
 // regexes no longer run over the whole of it several times a second.
+// What the engine has committed to is placed once and for all; what it is
+// still revising is replayed from that committed point on every result and
+// thrown away when the commitment comes.
+//
+// The old way fed one growing word list through a common-prefix diff, which
+// held only as long as the engine never went back and changed a word it had
+// already said. It does: it revises its tail, and it renumbers words when an
+// interim guess becomes a final segment. Either of those made already-placed
+// words arrive a second time - and a second «ٱلرَّحْمَٰنِ ٱلرَّحِيمِ» four words
+// from the first one does not look like a repeat to the matcher, it looks
+// like the third ayah.
 function foldFinishedReciteSegments() {
   for (let i = reciteFinalDone; i < reciteFinalSegments.length; i++) {
     const seg = reciteFinalSegments[i];
@@ -7616,19 +7673,23 @@ function foldFinishedReciteSegments() {
       const joined = cleanReciteWords(`${last} ${add[0]}`);
       if (joined.length === 1) { reciteFinalWords[reciteFinalWords.length - 1] = joined[0]; add.shift(); }
     }
-    for (const w of add) reciteFinalWords.push(w);
+    if (add.length) {
+      // Placed straight onto the committed state, once.
+      placeReciteRun(reciteCommitted, add);
+      for (const w of add) reciteFinalWords.push(w);
+    }
   }
   reciteFinalDone = reciteFinalSegments.length;
 }
 
 function feedReciteSession(interimText) {
   foldFinishedReciteSegments();
-  const words = reciteFinalWords.concat(cleanReciteWords(interimText));
-  let common = 0;
-  while (common < words.length && common < reciteSeenWords.length
-         && words[common] === reciteSeenWords[common]) common++;
-  for (let i = common; i < words.length; ) i += Math.max(1, placeRecitedWords(words, i));
-  reciteSeenWords = words;
+  // The interim runs on top of a copy, so nothing it guesses is ever kept.
+  const live = { pointer: reciteCommitted.pointer, stumbles: new Set(reciteCommitted.stumbles) };
+  placeReciteRun(live, cleanReciteWords(interimText));
+  applyReciteManual(live);
+  recitePointer = live.pointer;
+  reciteStumbles = live.stumbles;
   paintRecitePage();
   if (recitePointer >= reciteFlat.length) finishRecitePage();
 }
