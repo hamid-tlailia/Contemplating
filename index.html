@@ -785,6 +785,14 @@
         <button class="btn" id="btn-open-tasmee">📿 سمّع لشخص أمامك</button>
       </div>
 
+      <!-- Reciting onto a blank page: the ayah numbers are there and the
+           space between them is the ayah's own, and the words appear as they
+           are said. Free of the schedule entirely - it moves no due date. -->
+      <div class="tasmee-entry hidden" id="recite-entry">
+        <button class="btn" id="btn-open-recite"></button>
+        <p class="muted">صفحةٌ فارغة بأرقام آياتها — تقرأ من حفظك فتُكتب الآية بالرسم العثماني كلمةً كلمة. لا تُقدّم موعدًا ولا تؤخّره.</p>
+      </div>
+
       <div class="tasmee-entry hidden" id="seam-entry">
         <button class="btn" id="btn-open-seam"></button>
         <p class="muted">تعرف كل آية وحدها، وتتوقّف عند الانتقال؟ هذا تمرين المفاصل وحدها.</p>
@@ -920,6 +928,40 @@
 </div>
 
 <!-- FULLSCREEN MUSHAF READER (paginated by real Mushaf page, swipe to turn) -->
+<!-- The blank page. Each ayah is a row of empty slots the width of its own
+     words, closed by its number; a word said correctly is written into its
+     slot. Nothing here is graded and nothing is scheduled. -->
+<div id="recite-overlay" class="tasmee-overlay recite-overlay modal-closed">
+  <div class="tasmee-header">
+    <button id="btn-recite-close" class="icon-only-btn" aria-label="إنهاء التسميع">✕</button>
+    <span id="recite-position"></span>
+  </div>
+
+  <div class="recite-setup" id="recite-setup">
+    <p class="recite-lead">🎙️ سمِّع على الصفحة</p>
+    <p class="muted">اختر ما تُسمّعه، ثمّ اقرأ من حفظك.</p>
+    <div class="recite-scope" id="recite-scope"></div>
+    <div class="recite-range hidden" id="recite-range">
+      <label>من آية <input type="number" id="recite-from" min="1" value="1" inputmode="numeric"></label>
+      <label>إلى آية <input type="number" id="recite-to" min="1" value="1" inputmode="numeric"></label>
+    </div>
+    <p class="muted recite-count" id="recite-count"></p>
+    <button class="btn primary" id="btn-recite-start">ابدأ</button>
+  </div>
+
+  <div class="tasmee-body recite-body hidden" id="recite-body">
+    <div class="recite-page" id="recite-page"></div>
+  </div>
+
+  <div class="recite-summary hidden" id="recite-summary"></div>
+
+  <div class="tasmee-actions recite-actions hidden" id="recite-actions">
+    <p class="recite-status" id="recite-status"></p>
+    <button class="mic-fab" id="btn-recite-mic" aria-label="ابدأ التسميع"></button>
+    <button class="btn" id="btn-recite-finish">أنهِ</button>
+  </div>
+</div>
+
 <div id="seam-overlay" class="tasmee-overlay seam-overlay modal-closed">
   <div class="tasmee-header">
     <button id="btn-seam-close" class="icon-only-btn" aria-label="إنهاء التمرين">✕</button>

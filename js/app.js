@@ -1996,6 +1996,23 @@ function renderDashboard() {
           });
           actions.appendChild(go);
         }
+        // Straight from the surah whose row this is: recite it onto the blank
+        // page. Offered only where there is something memorized to recite.
+        if (memorizedInGroup > 0 && voiceSupported()) {
+          const say = document.createElement("button");
+          say.type = "button";
+          say.className = "plan-recite-btn";
+          say.innerHTML = ICONS.mic;
+          say.title = `سمِّع ${group.name} على صفحة فارغة`;
+          say.setAttribute("aria-label", `سمِّع ${group.name} على صفحة فارغة`);
+          say.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const nums = items2.filter((i) => i.learningStage === "srs").map((i) => i.ayah);
+            openReciteSession({ kind: "surah", surah: surahNum, from: nums[0], to: nums[nums.length - 1] });
+          });
+          actions.appendChild(say);
+        }
         // Added and thought better of: clears this surah's unmemorized ayahs
         // in one go. Only those - what is already memorized is removed one
         // ayah at a time, from its own row, where the choice is deliberate.
@@ -6822,6 +6839,449 @@ function renderSeamEntry() {
   btn.innerHTML = iconLabel("repeat", `وصل الآيات (${seams.length})`);
 }
 
+// ---------- Reciting onto a blank page ----------
+//
+// Every other drill here hands you the ayah and hides part of it. This one
+// hands you nothing: a page with the ayah numbers on it and, between them,
+// the space each ayah takes up - and the words appear, in the Uthmani rasm,
+// as you say them. It is the closest thing the app has to sitting in front
+// of a شيخ with the Mushaf closed.
+//
+// Two things it deliberately is not:
+//   * it is not graded. No word is marked wrong, nothing is scored out of
+//     ten. What it produces is a list of the places you stumbled, and the
+//     offer to review those.
+//   * it is not scheduled. It moves no due date forward or back, and adds
+//     nothing to the plan. You may recite the same surah five times in an
+//     evening; the spaced repetition underneath does not notice.
+//
+// The matching is alignment, not transcription: the text is already known,
+// so the only question is where in it the reciter has got to. That is what
+// makes this workable on the browser's own recognition engine - it never has
+// to be right about what was said, only about where it fits.
+
+let recitePlan = [];          // [{ key, surah, ayah, surahName, words: [...] }]
+let reciteFlat = [];          // every word of the plan in order, with its ayah
+let recitePointer = 0;        // how far into reciteFlat the reciting has got
+let reciteRecognition = null;
+let reciteListening = false;
+let reciteBaseText = "";
+let reciteFinalSegments = [];
+let reciteSeenWords = [];     // the transcript as last read, word by word
+let reciteScope = { kind: "all", surah: null, from: null, to: null };
+let reciteStumbles = new Set();
+
+// How far ahead a missed word may be found before the reciter is taken to be
+// somewhere else entirely. Three covers a dropped word or two - which the
+// engine does constantly - without letting a wrong ayah quietly match.
+const RECITE_LOOKAHEAD = 4;
+
+function memorizedAyahsInOrder(filter) {
+  return Object.values(state.ayahs)
+    .filter((i) => i.learningStage === "srs" && !i.temporary && (!filter || filter(i)))
+    .sort((a, b) => (a.surah - b.surah) || (a.ayah - b.ayah));
+}
+
+function recitableSurahs() {
+  const out = new Map();
+  memorizedAyahsInOrder().forEach((i) => {
+    if (!out.has(i.surah)) out.set(i.surah, { surah: i.surah, name: i.surahName || `سورة ${i.surah}`, count: 0 });
+    out.get(i.surah).count++;
+  });
+  return [...out.values()].sort((a, b) => a.surah - b.surah);
+}
+
+function reciteItemsForScope(scope) {
+  if (scope.kind === "all") return memorizedAyahsInOrder();
+  return memorizedAyahsInOrder((i) =>
+    i.surah === scope.surah
+    && (scope.from == null || i.ayah >= scope.from)
+    && (scope.to == null || i.ayah <= scope.to));
+}
+
+function renderReciteEntry() {
+  const entry = document.getElementById("recite-entry");
+  const btn = document.getElementById("btn-open-recite");
+  if (!entry || !btn) return;
+  const n = memorizedAyahsInOrder().length;
+  // Nothing to recite from is not an empty page, it is a confusing one.
+  entry.classList.toggle("hidden", n < 3 || !voiceSupported());
+  btn.innerHTML = iconLabel("mic", `سمِّع على الصفحة (${n})`);
+}
+
+function openReciteSession(preset) {
+  if (!voiceSupported()) {
+    showToast("متصفّحك لا يدعم الاستماع — جرّب كروم على أندرويد أو سفاري على آيفون.", "error");
+    return;
+  }
+  if (memorizedAyahsInOrder().length < 1) {
+    showToast("احفظ آيةً واحدة على الأقل ليكون على الصفحة ما يُسمَّع.", "error");
+    return;
+  }
+  reciteScope = preset || { kind: "all", surah: null, from: null, to: null };
+  document.getElementById("recite-overlay").classList.remove("modal-closed");
+  showReciteSetup();
+}
+
+function closeReciteSession() {
+  stopReciteListening();
+  document.getElementById("recite-overlay").classList.add("modal-closed");
+  recitePlan = [];
+  reciteFlat = [];
+  recitePointer = 0;
+  reciteStumbles = new Set();
+}
+
+function showReciteSetup() {
+  document.getElementById("recite-setup").classList.remove("hidden");
+  document.getElementById("recite-body").classList.add("hidden");
+  document.getElementById("recite-actions").classList.add("hidden");
+  document.getElementById("recite-summary").classList.add("hidden");
+  document.getElementById("recite-position").textContent = "";
+  renderReciteScope();
+}
+
+function renderReciteScope() {
+  const box = document.getElementById("recite-scope");
+  if (!box) return;
+  const surahs = recitableSurahs();
+  const all = memorizedAyahsInOrder().length;
+  box.innerHTML = "";
+
+  const addBtn = (label, sub, active, onClick) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = `recite-scope-btn${active ? " active" : ""}`;
+    b.innerHTML = `<span class="recite-scope-name">${label}</span><span class="recite-scope-sub">${sub}</span>`;
+    b.addEventListener("click", onClick);
+    box.appendChild(b);
+  };
+
+  addBtn("كلّ ما حفظت", ayahCountLabel(all), reciteScope.kind === "all", () => {
+    reciteScope = { kind: "all", surah: null, from: null, to: null };
+    renderReciteScope();
+  });
+  surahs.forEach((s) => {
+    addBtn(s.name, ayahCountLabel(s.count), reciteScope.kind === "surah" && reciteScope.surah === s.surah, () => {
+      const nums = memorizedAyahsInOrder((i) => i.surah === s.surah).map((i) => i.ayah);
+      reciteScope = { kind: "surah", surah: s.surah, from: nums[0], to: nums[nums.length - 1] };
+      renderReciteScope();
+    });
+  });
+
+  // The range only means anything inside one surah.
+  const range = document.getElementById("recite-range");
+  range.classList.toggle("hidden", reciteScope.kind !== "surah");
+  if (reciteScope.kind === "surah") {
+    const nums = memorizedAyahsInOrder((i) => i.surah === reciteScope.surah).map((i) => i.ayah);
+    const from = document.getElementById("recite-from");
+    const to = document.getElementById("recite-to");
+    from.min = to.min = nums[0];
+    from.max = to.max = nums[nums.length - 1];
+    from.value = reciteScope.from;
+    to.value = reciteScope.to;
+  }
+  updateReciteCount();
+}
+
+function updateReciteCount() {
+  const el = document.getElementById("recite-count");
+  const items = reciteItemsForScope(reciteScope);
+  const words = items.reduce((n, i) => n + quranWords(i.text).length, 0);
+  el.textContent = items.length
+    ? `${ayahCountLabel(items.length)} · ${words} كلمة`
+    : "لا آيات محفوظة في هذا النطاق.";
+  document.getElementById("btn-recite-start").disabled = items.length === 0;
+}
+
+function startRecitePage() {
+  const items = reciteItemsForScope(reciteScope);
+  if (!items.length) return;
+  recitePlan = items.map((i) => ({
+    key: `${i.surah}:${i.ayah}`,
+    surah: i.surah,
+    ayah: i.ayah,
+    surahName: i.surahName || `سورة ${i.surah}`,
+    words: quranWords(i.text),
+  }));
+  reciteFlat = [];
+  recitePlan.forEach((a, ai) => a.words.forEach((w, wi) => reciteFlat.push({ w, ai, wi })));
+  reciteIndexCache = null;
+  recitePointer = 0;
+  reciteStumbles = new Set();
+  reciteSeenWords = [];
+  reciteBaseText = "";
+  reciteFinalSegments = [];
+
+  document.getElementById("recite-setup").classList.add("hidden");
+  document.getElementById("recite-summary").classList.add("hidden");
+  document.getElementById("recite-body").classList.remove("hidden");
+  document.getElementById("recite-actions").classList.remove("hidden");
+  renderRecitePage();
+  setReciteStatus("اضغط الميكروفون واقرأ من حفظك.");
+  updateReciteMic();
+}
+
+// The page. Every word is a slot as wide as the word it is waiting for, so
+// the shape of the ayah - and how much of it is left - is visible before a
+// single word has been said.
+function renderRecitePage() {
+  const page = document.getElementById("recite-page");
+  page.innerHTML = "";
+  let lastSurah = null;
+  recitePlan.forEach((a, ai) => {
+    if (a.surah !== lastSurah) {
+      const head = document.createElement("div");
+      head.className = "recite-surah-head";
+      head.textContent = a.surahName;
+      page.appendChild(head);
+      lastSurah = a.surah;
+    }
+    const row = document.createElement("div");
+    row.className = "recite-ayah";
+    row.dataset.ai = String(ai);
+    a.words.forEach((w, wi) => {
+      const slot = document.createElement("span");
+      slot.className = "recite-slot";
+      slot.dataset.ai = String(ai);
+      slot.dataset.wi = String(wi);
+      // The blank keeps the word's own width without showing it: the letters
+      // are there, invisible, and a rule is drawn under them.
+      slot.innerHTML = `<span class="recite-word">${w}</span>`;
+      row.appendChild(slot);
+    });
+    const badge = document.createElement("span");
+    badge.className = "ayah-number-badge recite-badge";
+    badge.textContent = String(a.ayah);
+    row.appendChild(badge);
+    page.appendChild(row);
+  });
+  paintRecitePage();
+}
+
+function updateRecitePosition() {
+  const cur = reciteFlat[recitePointer];
+  const done = cur ? cur.ai : recitePlan.length;
+  document.getElementById("recite-position").textContent = `${Math.min(done + 1, recitePlan.length)} / ${recitePlan.length}`;
+}
+
+function setReciteStatus(text) {
+  const el = document.getElementById("recite-status");
+  if (el) el.textContent = text;
+}
+
+// Writes everything up to the pointer, marking whatever was passed over
+// without being said. Called after every recognition result, so it has to be
+// cheap: it only touches the slots whose state actually changed.
+function paintRecitePage() {
+  const page = document.getElementById("recite-page");
+  if (!page) return;
+  page.querySelectorAll(".recite-slot").forEach((slot) => {
+    const idx = reciteIndexOf(Number(slot.dataset.ai), Number(slot.dataset.wi));
+    const state = idx < recitePointer
+      ? (reciteStumbles.has(idx) ? "missed" : "said")
+      : idx === recitePointer ? "next" : "waiting";
+    if (slot.dataset.state !== state) {
+      slot.dataset.state = state;
+      slot.className = `recite-slot recite-${state}`;
+    }
+  });
+  const next = page.querySelector(".recite-next");
+  if (next) next.scrollIntoView({ block: "center", behavior: "smooth" });
+  updateRecitePosition();
+}
+
+let reciteIndexCache = null;
+function reciteIndexOf(ai, wi) {
+  if (!reciteIndexCache) {
+    reciteIndexCache = new Map();
+    reciteFlat.forEach((f, i) => reciteIndexCache.set(`${f.ai}:${f.wi}`, i));
+  }
+  return reciteIndexCache.get(`${ai}:${wi}`);
+}
+
+// Advances the pointer over a spoken word. Returns true if it was placed.
+//
+// A word that is not the next one is looked for a few words ahead before it
+// is given up on: the engine drops words constantly, and a reciter who says
+// four words while it hears three must not be stopped by it. Anything it
+// cannot place at all is ignored rather than counted against him - it is far
+// more often the engine mishearing than the reciter inventing.
+function placeRecitedWord(said) {
+  for (let ahead = 0; ahead <= RECITE_LOOKAHEAD; ahead++) {
+    const idx = recitePointer + ahead;
+    const slot = reciteFlat[idx];
+    if (!slot) break;
+    if (answerMatchesQuranWord(said, slot.w)) {
+      // Whatever was stepped over was not said - that is the stumble.
+      for (let k = recitePointer; k < idx; k++) reciteStumbles.add(k);
+      recitePointer = idx + 1;
+      return true;
+    }
+  }
+  return false;
+}
+
+// The transcript arrives whole and re-arrives whole, a little longer each
+// time. What is new is whatever comes after the part that has not changed -
+// and it is compared that way rather than by length, because a live engine
+// revises the tail it has not committed to yet, and a revision that made the
+// text shorter would otherwise leave the page stuck where it stood.
+function feedReciteTranscript(transcript) {
+  const words = mergeMaddSplits(mergeDetachedConjunctions(transcript || ""))
+    .split(/\s+/).filter(Boolean);
+  let common = 0;
+  while (common < words.length && common < reciteSeenWords.length
+         && words[common] === reciteSeenWords[common]) common++;
+  for (let i = common; i < words.length; i++) placeRecitedWord(words[i]);
+  reciteSeenWords = words;
+  paintRecitePage();
+  if (recitePointer >= reciteFlat.length) finishRecitePage();
+}
+
+function toggleReciteListening() {
+  if (reciteListening) stopReciteListening();
+  else startReciteListening();
+}
+
+function updateReciteMic() {
+  const btn = document.getElementById("btn-recite-mic");
+  if (!btn) return;
+  btn.innerHTML = ICONS.mic;
+  btn.classList.toggle("listening", reciteListening);
+  btn.setAttribute("aria-label", reciteListening ? "أوقف التسميع" : "ابدأ التسميع");
+}
+
+function startReciteListening() {
+  const recognition = createVoiceRecognitionInstance();
+  reciteRecognition = recognition;
+  reciteListening = true;
+  reciteBaseText = "";
+  reciteFinalSegments = [];
+  updateReciteMic();
+  setReciteStatus("يستمع… اقرأ على مهلك.");
+
+  recognition.onresult = (e) => {
+    let interim = "";
+    for (let i = 0; i < e.results.length; i++) {
+      const result = e.results[i];
+      const transcript = (result[0] && result[0].transcript) || "";
+      if (result.isFinal) reciteFinalSegments[i] = transcript;
+      else if (i >= e.resultIndex) interim += transcript;
+    }
+    const merged = mergeVoiceSegments([...reciteFinalSegments.filter(Boolean), interim]);
+    feedReciteTranscript(`${reciteBaseText} ${merged}`.trim());
+  };
+  recognition.onerror = (e) => {
+    if (e.error === "aborted") return;
+    if (VOICE_FATAL_ERRORS.has(e.error)) {
+      reciteListening = false;
+      updateReciteMic();
+      setReciteStatus(`تعذّر الاستماع (${e.error}).`);
+    }
+  };
+  // A pause ends the session; the page keeps its place and listening resumes
+  // on the same instance, so stopping to breathe is not stopping.
+  recognition.onend = () => {
+    if (!reciteListening) return;
+    reciteBaseText = `${reciteBaseText} ${mergeVoiceSegments(reciteFinalSegments.filter(Boolean))}`.trim();
+    reciteFinalSegments = [];
+    // The base text is already matched and will not be rescanned.
+    attemptRecognitionStart(recognition);
+  };
+  attemptRecognitionStart(recognition);
+}
+
+function stopReciteListening() {
+  reciteListening = false;
+  const recognition = reciteRecognition;
+  reciteRecognition = null;
+  updateReciteMic();
+  if (recognition) {
+    recognition.onend = null;
+    try { recognition.abort(); } catch (e) { /* already stopped */ }
+  }
+}
+
+// What the page produced: not a mark, a list of places to go back to.
+function finishRecitePage() {
+  stopReciteListening();
+  const missedAyahs = new Map();
+  reciteStumbles.forEach((idx) => {
+    const f = reciteFlat[idx];
+    if (!f) return;
+    const a = recitePlan[f.ai];
+    if (!missedAyahs.has(a.key)) missedAyahs.set(a.key, { ...a, words: [] });
+    missedAyahs.get(a.key).words.push(a.words[f.wi]);
+  });
+  const reached = reciteFlat[recitePointer] ? reciteFlat[recitePointer].ai : recitePlan.length;
+  const box = document.getElementById("recite-summary");
+  box.classList.remove("hidden");
+  document.getElementById("recite-actions").classList.add("hidden");
+
+  const list = [...missedAyahs.values()];
+  box.innerHTML = `
+    <p class="recite-summary-lead">${reached >= recitePlan.length ? "🌿 أتممتَ الصفحة" : "توقّفت هنا"}</p>
+    <p class="muted">قرأتَ ${ayahCountLabel(Math.min(reached, recitePlan.length))} من ${ayahCountLabel(recitePlan.length)}${
+      list.length ? ` · تعثّرتَ في ${ayahCountLabel(list.length)}` : " · بلا تعثّر"
+    }.</p>
+    <div class="recite-missed-list"></div>
+    <div class="recite-summary-actions">
+      <button class="btn" id="btn-recite-again">أعِد</button>
+      <button class="btn primary${list.length ? "" : " hidden"}" id="btn-recite-review">راجع ما تعثّرتَ فيه</button>
+    </div>`;
+  const missedBox = box.querySelector(".recite-missed-list");
+  list.forEach((a) => {
+    const row = document.createElement("div");
+    row.className = "recite-missed-row";
+    row.innerHTML = `<span class="recite-missed-ref">${a.surahName} : ${a.ayah}</span>
+      <span class="recite-missed-words">${a.words.slice(0, 4).join(" · ")}</span>`;
+    missedBox.appendChild(row);
+  });
+  box.querySelector("#btn-recite-again").addEventListener("click", () => startRecitePage());
+  const reviewBtn = box.querySelector("#btn-recite-review");
+  if (reviewBtn) {
+    reviewBtn.addEventListener("click", () => {
+      const items = list.map((a) => state.ayahs[a.key]).filter(Boolean);
+      if (!items.length) return;
+      closeReciteSession();
+      startAyahListReview(items);
+    });
+  }
+}
+
+// A one-off pass over a handful of ayahs, graded as a review is graded -
+// these ARE reviews, just ones the reciting asked for rather than the
+// schedule.
+function startAyahListReview(items) {
+  switchTab("review");
+  isChallengeMode = false;
+  isEphemeralReview = false;
+  isSingleItemReview = true;
+  reviewQueue = items;
+  reviewIndex = 0;
+  document.getElementById("challenge-banner").classList.add("hidden");
+  document.getElementById("review-empty").classList.add("hidden");
+  hideReviewSurahList();
+  hideReviewSurahBanner();
+  document.getElementById("review-session").classList.remove("hidden");
+  loadReviewItem();
+}
+
+on("btn-open-recite", "click", () => openReciteSession());
+on("btn-recite-close", "click", closeReciteSession);
+on("btn-recite-start", "click", startRecitePage);
+on("btn-recite-mic", "click", toggleReciteListening);
+on("btn-recite-finish", "click", finishRecitePage);
+on("recite-from", "input", () => {
+  reciteScope.from = Number(document.getElementById("recite-from").value) || reciteScope.from;
+  updateReciteCount();
+});
+on("recite-to", "input", () => {
+  reciteScope.to = Number(document.getElementById("recite-to").value) || reciteScope.to;
+  updateReciteCount();
+});
+
 function openSeamSession() {
   const seams = memorizedSeams();
   if (seams.length < 4) {
@@ -7181,6 +7641,7 @@ function startReviewSession(ignoreDailyCap = false) {
   reviewIgnoreCap = ignoreDailyCap;
   document.getElementById("challenge-banner").classList.add("hidden");
   renderTasmeeEntry();
+  renderReciteEntry();
   renderReviewBadge();
 
   const empty = document.getElementById("review-empty");
