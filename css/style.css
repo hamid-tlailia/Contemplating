@@ -2848,7 +2848,13 @@ main#app {
   color: var(--text);
   text-align: right;
 }
-.info-modal-actions { display: flex; gap: 10px; justify-content: center; margin-top: 18px; }
+.info-modal-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 18px; }
+/* Three buttons will not sit on one phone line, and wrapping them into a
+   ragged row makes the question harder to answer than it is. */
+@media (max-width: 430px) {
+  .info-modal-actions:has(#info-modal-alt:not(.hidden)) { flex-direction: column-reverse; }
+  .info-modal-actions:has(#info-modal-alt:not(.hidden)) .btn { width: 100%; }
+}
 
 /* ---------- Modal open/close animation (shared by all 4 overlays) ---------- */
 /* A dedicated class instead of the generic .hidden utility, since that one

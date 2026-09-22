@@ -1781,6 +1781,9 @@ const TRANSIENT_MODALS = [
   { id: "voice-modal-overlay", close: () => closeVoiceModal() },
   { id: "tasmee-overlay", close: () => closeTasmeeSession() },
   { id: "info-modal-overlay", close: () => closeInfoModal() },
+  // After the info modal, so a dialog opened over the page gets the press
+  // before the page underneath it does.
+  { id: "recite-overlay", close: () => reciteBackPressed() },
 ];
 
 const tabScrollPositions = {};
@@ -5803,15 +5806,26 @@ on("info-modal-overlay", "click", (e) => {
 // A lightweight confirm dialog reusing the same modal shell instead of the
 // browser's native confirm(), so it matches the app's own visual style.
 function showConfirmModal(title, message, confirmLabel, onConfirm) {
+  showChoiceModal(title, message, { label: confirmLabel, onPick: onConfirm });
+}
+
+// Two answers and a way back, where a yes/no will not do: "save and leave"
+// and "leave without saving" are both leaving, and neither of them is the
+// cancel. The third button only appears when there is a second answer.
+function showChoiceModal(title, message, primary, alt) {
   document.getElementById("info-modal-title").textContent = title;
   document.getElementById("info-modal-body").innerHTML = `<p>${message}</p>`;
   document.getElementById("info-modal-actions").classList.remove("hidden");
   const confirmBtn = document.getElementById("info-modal-confirm");
-  confirmBtn.textContent = confirmLabel;
-  confirmBtn.onclick = () => {
-    closeInfoModal();
-    onConfirm();
-  };
+  confirmBtn.textContent = primary.label;
+  confirmBtn.onclick = () => { closeInfoModal(); primary.onPick(); };
+  const altBtn = document.getElementById("info-modal-alt");
+  altBtn.classList.toggle("hidden", !alt);
+  altBtn.onclick = null;
+  if (alt) {
+    altBtn.textContent = alt.label;
+    altBtn.onclick = () => { closeInfoModal(); alt.onPick(); };
+  }
   document.getElementById("info-modal-overlay").classList.remove("modal-closed");
 }
 
@@ -6987,6 +7001,7 @@ let reciteScope = { kind: "all", surah: null, from: null, to: null };
 // The gap after a pause: start() has returned but the microphone is not yet
 // live. Anything recited into it is simply not heard, so it is said out loud.
 let reciteWaking = false;
+let reciteStartAyah = 0;   // the ayah the page was opened at, to count from
 let reciteStumbles = new Set();
 
 // How far ahead a missed word may be found before the reciter is taken to be
@@ -7082,6 +7097,60 @@ function openReciteSession(preset) {
   document.getElementById("recite-overlay").classList.remove("modal-closed");
   showReciteSetup();
   if (reciteScope.kind === "surah") loadReciteSurahText(reciteScope.surah).then(renderReciteScope);
+}
+
+// Which ayah of the plan the pointer is standing in.
+function currentReciteAyahIndex() {
+  const at = reciteFlat[recitePointer];
+  return at ? at.ai : recitePlan.length;
+}
+
+// How many whole ayahs have been recited since this page was opened.
+function reciteAyahsRead() {
+  if (!recitePlan.length) return 0;
+  return Math.max(0, currentReciteAyahIndex() - reciteStartAyah);
+}
+
+// The phone's back button, in three steps - because "back" from here means
+// three different places depending on where you are:
+//
+//   on the page, an ayah or more recited  -> ask: keep the place, or leave
+//   on the page, nothing recited yet      -> back to choosing what to recite
+//   on the choosing screen                -> out, to the review page
+//
+// Reading half a surah and losing it to a stray back press is the one thing
+// this page could do that would make it not worth opening.
+function reciteBackPressed() {
+  const body = document.getElementById("recite-body");
+  const onPage = body && !body.classList.contains("hidden");
+  if (!onPage) { closeReciteSession(); return; }
+  if (reciteAyahsRead() < 1) {
+    stopReciteListening();
+    showReciteSetup();
+    return;
+  }
+  askToKeepRecitePlace();
+}
+
+// The ✕ is an explicit leaving, so it does not step back through the
+// screens - but it still does not throw the place away without asking.
+function reciteClosePressed() {
+  const body = document.getElementById("recite-body");
+  const onPage = body && !body.classList.contains("hidden");
+  if (onPage && reciteAyahsRead() >= 1) { askToKeepRecitePlace(); return; }
+  closeReciteSession();
+}
+
+function askToKeepRecitePlace() {
+  stopReciteListening();
+  const read = reciteAyahsRead();
+  const at = recitePlan[currentReciteAyahIndex()] || recitePlan[recitePlan.length - 1];
+  showChoiceModal(
+    "قبل أن تخرج",
+    `قرأتَ ${ayahCountLabel(read)}. أتحفظ موضعك عند ${at.surahName} : ${at.ayah} لتُكمل منه، أم تخرج؟`,
+    { label: "احفظ موضعي واخرج", onPick: () => { saveRecitePlace(); closeReciteSession(); } },
+    { label: "اخرج بلا حفظ", onPick: () => closeReciteSession() }
+  );
 }
 
 function closeReciteSession() {
@@ -7218,6 +7287,7 @@ function startRecitePage(opts) {
     const at = recitePlan.findIndex((a) => a.ayah === fromAyah);
     if (at > 0) recitePointer = reciteAyahStart[at];
   }
+  reciteStartAyah = currentReciteAyahIndex();
 
   document.getElementById("recite-setup").classList.add("hidden");
   document.getElementById("recite-summary").classList.add("hidden");
@@ -7670,7 +7740,7 @@ function startAyahListReview(items) {
 }
 
 on("btn-open-recite", "click", () => openReciteSession());
-on("btn-recite-close", "click", closeReciteSession);
+on("btn-recite-close", "click", reciteClosePressed);
 on("btn-recite-start", "click", () => startRecitePage());
 on("btn-recite-save", "click", saveRecitePlace);
 on("btn-recite-mic", "click", toggleReciteListening);
