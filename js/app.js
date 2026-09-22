@@ -979,6 +979,85 @@ function mergeDetachedConjunctions(text) {
 // purpose: three letters at least, at most three letters of difference, and
 // most of the longer word already present - «مَا» before «مَالِكِ» and «قُلْ»
 // before «قُلُوبِهِمْ» are real pairs and stay untouched.
+// ---------- The disconnected letters, said as letters ----------
+//
+// الٓمٓ is one word on the page and three sounds in the mouth: أَلِف لَام مِيم.
+// Nobody recites it as "alam", and asking for that to make it pass is asking
+// for a mistake. So where the text has a fawatih group, the letters spelled
+// out are accepted for it - matched against that word specifically, never
+// collapsed on sight, because عَيْن and نُون and يَا are ordinary words
+// elsewhere and must stay ordinary.
+const ARABIC_LETTER_NAMES = {
+  "الف": "\u0627", "أَلِف": "\u0627", "ألف": "\u0627",
+  "با": "\u0628", "باء": "\u0628",
+  "تا": "\u062A", "تاء": "\u062A",
+  "حا": "\u062D", "حاء": "\u062D",
+  "را": "\u0631", "راء": "\u0631",
+  "سين": "\u0633",
+  "صاد": "\u0635",
+  "طا": "\u0637", "طاء": "\u0637",
+  "عين": "\u0639",
+  "قاف": "\u0642",
+  "كاف": "\u0643",
+  "لام": "\u0644",
+  "ميم": "\u0645",
+  "نون": "\u0646",
+  "ها": "\u0647", "هاء": "\u0647",
+  "يا": "\u064A", "ياء": "\u064A",
+};
+const MUQATTAAT_LETTERS = new Set("\u0627\u0644\u0645\u0635\u0631\u0643\u0647\u064A\u0639\u0637\u0633\u062D\u0642\u0646".split(""));
+
+// A word made only of the letters the fawatih are drawn from, and short -
+// الٓمٓ, كٓهيعٓصٓ, حمٓ, طسٓمٓ. Ordinary words of those letters (مَال, سَمِيع)
+// are far longer than the longest group, which is five.
+function isMuqattaatWord(word) {
+  const w = normalizeArabic(word || "");
+  return w.length >= 1 && w.length <= 5 && [...w].every((c) => MUQATTAAT_LETTERS.has(c));
+}
+
+// "الف لام ميم" -> "الم". Null unless every token is a letter's name.
+function joinLetterNames(tokens) {
+  let out = "";
+  for (const t of tokens) {
+    const letter = ARABIC_LETTER_NAMES[normalizeArabic(t)];
+    if (!letter) return null;
+    out += letter;
+  }
+  return out;
+}
+
+// How many spoken tokens starting at i spell the expected word, or 0.
+function spelledLettersMatch(words, i, expected) {
+  if (!isMuqattaatWord(expected)) return 0;
+  const maxRun = Math.min(5, words.length - i);
+  for (let n = maxRun; n >= 1; n--) {
+    const joined = joinLetterNames(words.slice(i, i + n));
+    if (joined && answerMatchesQuranWord(joined, expected)) return n;
+  }
+  return 0;
+}
+
+// The same acceptance, for the paths that compare two finished texts rather
+// than follow a pointer: a run of letter names is folded into the one word
+// it spells, but only where the ayah actually has that word.
+function collapseSpelledLetters(text, correctWords) {
+  const targets = (correctWords || []).filter(isMuqattaatWord);
+  if (!targets.length) return text;
+  const words = String(text || "").split(/\s+/).filter(Boolean);
+  const out = [];
+  for (let i = 0; i < words.length; ) {
+    let used = 0;
+    for (const target of targets) {
+      used = spelledLettersMatch(words, i, target);
+      if (used > 1) { out.push(target); break; }
+      used = 0;
+    }
+    if (!used) { out.push(words[i]); used = 1; }
+    i += used;
+  }
+  return out.join(" ");
+}
+
 function mergeMaddSplits(text) {
   const words = String(text || "").split(/\s+/).filter(Boolean);
   const out = [];
@@ -3962,7 +4041,8 @@ function diffRecitation(correctText, transcript) {
   // path the in-review «اختبر بالتسميع» takes, and a مدّ split into two there
   // scored as a missed word just the same.
   const cleaned = stripRecitationPreamble(
-    mergeMaddSplits(mergeDetachedConjunctions(transcript)), correctWords);
+    collapseSpelledLetters(mergeMaddSplits(mergeDetachedConjunctions(transcript)), correctWords),
+    correctWords);
   const saidWords = cleaned.split(/\s+/).filter(Boolean);
 
   const n = correctWords.length;
@@ -7005,8 +7085,11 @@ function startRecitePage() {
     words: quranWords(i.text),
   }));
   reciteFlat = [];
-  recitePlan.forEach((a, ai) => a.words.forEach((w, wi) => reciteFlat.push({ w, ai, wi })));
-  reciteIndexCache = null;
+  reciteAyahStart = [];
+  recitePlan.forEach((a, ai) => {
+    reciteAyahStart[ai] = reciteFlat.length;
+    a.words.forEach((w, wi) => reciteFlat.push({ w, ai, wi }));
+  });
   recitePointer = 0;
   reciteStumbles = new Set();
   reciteSeenWords = [];
@@ -7030,9 +7113,16 @@ function startRecitePage() {
 // after another in justified lines with the ۝ between them. A page with an
 // ayah per row is a list, and nobody memorizes from a list - the shape of
 // the line, and which word sits where on it, is half of what the eye keeps.
+// Where an ayah's word sits in the flattened list - worked out from the
+// plan rather than searched for, since the rendering walks the same order.
+let reciteAyahStart = [];
+function reciteIndexOfFlat(ai, wi) { return reciteAyahStart[ai] + wi; }
+
 function renderRecitePage() {
   const page = document.getElementById("recite-page");
   page.innerHTML = "";
+  reciteSlotEls = new Array(reciteFlat.length);
+  recitePainted = -1;
   let lastSurah = null;
   recitePlan.forEach((a, ai) => {
     if (a.surah !== lastSurah) {
@@ -7055,6 +7145,18 @@ function renderRecitePage() {
       // The blank keeps the word's own width without showing it: the letters
       // are there, invisible, and a rule is drawn under them.
       slot.innerHTML = `<span class="recite-word">${w}</span>`;
+      const flatIdx = reciteIndexOfFlat(ai, wi);
+      reciteSlotEls[flatIdx] = slot;
+      // The engine is not the judge. A word it failed to hear can be put
+      // right by the one person who knows whether it was said - tapping it
+      // takes the mark off, and tapping again puts it back.
+      slot.addEventListener("click", () => {
+        if (flatIdx >= recitePointer) return;
+        if (reciteStumbles.has(flatIdx)) reciteStumbles.delete(flatIdx);
+        else reciteStumbles.add(flatIdx);
+        slot.dataset.state = "";
+        paintSlot(flatIdx);
+      });
       run.appendChild(slot);
       // A real space, not a margin: it is what the line breaks at and what
       // justification stretches.
@@ -7084,31 +7186,64 @@ function setReciteStatus(text) {
 // Writes everything up to the pointer, marking whatever was passed over
 // without being said. Called after every recognition result, so it has to be
 // cheap: it only touches the slots whose state actually changed.
-function paintRecitePage() {
-  const page = document.getElementById("recite-page");
-  if (!page) return;
-  page.querySelectorAll(".recite-slot").forEach((slot) => {
-    const idx = reciteIndexOf(Number(slot.dataset.ai), Number(slot.dataset.wi));
-    const state = idx < recitePointer
-      ? (reciteStumbles.has(idx) ? "missed" : "said")
-      : idx === recitePointer ? "next" : "waiting";
-    if (slot.dataset.state !== state) {
-      slot.dataset.state = state;
-      slot.className = `recite-slot recite-${state}`;
-    }
-  });
-  const next = page.querySelector(".recite-next");
-  if (next) next.scrollIntoView({ block: "center", behavior: "smooth" });
-  updateRecitePosition();
+// Painting has to be cheap, because it runs on every interim result the
+// engine emits - several a second while someone is reciting. It used to walk
+// every slot on the page and re-run a smooth scrollIntoView each time, which
+// on a long page (a whole surah, or everything memorized) is thousands of
+// nodes a second and a scroll animation restarted before it ever arrives.
+// That was the lag: not the recognition, the drawing.
+//
+// So the slots are held in an array laid out like reciteFlat, only the ones
+// whose state actually changed are touched, and the page is scrolled only
+// when the place being written has left the screen - in one jump, not an
+// animation that is cancelled a moment later.
+let reciteSlotEls = [];
+let recitePainted = -1;
+
+function slotState(idx) {
+  if (idx < recitePointer) return reciteStumbles.has(idx) ? "missed" : "said";
+  return idx === recitePointer ? "next" : "waiting";
 }
 
-let reciteIndexCache = null;
-function reciteIndexOf(ai, wi) {
-  if (!reciteIndexCache) {
-    reciteIndexCache = new Map();
-    reciteFlat.forEach((f, i) => reciteIndexCache.set(`${f.ai}:${f.wi}`, i));
+function paintSlot(idx) {
+  const el = reciteSlotEls[idx];
+  if (!el) return;
+  const st = slotState(idx);
+  if (el.dataset.state === st) return;
+  el.dataset.state = st;
+  el.className = `recite-slot recite-${st}`;
+}
+
+// Several results can land inside one frame; the page only needs drawing
+// once for all of them.
+let recitePaintQueued = false;
+function paintRecitePage() {
+  if (recitePaintQueued) return;
+  recitePaintQueued = true;
+  requestAnimationFrame(() => { recitePaintQueued = false; paintReciteNow(); });
+}
+
+function paintReciteNow() {
+  if (!reciteSlotEls.length) return;
+  // Everything between the last painted position and this one, plus the slot
+  // that was carrying the marker before.
+  const from = Math.max(0, Math.min(recitePainted, recitePointer) - 1);
+  const to = Math.min(reciteSlotEls.length - 1, Math.max(recitePainted, recitePointer));
+  for (let i = from; i <= to; i++) paintSlot(i);
+  recitePainted = recitePointer;
+
+  const next = reciteSlotEls[recitePointer];
+  const body = document.getElementById("recite-body");
+  if (next && body) {
+    const nb = next.getBoundingClientRect();
+    const bb = body.getBoundingClientRect();
+    // Only when it has actually gone out of sight - a scroll on every word
+    // is what made the page feel like it was chasing the reciter.
+    if (nb.bottom > bb.bottom - 40 || nb.top < bb.top + 40) {
+      body.scrollTop += (nb.top - bb.top) - bb.height * 0.4;
+    }
   }
-  return reciteIndexCache.get(`${ai}:${wi}`);
+  updateRecitePosition();
 }
 
 // Advances the pointer over a spoken word. Returns true if it was placed.
@@ -7118,19 +7253,51 @@ function reciteIndexOf(ai, wi) {
 // four words while it hears three must not be stopped by it. Anything it
 // cannot place at all is ignored rather than counted against him - it is far
 // more often the engine mishearing than the reciter inventing.
-function placeRecitedWord(said) {
+// Advances the pointer over what was spoken at words[i]. Returns how many
+// spoken tokens it used, or 0 if it could not place any.
+//
+// Three shapes are recognized, in order of how ordinary they are:
+//   one token for one word       - the usual case
+//   one token for TWO words      - the engine ran them together, which it
+//                                  does at an إدغام: «قُلُوبِهِم مَّرَضٌ» comes
+//                                  back as one sound, and مَرَض was being
+//                                  marked as skipped over a word the reciter
+//                                  had plainly said
+//   several tokens for one word  - the fawatih, spelled out as letters
+//
+// A word that is not the next one is looked for a few words ahead before any
+// of this: the engine drops words constantly, and a reciter who says four
+// words while it hears three must not be stopped by it. Anything that cannot
+// be placed at all is ignored rather than counted against him - it is far
+// more often the engine mishearing than the reciter inventing.
+function placeRecitedWords(words, i) {
+  const said = words[i];
   for (let ahead = 0; ahead <= RECITE_LOOKAHEAD; ahead++) {
     const idx = recitePointer + ahead;
     const slot = reciteFlat[idx];
     if (!slot) break;
     if (answerMatchesQuranWord(said, slot.w)) {
-      // Whatever was stepped over was not said - that is the stumble.
-      for (let k = recitePointer; k < idx; k++) reciteStumbles.add(k);
-      recitePointer = idx + 1;
-      return true;
+      advanceRecitePointer(idx, 1);
+      return 1;
+    }
+    const next = reciteFlat[idx + 1];
+    if (next && answerMatchesQuranWord(said, `${slot.w} ${next.w}`.replace(/\s+/g, ""))) {
+      advanceRecitePointer(idx, 2);
+      return 1;
+    }
+    const spelled = spelledLettersMatch(words, i, slot.w);
+    if (spelled) {
+      advanceRecitePointer(idx, 1);
+      return spelled;
     }
   }
-  return false;
+  return 0;
+}
+
+// Everything stepped over on the way was not said - that is the stumble.
+function advanceRecitePointer(idx, span) {
+  for (let k = recitePointer; k < idx; k++) reciteStumbles.add(k);
+  recitePointer = idx + span;
 }
 
 // The transcript arrives whole and re-arrives whole, a little longer each
@@ -7144,7 +7311,7 @@ function feedReciteTranscript(transcript) {
   let common = 0;
   while (common < words.length && common < reciteSeenWords.length
          && words[common] === reciteSeenWords[common]) common++;
-  for (let i = common; i < words.length; i++) placeRecitedWord(words[i]);
+  for (let i = common; i < words.length; ) i += Math.max(1, placeRecitedWords(words, i));
   reciteSeenWords = words;
   paintRecitePage();
   if (recitePointer >= reciteFlat.length) finishRecitePage();
@@ -7180,7 +7347,13 @@ function startReciteListening() {
       if (result.isFinal) reciteFinalSegments[i] = transcript;
       else if (i >= e.resultIndex) interim += transcript;
     }
-    const merged = mergeVoiceSegments([...reciteFinalSegments.filter(Boolean), interim]);
+    // A plain join, not mergeVoiceSegments: that one folds every segment
+    // through an LCS against everything heard so far to catch a re-heard
+    // repeat, which costs more the longer the recitation gets - and it runs
+    // several times a second. On a page it is not needed: the matcher only
+    // ever moves forward, so a repeat finds nothing ahead of it to match and
+    // is simply ignored. This is the other half of the lag.
+    const merged = [...reciteFinalSegments.filter(Boolean), interim].join(" ");
     feedReciteTranscript(`${reciteBaseText} ${merged}`.trim());
   };
   recognition.onerror = (e) => {
@@ -7195,7 +7368,7 @@ function startReciteListening() {
   // on the same instance, so stopping to breathe is not stopping.
   recognition.onend = () => {
     if (!reciteListening) return;
-    reciteBaseText = `${reciteBaseText} ${mergeVoiceSegments(reciteFinalSegments.filter(Boolean))}`.trim();
+    reciteBaseText = `${reciteBaseText} ${reciteFinalSegments.filter(Boolean).join(" ")}`.trim();
     reciteFinalSegments = [];
     // The base text is already matched and will not be rescanned.
     attemptRecognitionStart(recognition);

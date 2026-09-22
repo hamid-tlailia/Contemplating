@@ -3081,6 +3081,35 @@ main#app {
 
 /* ---------- Reciting onto a blank page ---------- */
 
+/* The one thing on the review page that is not a review. It carries the
+   theme's own primary rather than a colour of its own, so it changes with
+   every theme the way the rest of the app does - and it is the only filled
+   button among the outlined ones, which is what makes it findable. */
+.recite-cta {
+  background: linear-gradient(160deg,
+    color-mix(in srgb, var(--primary) 92%, #fff),
+    var(--primary-dark, var(--primary)));
+  color: #fff;
+  border: none;
+  padding: 12px 22px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  border-radius: 999px;
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--primary) 35%, transparent);
+}
+.recite-cta .icon-label svg { width: 17px; height: 17px; }
+@media (hover: hover) {
+  .recite-cta:hover { filter: brightness(1.06); }
+}
+#recite-entry {
+  padding: 14px 12px 12px;
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--primary) 7%, var(--surface));
+  margin-bottom: 16px;
+}
+#recite-entry .muted { margin: 10px 0 0; font-size: 0.78rem; line-height: 1.7; }
+
 .recite-setup {
   flex: 1;
   overflow-y: auto;
@@ -3195,11 +3224,14 @@ main#app {
   border-radius: 3px 3px 0 0;
 }
 .recite-said { color: var(--text); }
-/* Passed over without being said - written, so it can be seen, but marked. */
+/* Passed over without being said - written, so it can be seen, but marked.
+   Tappable: the engine is not the judge of what came out of a mouth. */
 .recite-missed {
   color: color-mix(in srgb, var(--danger) 70%, var(--text));
   border-bottom: 2px dotted var(--danger);
+  cursor: pointer;
 }
+.recite-said { cursor: pointer; }
 .recite-badge {
   font-size: 0.7rem;
   vertical-align: middle;
