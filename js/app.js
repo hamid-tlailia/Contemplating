@@ -968,6 +968,34 @@ function mergeDetachedConjunctions(text) {
   return (text || "").replace(/(^|\s)([\u0648\u0641])\s+(?=\S)/g, "$1$2");
 }
 
+// A stretched word comes back twice. On a مدّ - ٱلْبَأْسَآءِ, ٱلضَّرَّآءِ - the
+// engine commits to what it has heard so far, then hears the rest and says
+// the whole word, and both land in the transcript: «الباس الباساء»،
+// «والضر والضراء». Two words where the reciter said one, and the check
+// counts the short one as a mistake he never made.
+//
+// So where one of two neighbours is the start of the other, the longer one
+// is the word and the other is the engine thinking aloud. Kept narrow on
+// purpose: three letters at least, at most three letters of difference, and
+// most of the longer word already present - «مَا» before «مَالِكِ» and «قُلْ»
+// before «قُلُوبِهِمْ» are real pairs and stay untouched.
+function mergeMaddSplits(text) {
+  const words = String(text || "").split(/\s+/).filter(Boolean);
+  const out = [];
+  const swallows = (shortW, longW) => {
+    const a = normalizeArabic(shortW), b = normalizeArabic(longW);
+    return a.length >= 3 && b.length > a.length && b.length - a.length <= 3
+      && a.length / b.length >= 0.6 && b.startsWith(a);
+  };
+  for (const w of words) {
+    const prev = out[out.length - 1];
+    if (prev && swallows(prev, w)) { out[out.length - 1] = w; continue; }
+    if (prev && swallows(w, prev)) continue;
+    out.push(w);
+  }
+  return out.join(" ");
+}
+
 // Comparing a typed answer with the Quran's text is comparing two different
 // orthographies. The Uthmani rasm and the spelling people actually type
 // disagree systematically - not by exceptions that could be listed in a
@@ -3913,7 +3941,11 @@ function stripRecitationPreamble(transcript, correctWords) {
 
 function diffRecitation(correctText, transcript) {
   const correctWords = quranWords(correctText);
-  const cleaned = stripRecitationPreamble(mergeDetachedConjunctions(transcript), correctWords);
+  // Both cleanups belong here too, not only in the modal: this is also the
+  // path the in-review «اختبر بالتسميع» takes, and a مدّ split into two there
+  // scored as a missed word just the same.
+  const cleaned = stripRecitationPreamble(
+    mergeMaddSplits(mergeDetachedConjunctions(transcript)), correctWords);
   const saidWords = cleaned.split(/\s+/).filter(Boolean);
 
   const n = correctWords.length;
@@ -4443,7 +4475,7 @@ function stopVoiceModalRecording() {
     recognition.onend = null;
     try { recognition.abort(); } catch (e) { /* already stopped */ }
   }
-  const transcript = mergeDetachedConjunctions(voiceModalLiveTranscript.trim());
+  const transcript = mergeMaddSplits(mergeDetachedConjunctions(voiceModalLiveTranscript.trim()));
   if (!transcript) {
     document.getElementById("voice-status-text").textContent = "لم يُسمع شيء، حاول مرة أخرى.";
     return;
@@ -7536,19 +7568,60 @@ function startPendingGroup(group) {
 // Picks which word indices to hide for a given mask level (0 = none, higher
 // = more), using a seeded shuffle so the same level always hides the same
 // words for a given ayah length instead of jumping around on every render.
-function computeHiddenIndices(n, maskLevel, seedOffset = 0) {
+// The words an ayah is actually lost by. A فاصلة - the ending an ayah closes
+// on - is where memorization fails first and hardest: «ٱلْعَزِيزُ ٱلْحَكِيمُ» and
+// «ٱلْعَلِيمُ ٱلْحَكِيمُ» and «ٱلْغَفُورُ ٱلرَّحِيمُ» sit at the end of hundreds of
+// ayahs, and which pair closes THIS one is the thing that goes. A uniform
+// shuffle spent most of its hiding on the middle, where the sentence itself
+// carries you through.
+const FASILA_NAMES = new Set([
+  "عليم", "حكيم", "غفور", "رحيم", "عزيز", "سميع", "بصير", "خبير", "قدير",
+  "لطيف", "تواب", "شكور", "حليم", "عظيم", "كريم", "مجيد", "حميد", "ودود",
+  "قوي", "متين", "وكيل", "شهيد", "مقتدر", "علي", "كبير", "محيط", "بديع",
+  "ولي", "نصير", "مولي", "هاد", "رءوف", "رحمن", "عفو", "غفار", "قهار",
+  "جبار", "متكبر", "خالق", "بارئ", "مصور", "فتاح", "رزاق", "واسع", "مبين",
+].map((w) => normalizeArabic(w)));
+
+// The name is worn with ٱل before it and a tanween after it - ٱلْحَكِيمُ,
+// حَكِيمًا, عَلِيمًا - and the bare root is what the table holds.
+function isFasilaWord(word) {
+  const w = normalizeArabic(word || "");
+  if (!w) return false;
+  const bare = w.replace(/^ال/, "");
+  return FASILA_NAMES.has(w) || FASILA_NAMES.has(bare)
+    || FASILA_NAMES.has(w.replace(/ا$/, "")) || FASILA_NAMES.has(bare.replace(/ا$/, ""));
+}
+
+// How much a word deserves to be the one hidden. The end of the ayah weighs
+// heaviest, a divine-name ending heavier still, and a seeded jitter keeps it
+// from being the same three words every single round.
+function maskWeight(idx, n, word, seed) {
+  const fromEnd = n - 1 - idx;
+  let w = 0;
+  if (fromEnd === 0) w += 3.2;
+  else if (fromEnd === 1) w += 2.4;
+  else if (fromEnd <= 3) w += 1.1;
+  // The opening is the cue that says which ayah this is; hiding it first
+  // turns recall into a guess at the ayah rather than at its words.
+  if (idx === 0) w -= 1.2;
+  if (isFasilaWord(word)) w += 1.6;
+  return w + seed * 2;
+}
+
+function computeHiddenIndices(n, maskLevel, seedOffset = 0, words = null) {
   const hiddenIndices = new Set();
   if (maskLevel > 0) {
     const fractionToHide = Math.min(maskLevel * 0.34, 1);
     const countToHide = Math.round(n * fractionToHide);
-    const indices = [...Array(n).keys()];
-    let seed = maskLevel * 9973 + seedOffset * 104729;
-    for (let i = indices.length - 1; i > 0; i--) {
+    let seed = maskLevel * 9973 + seedOffset * 104729 + n * 7919;
+    const nextSeed = () => {
       seed = (seed * 16807) % 2147483647;
-      const j = seed % (i + 1);
-      [indices[i], indices[j]] = [indices[j], indices[i]];
-    }
-    indices.slice(0, countToHide).forEach((idx) => hiddenIndices.add(idx));
+      return seed / 2147483647;
+    };
+    const scored = [...Array(n).keys()]
+      .map((idx) => ({ idx, w: maskWeight(idx, n, words && words[idx], nextSeed()) }))
+      .sort((a, b) => b.w - a.w || a.idx - b.idx);
+    scored.slice(0, countToHide).forEach(({ idx }) => hiddenIndices.add(idx));
   }
   return hiddenIndices;
 }
@@ -7557,7 +7630,7 @@ function computeHiddenIndices(n, maskLevel, seedOffset = 0) {
 // asks a question first, and the word appears only once it is answered. That
 // is the difference between "I would have known that" and knowing it.
 function renderMaskedWordsInto(container, words, maskLevel, seedOffset = 0, onReveal, askFirst = null) {
-  const hiddenIndices = computeHiddenIndices(words.length, maskLevel, seedOffset);
+  const hiddenIndices = computeHiddenIndices(words.length, maskLevel, seedOffset, words);
   container.innerHTML = words
     .map((w, idx) => {
       if (hiddenIndices.has(idx)) return `<span class="word masked" data-idx="${idx}">${w}</span>`;
