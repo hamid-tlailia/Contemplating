@@ -7685,6 +7685,15 @@ function placeRecitedWords(st, words, i) {
       }
     }
     if (!span) continue;
+    // Found, but on the far side of an ayah that has not been begun. That is
+    // not the engine dropping a word, it is the reciter somewhere else, and
+    // the page holds where it is rather than writing off an ayah he has not
+    // said. It says so instead - and the place it was going to jump to is
+    // what lets it name the ayah he has gone to.
+    if (ahead > 0 && reciteCrossingBlocked(st, idx)) {
+      if (st.blockedAt == null) st.blockedAt = idx;
+      continue;
+    }
     st.placed = (st.placed || 0) + 1;
     // Found ahead of the pointer - which means the words in between would be
     // written off as skipped. Before doing that, look behind: if as much of
@@ -7700,6 +7709,17 @@ function placeRecitedWords(st, words, i) {
   // Nothing ahead. A repeat of what is behind is swallowed whole rather than
   // dropped a word at a time.
   return reciteEchoRun(st, words, i);
+}
+
+// An ayah is left behind only when something of it was said. Nothing of it
+// said means the reciter never reached it, whatever the words ahead look
+// like - and an ayah further on than the next is never crossed at all.
+function reciteCrossingBlocked(st, idx) {
+  const here = reciteFlat[st.pointer];
+  const there = reciteFlat[idx];
+  if (!here || !there || there.ai === here.ai) return false;
+  if (there.ai > here.ai + 1) return true;
+  return reciteAyahStart[here.ai] === st.pointer;
 }
 
 // Everything stepped over on the way was not said - that is the stumble.
@@ -7800,7 +7820,7 @@ function foldFinishedReciteSegments(st) {
 function feedReciteSession(interimText) {
   const st = {
     pointer: recitePointer, stumbles: reciteStumbles, startedAt: recitePointer,
-    skipped: 0, skippedFrom: null, placed: 0,
+    skipped: 0, skippedFrom: null, placed: 0, blockedAt: null,
     strayRun: 0, strayAt: -1, strayWords: null,
   };
   foldFinishedReciteSegments(st);
@@ -7869,6 +7889,18 @@ function judgeRecitation(st) {
     if (a) {
       setReciteAlert(`skip:${st.skippedFrom}:${st.skipped}`,
         `⚠︎ تجاوزتَ ${wordCountLabel(st.skipped)} من الآية ${a.ayah} — المُعلَّم بالأحمر.`);
+      return;
+    }
+  }
+  // Held at an ayah the reciter has passed over. This is known exactly - the
+  // word was found, and refused - so it is said at once rather than waited on
+  // like speech that merely went nowhere.
+  if (!st.placed && st.blockedAt != null) {
+    const there = recitePlan[reciteFlat[st.blockedAt].ai];
+    const here = recitePlan[reciteFlat[st.pointer].ai];
+    if (there && here) {
+      setReciteAlert(`blocked:${here.key}:${there.key}`,
+        `⚠︎ هذا من الآية ${there.ayah} — أتمّ الآية ${here.ayah} أوّلا.`);
       return;
     }
   }
