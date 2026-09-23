@@ -7073,9 +7073,6 @@ let reciteListening = false;
 let reciteFinalSegments = [];
 let reciteFinalWords = [];    // every finalized segment, cleaned, as words
 let reciteFinalDone = 0;      // how many segment slots have been folded in
-// What the engine has actually committed to. recitePointer/reciteStumbles are
-// this plus whatever the interim is currently guessing.
-let reciteCommitted = { pointer: 0, stumbles: new Set() };
 let reciteSeenWords = [];     // the transcript as last read, word by word
 let reciteScope = { kind: "all", surah: null, from: null, to: null };
 // The gap after a pause: start() has returned but the microphone is not yet
@@ -7083,20 +7080,15 @@ let reciteScope = { kind: "all", surah: null, from: null, to: null };
 let reciteWaking = false;
 let reciteStartAyah = 0;   // the ayah the page was opened at, to count from
 let reciteStumbles = new Set();
-// A word the reciter has judged for himself, by tapping it. The stumbles set
-// is rebuilt from the committed state on every result, so a correction that
-// lived only in it would be wiped by the next word said; these two survive
-// the rebuild and are laid over it.
-let reciteManualSaid = new Set();
-let reciteManualMissed = new Set();
 
 // How far ahead a missed word may be found before the reciter is taken to be
 // somewhere else entirely. Three covers a dropped word or two - which the
 // engine does constantly - without letting a wrong ayah quietly match.
 const RECITE_LOOKAHEAD = 4;
-// How far back a repeat may be recognized as a repeat, and how long a run is
-// followed before it has settled the question. A re-emitted breath is short.
-const RECITE_LOOKBEHIND = 8;
+// How far back a repeat may be recognized as a repeat: a breath's worth of
+// words, because a whole breath is what the engine re-sends.
+const RECITE_LOOKBEHIND = 40;
+// A run is only followed far enough to tell a repeat from a jump.
 const RECITE_RUN_CAP = 8;
 
 function memorizedAyahsInOrder(filter) {
@@ -7250,9 +7242,6 @@ function closeReciteSession() {
   reciteFlat = [];
   recitePointer = 0;
   reciteStumbles = new Set();
-  reciteCommitted = { pointer: 0, stumbles: new Set() };
-  reciteManualSaid = new Set();
-  reciteManualMissed = new Set();
 }
 
 function showReciteSetup() {
@@ -7372,8 +7361,6 @@ function startRecitePage(opts) {
   reciteFinalSegments = [];
   reciteFinalWords = [];
   reciteFinalDone = 0;
-  reciteManualSaid = new Set();
-  reciteManualMissed = new Set();
 
   // Carrying on from a saved place puts the pointer there; everything before
   // it stands written, because it was recited - on an earlier evening.
@@ -7382,9 +7369,6 @@ function startRecitePage(opts) {
     const at = recitePlan.findIndex((a) => a.ayah === fromAyah);
     if (at > 0) recitePointer = reciteAyahStart[at];
   }
-  // The committed state starts where the page does - after the resume, so a
-  // page taken up again commits from the place it was left at, not from zero.
-  reciteCommitted = { pointer: recitePointer, stumbles: new Set() };
   reciteStartAyah = currentReciteAyahIndex();
 
   document.getElementById("recite-setup").classList.add("hidden");
@@ -7443,15 +7427,8 @@ function renderRecitePage() {
       // takes the mark off, and tapping again puts it back.
       slot.addEventListener("click", () => {
         if (flatIdx >= recitePointer) return;
-        if (reciteStumbles.has(flatIdx)) {
-          reciteStumbles.delete(flatIdx);
-          reciteManualMissed.delete(flatIdx);
-          reciteManualSaid.add(flatIdx);
-        } else {
-          reciteStumbles.add(flatIdx);
-          reciteManualSaid.delete(flatIdx);
-          reciteManualMissed.add(flatIdx);
-        }
+        if (reciteStumbles.has(flatIdx)) reciteStumbles.delete(flatIdx);
+        else reciteStumbles.add(flatIdx);
         slot.dataset.state = "";
         paintSlot(flatIdx);
       });
@@ -7591,28 +7568,36 @@ function reciteRunLength(words, i, idx) {
   return n;
 }
 
-// What was said a moment ago, said again. The engine goes back over the tail
-// of a breath and re-emits it, so words already placed arrive a second time -
-// and in ٱلْفَاتِحَة «ٱلرَّحْمَٰنِ ٱلرَّحِيمِ» closes the basmala and is also the
-// whole of the third ayah, so the repeat was being read as a jump forward,
-// writing the third ayah and marking «ٱلْحَمْدُ لِلَّهِ رَبِّ ٱلْعَٰلَمِينَ» as passed
-// over an ayah the reciter had not reached.
+// What was said a moment ago, said again.
 //
-// Returns how long the repeat runs, counted from the closest place behind the
-// pointer that it fits.
+// The engine re-sends: an interim guess arrives whole on every result, the
+// same words arrive once more renumbered when the guess is finalized, and the
+// tail of a breath is re-emitted as a segment of its own. All of it is words
+// already placed, arriving a second time - and in ٱلْفَاتِحَة «ٱلرَّحْمَٰنِ ٱلرَّحِيمِ»
+// closes the basmala and is also the whole of the third ayah, so a repeat was
+// being read as a jump forward: the third ayah written and «ٱلْحَمْدُ لِلَّهِ رَبِّ
+// ٱلْعَٰلَمِينَ» marked as passed over, an ayah the reciter had not reached.
+//
+// A repeat is recognized by where it ENDS: it re-says the words that lead up
+// to where the reciter now stands, and stops there. That is what tells it
+// from a leap forward, and from an earlier place the same words happen to
+// sit - «فَبِأَىِّ ءَالَآءِ رَبِّكُمَا تُكَذِّبَانِ» comes round every few ayahs in
+// ٱلرَّحْمَٰن, and the one before this ayah is a place the reciter has left, not
+// an echo of the breath he is in.
+//
+// Returns how many spoken words the repeat covers, or 0.
 function reciteEchoRun(st, words, i) {
-  let best = 0;
+  const left = words.length - i;
   const floor = Math.max(0, st.pointer - RECITE_LOOKBEHIND);
   for (let idx = st.pointer - 1; idx >= floor; idx--) {
-    const n = reciteRunLength(words, i, idx);
-    // It must run up to where the reciter stands. A repeat is the tail of
-    // what was just said, not any earlier place the same words happen to sit:
-    // «فَبِأَىِّ ءَالَآءِ رَبِّكُمَا تُكَذِّبَانِ» comes round every few ayahs in ٱلرَّحْمَٰن,
-    // and the one before this ayah is a place the reciter has left, not an
-    // echo of the breath he is in.
-    if (n && idx + n >= st.pointer && n > best) best = n;
+    const need = st.pointer - idx;   // it has to run all the way to the pointer
+    if (need > left) break;          // and there is no longer enough of it left
+    let n = 0;
+    while (n < need && reciteFlat[idx + n] &&
+           answerMatchesQuranWord(words[i + n], reciteFlat[idx + n].w)) n++;
+    if (n === need) return need;
   }
-  return best;
+  return 0;
 }
 
 function placeRecitedWords(st, words, i) {
@@ -7656,13 +7641,6 @@ function advanceRecitePointer(st, idx, span) {
   st.pointer = idx + span;
 }
 
-// The reciter's own judgement, laid over whatever the engine decided.
-function applyReciteManual(st) {
-  reciteManualSaid.forEach((idx) => st.stumbles.delete(idx));
-  reciteManualMissed.forEach((idx) => { if (idx < st.pointer) st.stumbles.add(idx); });
-  return st;
-}
-
 function placeReciteRun(st, words) {
   for (let i = 0; i < words.length; ) i += Math.max(1, placeRecitedWords(st, words, i));
   return st;
@@ -7686,22 +7664,11 @@ function cleanReciteWords(text) {
 }
 
 // A segment the engine has marked final will not change again, so it is
-// cleaned once and kept as words. Only the interim tail - the part still
-// being revised, a few words at most - is re-cleaned on every result. This
-// is what stops a long recitation from paying for its own length: the
-// regexes no longer run over the whole of it several times a second.
-// What the engine has committed to is placed once and for all; what it is
-// still revising is replayed from that committed point on every result and
-// thrown away when the commitment comes.
-//
-// The old way fed one growing word list through a common-prefix diff, which
-// held only as long as the engine never went back and changed a word it had
-// already said. It does: it revises its tail, and it renumbers words when an
-// interim guess becomes a final segment. Either of those made already-placed
-// words arrive a second time - and a second «ٱلرَّحْمَٰنِ ٱلرَّحِيمِ» four words
-// from the first one does not look like a repeat to the matcher, it looks
-// like the third ayah.
-function foldFinishedReciteSegments() {
+// cleaned once and kept as words, and placed once. Only the interim tail is
+// re-cleaned on every result. This is what stops a long recitation from
+// paying for its own length: the regexes no longer run over the whole of it
+// several times a second.
+function foldFinishedReciteSegments(st) {
   for (let i = reciteFinalDone; i < reciteFinalSegments.length; i++) {
     const seg = reciteFinalSegments[i];
     if (!seg) continue;
@@ -7714,22 +7681,32 @@ function foldFinishedReciteSegments() {
       if (joined.length === 1) { reciteFinalWords[reciteFinalWords.length - 1] = joined[0]; add.shift(); }
     }
     if (add.length) {
-      // Placed straight onto the committed state, once.
-      placeReciteRun(reciteCommitted, add);
+      placeReciteRun(st, add);
       for (const w of add) reciteFinalWords.push(w);
     }
   }
   reciteFinalDone = reciteFinalSegments.length;
 }
 
+// One place, and it only ever goes forward.
+//
+// It was briefly kept two ways - what the engine had committed to, and the
+// interim replayed on a copy of it - so that a revised guess could not leave
+// a wrong mark behind. But the engine's final word on a breath is often
+// NARROWER than the interim it had been showing, and rebuilding from it threw
+// away ground the reciter had actually covered: «بسم الله الرحمن الرحيم» read
+// aloud settled back to «بسم الله» and stood there, waiting for words that
+// had already been said.
+//
+// A reciter does not un-recite. So the page keeps one state, every word that
+// arrives is placed on it, and the re-sending the engine does - which is what
+// the two-state arrangement existed to absorb - is handled where it belongs,
+// by recognizing a repeat as a repeat.
 function feedReciteSession(interimText) {
-  foldFinishedReciteSegments();
-  // The interim runs on top of a copy, so nothing it guesses is ever kept.
-  const live = { pointer: reciteCommitted.pointer, stumbles: new Set(reciteCommitted.stumbles) };
-  placeReciteRun(live, cleanReciteWords(interimText));
-  applyReciteManual(live);
-  recitePointer = live.pointer;
-  reciteStumbles = live.stumbles;
+  const st = { pointer: recitePointer, stumbles: reciteStumbles };
+  foldFinishedReciteSegments(st);
+  placeReciteRun(st, cleanReciteWords(interimText));
+  recitePointer = st.pointer;
   paintRecitePage();
   if (recitePointer >= reciteFlat.length) finishRecitePage();
 }
