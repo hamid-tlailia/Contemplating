@@ -1155,7 +1155,7 @@ function spelledLettersMatch(words, i, expected) {
   const maxRun = Math.min(10, words.length - i);
   for (let n = maxRun; n >= 1; n--) {
     const joined = joinLetterNames(words.slice(i, i + n));
-    if (joined && answerMatchesQuranWord(joined, expected)) return n;
+    if (joined && answerMatchesQuranWord(expected, joined, HEARD)) return n;
   }
   return 0;
 }
@@ -1411,12 +1411,19 @@ function arabicWordsMatch(a, b, { spokenElision = false } = {}) {
 }
 
 // The rasm drops the yeh of a منقوص word and of the speaker's own ياء -
-// أَطِيعُونِ is read أطيعوني, وَعِيدِ is وعيدي, يَٰعِبَادِ is يا عبادي - and it is
-// pronounced, so an answer that writes it is not a mistake. One direction
-// only: the answer may carry a yeh the ayah's word ends a kasra without, and
-// never the reverse, which would let عبادي pass for عِبَادَ.
+// ٱلدَّاعِ is read الداعي, أَطِيعُونِ is أطيعوني, يَٰعِبَادِ is يا عبادي - and it is
+// pronounced, so a RECITER who says it has said the word right and a speech
+// engine will write the yeh whether he asked it to or not.
+//
+// Heard, not written. Typing it is another matter: the letter is not in the
+// mushaf, and the whole of the writing exercise is writing what is there.
+// «الداعي» typed for ٱلدَّاعِ was being called correct - a letter added to the
+// text and passed. One direction only even when listening: the answer may
+// carry a yeh the ayah's word ends a kasra without, and never the reverse,
+// which would let عبادي pass for عِبَادَ.
 function answerMatchesQuranWord(quranWord, answer, opts) {
   if (arabicWordsMatch(quranWord, answer, opts)) return true;
+  if (!opts || !opts.spokenElision) return false;
   if (!/\u064A\s*$/.test(answer || "") || !/\u0650[\u06D6-\u06ED]*$/.test(quranWord || "")) return false;
   return arabicWordsMatch(quranWord, answer.replace(/\u064A(?=\s*$)/, ""), opts);
 }
@@ -7744,7 +7751,7 @@ function paintReciteNow() {
 function reciteRunLength(words, i, idx) {
   let n = 0;
   while (n < RECITE_RUN_CAP && i + n < words.length && reciteFlat[idx + n] &&
-         answerMatchesQuranWord(words[i + n], reciteFlat[idx + n].w)) n++;
+         answerMatchesQuranWord(reciteFlat[idx + n].w, words[i + n], HEARD)) n++;
   return n;
 }
 
@@ -7774,7 +7781,7 @@ function reciteEchoRun(st, words, i) {
     if (need > left) break;          // and there is no longer enough of it left
     let n = 0;
     while (n < need && reciteFlat[idx + n] &&
-           answerMatchesQuranWord(words[i + n], reciteFlat[idx + n].w)) n++;
+           answerMatchesQuranWord(reciteFlat[idx + n].w, words[i + n], HEARD)) n++;
     if (n === need) return need;
   }
   return 0;
@@ -7789,10 +7796,10 @@ function placeRecitedWords(st, words, i) {
     if (!slot) break;
     let span = 0;    // words of the page this takes
     let used = 0;    // tokens of the speech it took
-    if (answerMatchesQuranWord(said, slot.w)) { span = 1; used = 1; }
+    if (answerMatchesQuranWord(slot.w, said, HEARD)) { span = 1; used = 1; }
     else {
       const next = reciteFlat[idx + 1];
-      if (next && answerMatchesQuranWord(said, `${slot.w} ${next.w}`.replace(/\s+/g, ""))) { span = 2; used = 1; }
+      if (next && answerMatchesQuranWord(`${slot.w} ${next.w}`.replace(/\s+/g, ""), said, HEARD)) { span = 2; used = 1; }
       else {
         const spelled = spelledLettersMatch(words, i, slot.w);
         if (spelled) { span = 1; used = spelled; }
@@ -7988,7 +7995,7 @@ function findReciteElsewhere(words, from) {
     if (idx >= recitePointer - 1 && idx <= recitePointer + RECITE_LOOKAHEAD) continue;
     let n = 0;
     while (n < run && reciteFlat[idx + n] &&
-           answerMatchesQuranWord(words[from + n], reciteFlat[idx + n].w)) n++;
+           answerMatchesQuranWord(reciteFlat[idx + n].w, words[from + n], HEARD)) n++;
     if (n === run) return idx;
   }
   return -1;
