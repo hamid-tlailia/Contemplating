@@ -1043,29 +1043,116 @@ const ARABIC_LETTER_NAMES = {
 };
 const MUQATTAAT_LETTERS = new Set("\u0627\u0644\u0645\u0635\u0631\u0643\u0647\u064A\u0639\u0637\u0633\u062D\u0642\u0646".split(""));
 
-// A word made only of the letters the fawatih are drawn from, and short -
-// الٓمٓ, كٓهيعٓصٓ, حمٓ, طسٓمٓ. Ordinary words of those letters (مَال, سَمِيع)
-// are far longer than the longest group, which is five.
+// The fawatih are not a pattern, they are a list - fourteen groups, and the
+// Quran has no fifteenth. Reading them as "short, and made of those letters"
+// swept in ordinary words: ٱلْحَقَّ is four letters and every one of them is in
+// the set, so every word of ٱلْبَقَرَة 42 was being taken apart letter by letter
+// looking for a group that was never there. Naming them costs nothing and is
+// exact.
+const MUQATTAAT_WORDS = new Set([
+  "\u0627\u0644\u0645", "\u0627\u0644\u0631", "\u0627\u0644\u0645\u0635", "\u0627\u0644\u0645\u0631",
+  "\u0643\u0647\u064A\u0639\u0635", "\u0637\u0647", "\u0637\u0633\u0645", "\u0637\u0633",
+  "\u064A\u0633", "\u0635", "\u062D\u0645", "\u0639\u0633\u0642", "\u0642", "\u0646",
+]);
 function isMuqattaatWord(word) {
-  const w = normalizeArabic(word || "");
-  return w.length >= 1 && w.length <= 5 && [...w].every((c) => MUQATTAAT_LETTERS.has(c));
+  return MUQATTAAT_WORDS.has(normalizeArabic(word || ""));
 }
 
-// "الف لام ميم" -> "الم". Null unless every token is a letter's name.
+// ── الفواتح والمدّ ────────────────────────────────────────────────────────
+//
+// The fawatih are not read as words, they are spelled out - and spelled out
+// with the longest مدّ in the Quran, six harakat on لآاااام and مييييم. The
+// engine writes what it hears, so the name of one letter comes back stretched
+// («لاااام»), or torn in two («لا ام»), or run into the next one («حاميم»),
+// or with the stretch written inside the group itself («الاااام» for الٓمٓ).
+// None of that was being recognized, and a reciter had to say الٓمٓ flat and
+// wrong to be let past.
+//
+// A مدّ is a letter held, so the same letter written many times over is that
+// letter once. None of the letters' names has a doubled letter in it, so the
+// folding can only help here.
+function collapseLetterRuns(s) {
+  return String(s || "").replace(/(.)\1+/gu, "$1");
+}
+
+// The one letter a spoken token names, however it came out.
+function letterNameLetter(token) {
+  const w = normalizeArabic(token || "");
+  if (!w) return "";
+  return ARABIC_LETTER_NAMES[w]
+    || ARABIC_LETTER_NAMES[collapseLetterRuns(w)]
+    // Some engines give the letter itself rather than its name.
+    || (w.length === 1 && MUQATTAAT_LETTERS.has(w) ? w : "");
+}
+
+// One token that is several names run together: «حاميم» is حا + ميم, «ياسين»
+// is يا + سين, «طاها» is طا + ها. Read greedily, longest name first, and only
+// accepted if the whole token is consumed by names.
+function spellOutToken(token) {
+  const w = collapseLetterRuns(normalizeArabic(token || ""));
+  if (w.length < 3) return "";
+  const names = spellOutToken.names || (spellOutToken.names =
+    Object.keys(ARABIC_LETTER_NAMES).map(normalizeArabic).sort((a, b) => b.length - a.length));
+  const walk = (at) => {
+    if (at === w.length) return "";
+    for (const name of names) {
+      if (!name || !w.startsWith(name, at)) continue;
+      const rest = walk(at + name.length);
+      if (rest != null) return ARABIC_LETTER_NAMES[name] + rest;
+    }
+    return null;
+  };
+  const out = walk(0);
+  // One name alone is not "run together" - that is the ordinary lookup, and
+  // letting it through here would make «لام» spell itself.
+  return out && out.length > 1 ? out : "";
+}
+
+// "الف لام ميم" -> "الم". Null unless every token is accounted for.
 function joinLetterNames(tokens) {
   let out = "";
-  for (const t of tokens) {
-    const letter = ARABIC_LETTER_NAMES[normalizeArabic(t)];
-    if (!letter) return null;
-    out += letter;
+  for (let i = 0; i < tokens.length; ) {
+    const one = letterNameLetter(tokens[i]);
+    if (one) { out += one; i += 1; continue; }
+    const many = spellOutToken(tokens[i]);
+    if (many) { out += many; i += 1; continue; }
+    // A مدّ long enough can put a break in the middle of one letter's name -
+    // «لاااام» comes back as «لا ام», «مييييم» as «مي يم» - so the two are
+    // tried as the one name they were.
+    if (i + 1 < tokens.length) {
+      const pair = letterNameLetter(tokens[i] + tokens[i + 1])
+        || spellOutToken(tokens[i] + tokens[i + 1]);
+      if (pair) { out += pair; i += 2; continue; }
+    }
+    return null;
   }
   return out;
+}
+
+// The group said as one word with the مدّ written into it: «الاااام» for الٓمٓ,
+// «حام» for حمٓ. Every letter of the group must be there and in its order, and
+// nothing may be between them but the letters a مدّ is written with.
+const MADD_LETTERS = new Set(["\u0627", "\u0648", "\u064A"]);
+function muqattaatSpokenMatch(said, expected) {
+  const a = collapseLetterRuns(normalizeArabic(said || ""));
+  const b = normalizeArabic(expected || "");
+  if (!a || !b || a.length < b.length || a[0] !== b[0]) return false;
+  let j = 0;
+  for (const ch of a) {
+    if (j < b.length && ch === b[j]) { j++; continue; }
+    if (MADD_LETTERS.has(ch)) continue;   // the holding of the letter, not a letter
+    return false;
+  }
+  return j === b.length;
 }
 
 // How many spoken tokens starting at i spell the expected word, or 0.
 function spelledLettersMatch(words, i, expected) {
   if (!isMuqattaatWord(expected)) return 0;
-  const maxRun = Math.min(5, words.length - i);
+  if (muqattaatSpokenMatch(words[i], expected)) return 1;
+  // Five letters is the longest group, and a مدّ can break each of them in
+  // two - so twice five is as far as a group can be spread.
+  const maxRun = Math.min(10, words.length - i);
   for (let n = maxRun; n >= 1; n--) {
     const joined = joinLetterNames(words.slice(i, i + n));
     if (joined && answerMatchesQuranWord(joined, expected)) return n;
@@ -1084,9 +1171,10 @@ function collapseSpelledLetters(text, correctWords) {
   for (let i = 0; i < words.length; ) {
     let used = 0;
     for (const target of targets) {
+      // One token is enough now: a group said as one word with the مدّ inside
+      // it («الاااام») is a spelling of it just as «الف لام ميم» is.
       used = spelledLettersMatch(words, i, target);
-      if (used > 1) { out.push(target); break; }
-      used = 0;
+      if (used) { out.push(target); break; }
     }
     if (!used) { out.push(words[i]); used = 1; }
     i += used;
