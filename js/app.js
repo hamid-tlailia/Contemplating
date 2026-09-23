@@ -7094,6 +7094,10 @@ let reciteManualMissed = new Set();
 // somewhere else entirely. Three covers a dropped word or two - which the
 // engine does constantly - without letting a wrong ayah quietly match.
 const RECITE_LOOKAHEAD = 4;
+// How far back a repeat may be recognized as a repeat, and how long a run is
+// followed before it has settled the question. A re-emitted breath is short.
+const RECITE_LOOKBEHIND = 8;
+const RECITE_RUN_CAP = 8;
 
 function memorizedAyahsInOrder(filter) {
   return Object.values(state.ayahs)
@@ -7576,38 +7580,74 @@ function paintReciteNow() {
 // words while it hears three must not be stopped by it. Anything that cannot
 // be placed at all is ignored rather than counted against him - it is far
 // more often the engine mishearing than the reciter inventing.
+// How many words, said one after another from words[i], match the page one
+// after another from idx. This is what tells a repetition from a jump: the
+// same words in two places are told apart by how much of what follows agrees
+// with each of them.
+function reciteRunLength(words, i, idx) {
+  let n = 0;
+  while (n < RECITE_RUN_CAP && i + n < words.length && reciteFlat[idx + n] &&
+         answerMatchesQuranWord(words[i + n], reciteFlat[idx + n].w)) n++;
+  return n;
+}
+
+// What was said a moment ago, said again. The engine goes back over the tail
+// of a breath and re-emits it, so words already placed arrive a second time -
+// and in ٱلْفَاتِحَة «ٱلرَّحْمَٰنِ ٱلرَّحِيمِ» closes the basmala and is also the
+// whole of the third ayah, so the repeat was being read as a jump forward,
+// writing the third ayah and marking «ٱلْحَمْدُ لِلَّهِ رَبِّ ٱلْعَٰلَمِينَ» as passed
+// over an ayah the reciter had not reached.
+//
+// Returns how long the repeat runs, counted from the closest place behind the
+// pointer that it fits.
+function reciteEchoRun(st, words, i) {
+  let best = 0;
+  const floor = Math.max(0, st.pointer - RECITE_LOOKBEHIND);
+  for (let idx = st.pointer - 1; idx >= floor; idx--) {
+    const n = reciteRunLength(words, i, idx);
+    // It must run up to where the reciter stands. A repeat is the tail of
+    // what was just said, not any earlier place the same words happen to sit:
+    // «فَبِأَىِّ ءَالَآءِ رَبِّكُمَا تُكَذِّبَانِ» comes round every few ayahs in ٱلرَّحْمَٰن,
+    // and the one before this ayah is a place the reciter has left, not an
+    // echo of the breath he is in.
+    if (n && idx + n >= st.pointer && n > best) best = n;
+  }
+  return best;
+}
+
 function placeRecitedWords(st, words, i) {
   const said = words[i];
-  // An echo of the word just placed. The engine repeats itself at the seam
-  // between a guess and its correction, and a repeat is harmless right up
-  // until the ayah ahead happens to contain the same words - which in
-  // ٱلْفَاتِحَة it does: «ٱلرَّحْمَٰنِ ٱلرَّحِيمِ» closes the basmala and is then
-  // the whole of the third ayah. The second «الرحمن الرحيم» was matching
-  // four words ahead and marking «ٱلْحَمْدُ لِلَّهِ رَبِّ ٱلْعَٰلَمِينَ» as skipped
-  // over an ayah the reciter had not reached yet.
-  const justSaid = reciteFlat[st.pointer - 1];
-  if (justSaid && answerMatchesQuranWord(said, justSaid.w)) return 1;
 
   for (let ahead = 0; ahead <= RECITE_LOOKAHEAD; ahead++) {
     const idx = st.pointer + ahead;
     const slot = reciteFlat[idx];
     if (!slot) break;
-    if (answerMatchesQuranWord(said, slot.w)) {
-      advanceRecitePointer(st, idx, 1);
-      return 1;
+    let span = 0;    // words of the page this takes
+    let used = 0;    // tokens of the speech it took
+    if (answerMatchesQuranWord(said, slot.w)) { span = 1; used = 1; }
+    else {
+      const next = reciteFlat[idx + 1];
+      if (next && answerMatchesQuranWord(said, `${slot.w} ${next.w}`.replace(/\s+/g, ""))) { span = 2; used = 1; }
+      else {
+        const spelled = spelledLettersMatch(words, i, slot.w);
+        if (spelled) { span = 1; used = spelled; }
+      }
     }
-    const next = reciteFlat[idx + 1];
-    if (next && answerMatchesQuranWord(said, `${slot.w} ${next.w}`.replace(/\s+/g, ""))) {
-      advanceRecitePointer(st, idx, 2);
-      return 1;
+    if (!span) continue;
+    // Found ahead of the pointer - which means the words in between would be
+    // written off as skipped. Before doing that, look behind: if as much of
+    // what was said fits where the reciter already is, he is repeating
+    // himself rather than leaping ahead, and nothing should be marked.
+    if (ahead > 0) {
+      const echo = reciteEchoRun(st, words, i);
+      if (echo && echo >= reciteRunLength(words, i, idx)) return echo;
     }
-    const spelled = spelledLettersMatch(words, i, slot.w);
-    if (spelled) {
-      advanceRecitePointer(st, idx, 1);
-      return spelled;
-    }
+    advanceRecitePointer(st, idx, span);
+    return used;
   }
-  return 0;
+  // Nothing ahead. A repeat of what is behind is swallowed whole rather than
+  // dropped a word at a time.
+  return reciteEchoRun(st, words, i);
 }
 
 // Everything stepped over on the way was not said - that is the stumble.
