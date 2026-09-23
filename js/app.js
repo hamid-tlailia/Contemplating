@@ -7120,12 +7120,31 @@ function recitableSurahs() {
 // way, which is the whole nature of this mode.
 let reciteSurahTextCache = {};
 
+// What may be recited of a surah: from the first ayah of it that is in the
+// plan to the last. The whole surah is drawn inside that span - the ayahs
+// between that have not been reached yet are kept, so the page reads as a
+// page and not as a list with holes in it - but the span itself ends where
+// the reciter has got to. Beyond it there is nothing to recite from: the page
+// would be blanks he has never learned, and every one of them would be marked
+// against him.
+function clampNum(v, lo, hi) { return Math.min(Math.max(v, lo), hi); }
+
+function reciteMemorizedSpan(surah) {
+  const mine = memorizedAyahsInOrder((i) => i.surah === surah);
+  if (!mine.length) return null;
+  return { first: mine[0].ayah, last: mine[mine.length - 1].ayah };
+}
+
 function reciteItemsForScope(scope) {
   if (scope.kind === "all") return memorizedAyahsInOrder();
   const whole = reciteSurahTextCache[scope.surah];
   const memorized = memorizedAyahsInOrder((i) => i.surah === scope.surah);
   const name = (memorized[0] && memorized[0].surahName) || surahDisplayName(scope.surah);
-  const inRange = (n) => (scope.from == null || n >= scope.from) && (scope.to == null || n <= scope.to);
+  // The span is the ceiling and the floor, whatever the range asks for.
+  const span = reciteMemorizedSpan(scope.surah);
+  const lo = Math.max(scope.from == null ? -Infinity : scope.from, span ? span.first : -Infinity);
+  const hi = Math.min(scope.to == null ? Infinity : scope.to, span ? span.last : Infinity);
+  const inRange = (n) => n >= lo && n <= hi;
   if (whole) {
     return whole
       .filter((a) => inRange(a.numberInSurah))
@@ -7283,7 +7302,8 @@ function renderReciteScope() {
   });
   surahs.forEach((s) => {
     addBtn(s.name, ayahCountLabel(s.count), reciteScope.kind === "surah" && reciteScope.surah === s.surah, () => {
-      reciteScope = { kind: "surah", surah: s.surah, from: 1, to: surahAyahCount(s.surah) || null };
+      const span = reciteMemorizedSpan(s.surah);
+      reciteScope = { kind: "surah", surah: s.surah, from: span ? span.first : 1, to: span ? span.last : null };
       renderReciteScope();
       loadReciteSurahText(s.surah).then(renderReciteScope);
     });
@@ -7293,14 +7313,24 @@ function renderReciteScope() {
   const range = document.getElementById("recite-range");
   range.classList.toggle("hidden", reciteScope.kind !== "surah");
   if (reciteScope.kind === "surah") {
-    const last = surahAyahCount(reciteScope.surah)
-      || memorizedAyahsInOrder((i) => i.surah === reciteScope.surah).slice(-1)[0].ayah;
+    const span = reciteMemorizedSpan(reciteScope.surah) || { first: 1, last: surahAyahCount(reciteScope.surah) || 1 };
     const from = document.getElementById("recite-from");
     const to = document.getElementById("recite-to");
-    from.min = to.min = 1;
-    from.max = to.max = last;
-    from.value = reciteScope.from || 1;
-    to.value = reciteScope.to || last;
+    from.min = to.min = span.first;
+    from.max = to.max = span.last;
+    reciteScope.from = clampNum(reciteScope.from || span.first, span.first, span.last);
+    reciteScope.to = clampNum(reciteScope.to || span.last, reciteScope.from, span.last);
+    from.value = reciteScope.from;
+    to.value = reciteScope.to;
+    // Said plainly rather than left to be discovered by a number that refuses
+    // to go higher.
+    const note = document.getElementById("recite-range-note");
+    if (note) {
+      const total = surahAyahCount(reciteScope.surah);
+      const partial = total && span.last < total;
+      note.textContent = partial ? `تنتهي السورة عندك عند الآية ${span.last} من ${total}.` : "";
+      note.classList.toggle("hidden", !partial);
+    }
   }
   updateReciteCount();
 }
@@ -8068,14 +8098,30 @@ on("btn-recite-start", "click", () => startRecitePage());
 on("btn-recite-save", "click", saveRecitePlace);
 on("btn-recite-mic", "click", toggleReciteListening);
 on("btn-recite-finish", "click", finishRecitePage);
-on("recite-from", "input", () => {
-  reciteScope.from = Number(document.getElementById("recite-from").value) || reciteScope.from;
-  updateReciteCount();
-});
-on("recite-to", "input", () => {
-  reciteScope.to = Number(document.getElementById("recite-to").value) || reciteScope.to;
-  updateReciteCount();
-});
+// Typed in rather than nudged, a number can be anything; the span is what
+// decides, both here and again where the ayahs themselves are gathered.
+function reciteRangeInput(id, key) {
+  on(id, "input", () => {
+    const span = reciteMemorizedSpan(reciteScope.surah);
+    const raw = Number(document.getElementById(id).value);
+    if (!raw) return;                       // mid-typing, an empty box
+    reciteScope[key] = span ? clampNum(raw, span.first, span.last) : raw;
+    updateReciteCount();
+  });
+  on(id, "change", () => {
+    const el = document.getElementById(id);
+    const span = reciteMemorizedSpan(reciteScope.surah);
+    const raw = Number(el.value) || (span ? span.first : 1);
+    reciteScope[key] = span ? clampNum(raw, span.first, span.last) : raw;
+    if (reciteScope.to != null && reciteScope.from != null && reciteScope.to < reciteScope.from) {
+      if (key === "from") reciteScope.to = reciteScope.from;
+      else reciteScope.from = reciteScope.to;
+    }
+    renderReciteScope();
+  });
+}
+reciteRangeInput("recite-from", "from");
+reciteRangeInput("recite-to", "to");
 
 function openSeamSession() {
   const seams = memorizedSeams();

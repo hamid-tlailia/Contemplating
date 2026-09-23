@@ -3314,6 +3314,12 @@ main#app {
 .recite-status { text-align: center; margin: 0 0 8px; }
 /* What was heard does not belong here. It sits above the mic's own state -
    the mic says whether it is listening, this says whether it is following. */
+.recite-range-note {
+  margin: 6px 0 0;
+  text-align: center;
+  font-size: 0.76rem;
+  color: var(--accent);
+}
 .recite-alert {
   margin: 0 0 6px;
   padding: 7px 12px;
