@@ -3261,6 +3261,8 @@ main#app {
   cursor: pointer;
 }
 .recite-said { cursor: pointer; }
+/* Every blank is tappable too - that is how a forgotten word is uncovered. */
+.recite-waiting, .recite-next { cursor: pointer; }
 /* The number goes inside its ring and is meant to be read. Sized from the
    page's own ayah font rather than a fixed 0.7rem - which on a phone came
    out a few pixels tall - and given a round box with the digits centred in
@@ -3310,6 +3312,27 @@ main#app {
 #btn-recite-save { justify-self: start; }
 #btn-recite-finish { justify-self: end; }
 .recite-status { text-align: center; margin: 0 0 8px; }
+/* What was heard does not belong here. It sits above the mic's own state -
+   the mic says whether it is listening, this says whether it is following. */
+.recite-alert {
+  margin: 0 0 6px;
+  padding: 7px 12px;
+  border-radius: 10px;
+  text-align: center;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  color: color-mix(in srgb, var(--danger) 78%, var(--text));
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 28%, transparent);
+}
+/* A word uncovered on request: shown, but never mistaken for one recited -
+   it keeps the blank's rule under it and is written in the page's gold. */
+.recite-peek .recite-word { visibility: visible; }
+.recite-peek {
+  color: color-mix(in srgb, var(--accent) 75%, var(--text));
+  opacity: .85;
+}
+.recite-peeked-row .recite-missed-words { color: var(--accent); }
 .recite-status {
   flex: 1;
   margin: 0;

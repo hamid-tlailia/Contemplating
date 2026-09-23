@@ -7080,6 +7080,12 @@ let reciteScope = { kind: "all", surah: null, from: null, to: null };
 let reciteWaking = false;
 let reciteStartAyah = 0;   // the ayah the page was opened at, to count from
 let reciteStumbles = new Set();
+// Words the reciter asked to see. Kept apart from the stumbles: a word he was
+// shown and then said is not a word he passed over.
+let recitePeeked = new Set();
+// What the last alert said, so the same thing is not re-announced on every
+// result while someone is still off the page.
+let reciteAlertKey = "";
 
 // How far ahead a missed word may be found before the reciter is taken to be
 // somewhere else entirely. Three covers a dropped word or two - which the
@@ -7242,6 +7248,8 @@ function closeReciteSession() {
   reciteFlat = [];
   recitePointer = 0;
   reciteStumbles = new Set();
+  recitePeeked = new Set();
+  clearReciteAlert();
 }
 
 function showReciteSetup() {
@@ -7357,6 +7365,8 @@ function startRecitePage(opts) {
   });
   recitePointer = 0;
   reciteStumbles = new Set();
+  recitePeeked = new Set();
+  clearReciteAlert();
   reciteSeenWords = [];
   reciteFinalSegments = [];
   reciteFinalWords = [];
@@ -7422,15 +7432,24 @@ function renderRecitePage() {
       slot.innerHTML = `<span class="recite-word">${w}</span>`;
       const flatIdx = reciteIndexOfFlat(ai, wi);
       reciteSlotEls[flatIdx] = slot;
-      // The engine is not the judge. A word it failed to hear can be put
-      // right by the one person who knows whether it was said - tapping it
-      // takes the mark off, and tapping again puts it back.
+      // Behind the pointer, the engine is not the judge: a word it failed to
+      // hear can be put right by the one person who knows whether it was
+      // said - tapping takes the mark off, and tapping again puts it back.
+      //
+      // Ahead of it, the same tap uncovers. Forgetting where an ayah starts
+      // is the ordinary way a recitation stops, and the cure is one word, not
+      // the page: tapping the blank shows the word that belongs in it.
       slot.addEventListener("click", () => {
-        if (flatIdx >= recitePointer) return;
-        if (reciteStumbles.has(flatIdx)) reciteStumbles.delete(flatIdx);
-        else reciteStumbles.add(flatIdx);
-        slot.dataset.state = "";
-        paintSlot(flatIdx);
+        if (flatIdx < recitePointer) {
+          if (reciteStumbles.has(flatIdx)) reciteStumbles.delete(flatIdx);
+          else reciteStumbles.add(flatIdx);
+          slot.dataset.state = "";
+          paintSlot(flatIdx);
+          return;
+        }
+        const refused = peekReciteWord(flatIdx);
+        if (refused) setReciteAlert(`peek-refused:${flatIdx}`, refused);
+        else clearReciteAlert();
       });
       run.appendChild(slot);
       // A real space, not a margin: it is what the line breaks at and what
@@ -7484,9 +7503,26 @@ function paintSlot(idx) {
   const el = reciteSlotEls[idx];
   if (!el) return;
   const st = slotState(idx);
-  if (el.dataset.state === st) return;
-  el.dataset.state = st;
-  el.className = `recite-slot recite-${st}`;
+  // A word shown on request keeps the marker it had - it is still the place
+  // the reciter is at - and only stops being blank.
+  const peek = idx >= recitePointer && recitePeeked.has(idx);
+  const key = peek ? `${st}~peek` : st;
+  if (el.dataset.state === key) return;
+  el.dataset.state = key;
+  el.className = `recite-slot recite-${st}${peek ? " recite-peek" : ""}`;
+}
+
+// Uncovers one word. What may be uncovered is bounded by the ayah the reciter
+// is inside: a word he cannot call to mind is one word away from him, and
+// uncovering the page beyond that is not remembering, it is reading.
+// Returns why not, when it will not.
+function peekReciteWord(flatIdx) {
+  const slot = reciteFlat[flatIdx];
+  if (!slot) return "";
+  if (slot.ai !== currentReciteAyahIndex()) return "لا تُكشف إلّا كلمات الآية التي أنت فيها.";
+  recitePeeked.add(flatIdx);
+  paintSlot(flatIdx);
+  return "";
 }
 
 // Several results can land inside one frame; the page only needs drawing
@@ -7619,6 +7655,7 @@ function placeRecitedWords(st, words, i) {
       }
     }
     if (!span) continue;
+    st.placed = (st.placed || 0) + 1;
     // Found ahead of the pointer - which means the words in between would be
     // written off as skipped. Before doing that, look behind: if as much of
     // what was said fits where the reciter already is, he is repeating
@@ -7637,12 +7674,40 @@ function placeRecitedWords(st, words, i) {
 
 // Everything stepped over on the way was not said - that is the stumble.
 function advanceRecitePointer(st, idx, span) {
-  for (let k = st.pointer; k < idx; k++) st.stumbles.add(k);
+  for (let k = st.pointer; k < idx; k++) {
+    st.stumbles.add(k);
+    if (st.skippedFrom == null) st.skippedFrom = k;
+    st.skipped = (st.skipped || 0) + 1;
+  }
   st.pointer = idx + span;
 }
 
+// The run also reports on itself: how much of it went nowhere, and the longest
+// stretch of it in a row - which is what tells a word the engine mangled from
+// speech that is not on this page at all.
+//
+// It adds to what is already on the state rather than starting the tally
+// over: one result can carry a finished segment AND the interim after it, and
+// both are the same breath as far as judging it goes.
 function placeReciteRun(st, words) {
-  for (let i = 0; i < words.length; ) i += Math.max(1, placeRecitedWords(st, words, i));
+  let stray = 0;
+  let strayFrom = 0;
+  for (let i = 0; i < words.length; ) {
+    const used = placeRecitedWords(st, words, i);
+    if (used) {
+      stray = 0;
+      i += used;
+    } else {
+      if (!stray) strayFrom = i;
+      stray++;
+      if (stray > (st.strayRun || 0)) {
+        st.strayRun = stray;
+        st.strayAt = strayFrom;
+        st.strayWords = words;
+      }
+      i += 1;
+    }
+  }
   return st;
 }
 
@@ -7703,12 +7768,98 @@ function foldFinishedReciteSegments(st) {
 // the two-state arrangement existed to absorb - is handled where it belongs,
 // by recognizing a repeat as a repeat.
 function feedReciteSession(interimText) {
-  const st = { pointer: recitePointer, stumbles: reciteStumbles };
+  const st = {
+    pointer: recitePointer, stumbles: reciteStumbles, startedAt: recitePointer,
+    skipped: 0, skippedFrom: null, placed: 0,
+    strayRun: 0, strayAt: -1, strayWords: null,
+  };
   foldFinishedReciteSegments(st);
   placeReciteRun(st, cleanReciteWords(interimText));
   recitePointer = st.pointer;
+  judgeRecitation(st);
   paintRecitePage();
   if (recitePointer >= reciteFlat.length) finishRecitePage();
+}
+
+// ── تنبيه ────────────────────────────────────────────────────────────────
+//
+// The page follows what is recited; it also has to be able to say when what
+// is recited is not what is on it. Three things can go wrong, and they are
+// not the same thing:
+//
+//   جاوز        words on the page were stepped over - the reciter went from
+//               the first ayah into the second without saying the first
+//   موضع آخر    what was said IS on the page, but somewhere else: another
+//               ayah entirely, which is the one a reciter lands in when the
+//               متشابه takes him
+//   ليس من هنا  what was said is nowhere on the page - other speech, or an
+//               ayah from a surah this page does not hold
+//
+// The third cannot be told apart from the engine mishearing a word or two,
+// so it is only said when a whole stretch of speech goes nowhere.
+
+const RECITE_STRAY_ALERT = 3;   // words in a row before speech counts as off
+// The engine drops a word, sometimes two, on any long recitation - so a jump
+// is only called a jump past where its ordinary clumsiness reaches.
+const RECITE_SKIP_ALERT = 3;    // words stepped over before it counts as a jump
+
+function setReciteAlert(key, text) {
+  const el = document.getElementById("recite-alert");
+  if (!el) return;
+  if (reciteAlertKey === key) return;
+  reciteAlertKey = key;
+  el.textContent = text || "";
+  el.classList.toggle("hidden", !text);
+}
+
+function clearReciteAlert() { setReciteAlert("", ""); }
+
+// Where else on the page these words sit. A single word is worthless - half
+// the page shares its words - so it takes a run of at least two, and the
+// answer is the ayah, not the word.
+function findReciteElsewhere(words, from) {
+  const run = Math.min(3, words.length - from);
+  if (run < 2) return -1;
+  for (let idx = 0; idx < reciteFlat.length; idx++) {
+    if (idx >= recitePointer - 1 && idx <= recitePointer + RECITE_LOOKAHEAD) continue;
+    let n = 0;
+    while (n < run && reciteFlat[idx + n] &&
+           answerMatchesQuranWord(words[from + n], reciteFlat[idx + n].w)) n++;
+    if (n === run) return idx;
+  }
+  return -1;
+}
+
+function judgeRecitation(st) {
+  // Stepped over words on the way - said in full, because the reciter can see
+  // exactly which ones are marked and this only names where to go back to.
+  if (st.skipped >= RECITE_SKIP_ALERT && st.skippedFrom != null) {
+    const f = reciteFlat[st.skippedFrom];
+    const a = f && recitePlan[f.ai];
+    if (a) {
+      setReciteAlert(`skip:${st.skippedFrom}:${st.skipped}`,
+        `⚠︎ تجاوزتَ ${wordCountLabel(st.skipped)} من الآية ${a.ayah} — المُعلَّم بالأحمر.`);
+      return;
+    }
+  }
+  // Speech that goes nowhere is only called that when NOTHING in the result
+  // went anywhere. The engine garbles a word or three in the middle of a
+  // sound recitation, and as long as the rest of the breath is landing on the
+  // page the reciter is on the page - he is not to be told otherwise.
+  if (st.strayRun >= RECITE_STRAY_ALERT && st.strayWords && !st.placed) {
+    const at = findReciteElsewhere(st.strayWords, st.strayAt);
+    if (at >= 0) {
+      const there = recitePlan[reciteFlat[at].ai];
+      const here = reciteFlat[recitePointer] ? recitePlan[reciteFlat[recitePointer].ai] : null;
+      setReciteAlert(`elsewhere:${there.key}`,
+        `⚠︎ هذا من الآية ${there.ayah}${here ? `، وموضعك الآية ${here.ayah}` : ""}.`);
+    } else {
+      setReciteAlert("stray", "⚠︎ ما سمعتُه ليس من هذا الموضع.");
+    }
+    return;
+  }
+  // Back on the page - and the notice goes with the trouble that raised it.
+  if (st.pointer > st.startedAt) clearReciteAlert();
 }
 
 function toggleReciteListening() {
@@ -7839,35 +7990,52 @@ function finishRecitePage() {
     if (!missedAyahs.has(a.key)) missedAyahs.set(a.key, { ...a, words: [] });
     missedAyahs.get(a.key).words.push(a.words[f.wi]);
   });
+  // A word that had to be uncovered was not remembered, even though it was
+  // then said. It is not a stumble - nothing was passed over - but it is
+  // exactly what a next review should ask about, so it is counted, shown, and
+  // its ayah joins the ones the review button opens.
+  const peekedAyahs = new Map();
+  recitePeeked.forEach((idx) => {
+    const f = reciteFlat[idx];
+    if (!f || idx >= recitePointer) return;
+    const a = recitePlan[f.ai];
+    if (!peekedAyahs.has(a.key)) peekedAyahs.set(a.key, { ...a, words: [] });
+    peekedAyahs.get(a.key).words.push(a.words[f.wi]);
+  });
   const reached = reciteFlat[recitePointer] ? reciteFlat[recitePointer].ai : recitePlan.length;
   const box = document.getElementById("recite-summary");
   box.classList.remove("hidden");
   document.getElementById("recite-actions").classList.add("hidden");
 
   const list = [...missedAyahs.values()];
+  const peeks = [...peekedAyahs.values()];
+  const peekWords = peeks.reduce((n, a) => n + a.words.length, 0);
   box.innerHTML = `
     <p class="recite-summary-lead">${reached >= recitePlan.length ? "🌿 أتممتَ الصفحة" : "توقّفت هنا"}</p>
     <p class="muted">قرأتَ ${ayahCountLabel(Math.min(reached, recitePlan.length))} من ${ayahCountLabel(recitePlan.length)}${
       list.length ? ` · تعثّرتَ في ${ayahCountLabel(list.length)}` : " · بلا تعثّر"
-    }.</p>
+    }${peekWords ? ` · كشفتَ ${wordCountLabel(peekWords)}` : ""}.</p>
     <div class="recite-missed-list"></div>
     <div class="recite-summary-actions">
       <button class="btn" id="btn-recite-again">أعِد</button>
-      <button class="btn primary${list.length ? "" : " hidden"}" id="btn-recite-review">راجع ما تعثّرتَ فيه</button>
+      <button class="btn primary${list.length || peeks.length ? "" : " hidden"}" id="btn-recite-review">راجع ما تعثّرتَ فيه</button>
     </div>`;
   const missedBox = box.querySelector(".recite-missed-list");
-  list.forEach((a) => {
-    const row = document.createElement("div");
-    row.className = "recite-missed-row";
-    row.innerHTML = `<span class="recite-missed-ref">${a.surahName} : ${a.ayah}</span>
-      <span class="recite-missed-words">${a.words.slice(0, 4).join(" · ")}</span>`;
-    missedBox.appendChild(row);
-  });
+  const row = (a, peeked) => {
+    const el = document.createElement("div");
+    el.className = `recite-missed-row${peeked ? " recite-peeked-row" : ""}`;
+    el.innerHTML = `<span class="recite-missed-ref">${a.surahName} : ${a.ayah}</span>
+      <span class="recite-missed-words">${peeked ? "👁 " : ""}${a.words.slice(0, 4).join(" · ")}</span>`;
+    missedBox.appendChild(el);
+  };
+  list.forEach((a) => row(a, false));
+  peeks.filter((a) => !missedAyahs.has(a.key)).forEach((a) => row(a, true));
   box.querySelector("#btn-recite-again").addEventListener("click", () => startRecitePage());
   const reviewBtn = box.querySelector("#btn-recite-review");
   if (reviewBtn) {
     reviewBtn.addEventListener("click", () => {
-      const items = list.map((a) => state.ayahs[a.key]).filter(Boolean);
+      const keys = [...new Set([...list, ...peeks].map((a) => a.key))];
+      const items = keys.map((k) => state.ayahs[k]).filter(Boolean);
       if (!items.length) return;
       closeReciteSession();
       startAyahListReview(items);
