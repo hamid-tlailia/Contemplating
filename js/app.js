@@ -1288,6 +1288,24 @@ const RASM_WORD_SWAPS = new Map([
 // on. Small set, cached: this runs inside the recitation diff's DP, which
 // calls it O(n*m) times per ayah.
 const arabicVariantCache = new Map();
+// Words written وا۟ whose واو is the third letter of the root, not the plural
+// pronoun. Read out of the Uthmani text, every occurrence of every one of
+// them checked in its ayah: يَتْلُوا۟ عَلَيْهِمْ ءَايَٰتِهِۦ, فَمَن كَانَ يَرْجُوا۟ لِقَآءَ
+// رَبِّهِۦ, إِنَّمَآ أَشْكُوا۟ بَثِّى - all of them one man doing something, none of
+// them a plural.
+// Held in the form normalizeArabic leaves them in - the silent alef is
+// already folded away by then, so يَدْعُوا۟ and يَدْعُو are one key, as they are
+// one word. تَدْعُوا۟ is not here: it is both - «أَيًّۭا مَّا تَدْعُوا۟» is one man
+// calling, «لَّا تَدْعُوا۟ ٱلْيَوْمَ ثُبُورًۭا» is many being told not to - and where
+// the word itself cannot say which, leniency is the safer error.
+const RADICAL_WAW_WORDS = new Set([
+  "\u064A\u062F\u0639\u0648", "\u0646\u062F\u0639\u0648",
+  "\u064A\u062A\u0644\u0648", "\u062A\u062A\u0644\u0648", "\u0646\u062A\u0644\u0648", "\u0627\u062A\u0644\u0648",
+  "\u064A\u0631\u062C\u0648", "\u062A\u0631\u062C\u0648",
+  "\u064A\u0645\u062D\u0648", "\u064A\u0631\u0628\u0648",
+  "\u064A\u0639\u0641\u0648", "\u062A\u0628\u0644\u0648", "\u0627\u0634\u0643\u0648",
+]);
+
 function arabicWordVariants(word, spokenElision = false) {
   const key = (spokenElision ? "s\u0000" : "w\u0000") + word;
   const cached = arabicVariantCache.get(key);
@@ -1353,7 +1371,15 @@ function arabicWordVariants(word, spokenElision = false) {
   // its own, and speech engines return تكتم. That is a fact about listening,
   // so it is allowed only when comparing a recitation - typing تكتم for
   // تَكْتُمُوا۟ is still a missing letter, and still wrong.
-  if (spokenElision) {
+  //
+  // Except where that واو is not the pronoun at all but the last letter of
+  // the word: يَدْعُوا۟ is يدعو, and دعا is its root - dropping it leaves يدع,
+  // another word. The rasm gives no sign of the difference; both are written
+  // وا۟ with the same silent alef. So the words where it is radical are named,
+  // and they are few: the shape is a مضارع of a defective root, and every
+  // such word in the Quran was read in its place to be sure of it - تُزَكُّوٓا۟
+  // looks the same and is a plural, so it is not among them.
+  if (spokenElision && !RADICAL_WAW_WORDS.has(normalizeArabic(merged))) {
     axes.push((w) => [w, w.replace(/\u0648[\u064B-\u065F\u0670]*\u0627(?=[\u064B-\u065F\u0670\u06D6-\u06ED]*$)/g, "")]);
   }
   let forms = [merged];
