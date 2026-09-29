@@ -1131,8 +1131,14 @@ function joinLetterNames(tokens) {
 
 // The group said as one word with the مدّ written into it: «الاااام» for الٓمٓ,
 // «حام» for حمٓ. Every letter of the group must be there and in its order, and
-// nothing may be between them but the letters a مدّ is written with.
-const MADD_LETTERS = new Set(["\u0627", "\u0648", "\u064A"]);
+// nothing may stand between them but the alef a held letter is drawn with.
+//
+// It was و and ي as well, and that was a hole: with three letters free to be
+// passed over, «اليوم» read as الٓمٓ (ا ل [ي و] م), «الأمر» as الٓمٓرٓ, «قويّ» as
+// قٓ - twenty-four words of the Quran could stand in for a فاتحة. A stretch is
+// drawn with an alef; و and ي are letters, and a letter that is not in the
+// group means it is not the group.
+const MADD_LETTERS = new Set(["\u0627"]);
 function muqattaatSpokenMatch(said, expected) {
   const a = collapseLetterRuns(normalizeArabic(said || ""));
   const b = normalizeArabic(expected || "");
