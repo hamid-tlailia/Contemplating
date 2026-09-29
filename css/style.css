@@ -1247,15 +1247,24 @@ main#app {
   user-select: none;
 }
 .plan-surah-summary::-webkit-details-marker { display: none; }
-.plan-surah-summary::before {
-  content: "◀";
+/* The row's left edge: what removes the row above, what opens it below. A
+   column of their own, so neither is ever pushed onto a line of its own by a
+   long name or a gilded frame. */
+.plan-surah-side {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.plan-surah-caret {
   font-size: 0.7rem;
   color: var(--accent);
   transition: transform .2s ease;
-  grid-column: 2;
-  grid-row: 1;
+  line-height: 1;
 }
-.plan-surah-group[open] .plan-surah-summary::before { transform: rotate(-90deg); }
+.plan-surah-group[open] .plan-surah-caret { transform: rotate(-90deg); }
 /* Two fixed lines, always in the same order: the surah and how much of it
    is memorized above, everything that is a state or an action below. Letting
    them share one wrapping line meant a row's shape depended on how long its
@@ -1590,10 +1599,18 @@ main#app {
   border: 1px solid var(--border);
   background: none;
   color: var(--muted);
-  font-family: inherit;
-  font-size: 0.72rem;
-  line-height: 1;
   cursor: pointer;
+}
+/* Drawn rather than typed, so the cross is centred by geometry and not by
+   whatever the font thinks the glyph's box is. */
+.plan-drop-btn svg {
+  width: 13px;
+  height: 13px;
+  display: block;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  fill: none;
 }
 @media (hover: hover) {
   .plan-drop-btn:hover { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
@@ -2064,6 +2081,11 @@ main#app {
   font-size: 1.05rem;
   margin: 0 0 8px;
   color: var(--text);
+  /* Centred reads well for a three-word gloss and badly for a page of
+     tafsir, where every line starts somewhere new and the eye has to look
+     for it. Arabic prose begins at the right; that is where it goes. */
+  text-align: start;
+  line-height: 1.9;
 }
 .meaning-day-card .muted { margin: 0; font-size: 0.78rem; }
 
@@ -3255,11 +3277,20 @@ main#app {
 .recite-said { color: var(--text); }
 /* Passed over without being said - written, so it can be seen, but marked.
    Tappable: the engine is not the judge of what came out of a mouth. */
+/* Passed over without being said. It keeps its blank - the page writes only
+   what came out of a mouth, and a word the reciter never reached is not his
+   to see written - and the blank's own rule turns red to mark the place.
+   Tapping it says «I did say that», and then it is written like the rest. */
+.recite-missed .recite-word { visibility: hidden; }
 .recite-missed {
   color: color-mix(in srgb, var(--danger) 70%, var(--text));
   border-bottom: 2px dotted var(--danger);
+  border-radius: 2px;
   cursor: pointer;
 }
+/* Except when it was uncovered on request: then it is shown, because showing
+   it is what was asked for. */
+.recite-missed.recite-peek .recite-word { visibility: visible; }
 .recite-said { cursor: pointer; }
 /* Every blank is tappable too - that is how a forgotten word is uncovered. */
 .recite-waiting, .recite-next { cursor: pointer; }

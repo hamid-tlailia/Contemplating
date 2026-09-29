@@ -2222,6 +2222,9 @@ function renderDashboard() {
               learningInGroup.length ? `<span class="badge learning">${learningInGroup.length} قيد الحفظ</span>` : ""
             }<span class="plan-surah-actions"></span></span>
           </span>
+          <span class="plan-surah-side">
+            <span class="plan-surah-caret" aria-hidden="true">◀</span>
+          </span>
         `;
         const actions = summary.querySelector(".plan-surah-actions");
         // A surah with ayahs still under the rounds can be taken up now
@@ -2264,25 +2267,29 @@ function renderDashboard() {
           });
           head.appendChild(say);
         }
-        // Added and thought better of: clears this surah's unmemorized ayahs
-        // in one go. Only those - what is already memorized is removed one
-        // ayah at a time, from its own row, where the choice is deliberate.
-        if (learningInGroup.length) {
-          const nums = learningInGroup.map((i) => i.ayah);
-          const span = nums.length > 1 ? `${nums[0]}–${nums[nums.length - 1]}` : `${nums[0]}`;
-          const drop = document.createElement("button");
-          drop.type = "button";
-          drop.className = "plan-drop-btn";
-          drop.textContent = "✕";
-          drop.title = `أزِل ما لم يُحفظ من ${group.name}`;
-          drop.setAttribute("aria-label", `أزِل ${group.name} ${span} مما لم يُحفظ بعد`);
-          drop.addEventListener("click", (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            dropPendingGroup({ surah: surahNum, name: group.name, items: learningInGroup }, span);
-          });
-          actions.appendChild(drop);
-        }
+        // Added and thought better of: takes the whole surah out of the plan,
+        // memorized ayahs and all. It sits at the far end of the name's own
+        // line rather than among the marks below, because it is not a mark:
+        // it undoes the row it is on. Nothing happens on the tap itself -
+        // what it costs is said first, and plainly.
+        const drop = document.createElement("button");
+        drop.type = "button";
+        drop.className = "plan-drop-btn";
+        // Drawn, not typed: a ✕ from the font sits wherever its own metrics
+        // put it, which in a 24px circle was visibly high. Two lines through
+        // the middle of the box are in the middle of the box.
+        drop.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7 L17 17 M17 7 L7 17"/></svg>`;
+        drop.title = `احذف ${group.name} من الخطة`;
+        drop.setAttribute("aria-label", `احذف سورة ${group.name} كاملةً من خطة الحفظ`);
+        drop.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          deleteSurahFromPlan(surahNum, group.name);
+        });
+        // A column of its own at the row's left edge, above the arrow. Put on
+        // the name's line it was one thing too many for a gilded row - the
+        // frame takes width from both sides - and it wrapped down alone.
+        summary.querySelector(".plan-surah-side").prepend(drop);
         if (offer) {
           const btn = document.createElement("button");
           btn.type = "button";
@@ -3132,8 +3139,9 @@ async function openTodaysWirdReading() {
     // stopping at a cover: whether today's two pages happen to straddle a
     // surah boundary is not something the reader should feel.
     const reachesEnd = to >= ayahs.length;
+    const covered = new Set(matches.map((a) => a.page).filter(Boolean));
     const spill = state.wirdTargetType === "pages" && reachesEnd && pagesShortBy > 0
-      ? await pagesFromNextSurah(surahNumber, pagesShortBy)
+      ? await pagesFromNextSurah(surahNumber, pagesShortBy, covered)
       : [];
     openMushafReader(await completeEdgePages(matches.concat(spill)));
   } catch (e) {
@@ -3240,13 +3248,28 @@ async function ayahsOnMushafPage(surahNumber, pageNumber) {
 // The opening pages of the surah after this one, enough to finish a wird
 // that ran out of surah. Nothing is added if this is the last surah, or if
 // the next one cannot be fetched - a short wird is better than no wird.
-async function pagesFromNextSurah(surahNumber, pageCount) {
+//
+// What is counted is PAGES OF THE MUSHAF, not pages of the next surah, and
+// the two are not the same at a boundary: هود ends partway down page 235 and
+// يوسف begins on that very page. Asking for one more page of يوسف returned
+// page 235 - the page already in hand - so a two-page wird at the seam came
+// out as one page, while three or four went through because the pages after
+// the shared one were new. The shared page still comes along, to be complete;
+// it just does not count against the target.
+async function pagesFromNextSurah(surahNumber, pageCount, covered = new Set()) {
   if (pageCount <= 0 || surahNumber >= 114) return [];
   try {
     const next = await fetchSurahAyahs(surahNumber + 1);
-    const pages = groupAyahsIntoMushafPages(next);
-    return pages.slice(0, pageCount).flatMap((page) =>
-      page.ayahs.map((a) => ({ ...a, surahNumberForReader: surahNumber + 1 })));
+    const out = [];
+    let fresh = 0;
+    for (const page of groupAyahsIntoMushafPages(next)) {
+      if (!covered.has(page.pageNumber)) {
+        if (fresh >= pageCount) break;
+        fresh++;
+      }
+      page.ayahs.forEach((a) => out.push({ ...a, surahNumberForReader: surahNumber + 1 }));
+    }
+    return out;
   } catch (e) {
     return [];
   }
@@ -7661,8 +7684,10 @@ function paintSlot(idx) {
   if (!el) return;
   const st = slotState(idx);
   // A word shown on request keeps the marker it had - it is still the place
-  // the reciter is at - and only stops being blank.
-  const peek = idx >= recitePointer && recitePeeked.has(idx);
+  // the reciter is at - and only stops being blank. It keeps it after the
+  // pointer has gone by, too: a word he asked to see and then did not say
+  // stays visible, because seeing it is what he asked for.
+  const peek = recitePeeked.has(idx);
   const key = peek ? `${st}~peek` : st;
   if (el.dataset.state === key) return;
   el.dataset.state = key;
@@ -8995,6 +9020,37 @@ function renderPendingCard() {
 // Only ever these two stages: an ayah that was actually memorized is not
 // swept away by a button meant for tidying a queue. Those are removed one at
 // a time from the plan list, where the choice is deliberate.
+// The whole surah out of the plan. This is the one destructive thing on the
+// dashboard, so it says what goes before it goes: not the ayahs alone but
+// their review dates, the rounds behind them, and the gilding if it was
+// bought - and none of it comes back.
+function deleteSurahFromPlan(surah, name) {
+  const keys = Object.keys(state.ayahs).filter((k) => state.ayahs[k].surah === surah);
+  if (!keys.length) return;
+  const memorized = keys.filter((k) => state.ayahs[k].learningStage === "srs").length;
+  const pending = keys.length - memorized;
+  const parts = [];
+  if (memorized) parts.push(`${ayahCountLabel(memorized)} محفوظة بمواعيد مراجعتها`);
+  if (pending) parts.push(`${ayahCountLabel(pending)} قيد الحفظ`);
+  const gilded = isGilded(surah);
+  showConfirmModal(
+    `حذف ${name}`,
+    `تُحذف السورة كاملةً من الخطة: ${parts.join(" و")}${
+      gilded ? `، ويسقط تذهيبها` : ""
+    }. لا رجعة في هذا.`,
+    "احذفها",
+    () => {
+      keys.forEach((k) => { delete state.ayahs[k]; });
+      if (state.gilding) delete state.gilding[surah];
+      if (state.recitePlace) delete state.recitePlace[String(surah)];
+      normalizeLearnDetour();
+      saveState();
+      renderDashboard();
+      showToast(`حُذفت ${name} من الخطة.`, "success");
+    }
+  );
+}
+
 function dropPendingGroup(group, span) {
   const keys = group.items.map((i) => `${i.surah}:${i.ayah}`);
   showConfirmModal(
