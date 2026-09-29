@@ -7726,6 +7726,27 @@ function paintReciteAll() {
   for (let i = 0; i < reciteSlotEls.length; i++) paintSlot(i);
   recitePainted = recitePointer;
   updateRecitePosition();
+  // A page taken up again opens where it was left. «تابِع من الآية ٧٦» drew
+  // the whole surah and then sat at its first line, with the place to carry
+  // on from somewhere far below - the reciter had to go and find it before he
+  // could start. Waited a frame because the page has only just been built and
+  // has no measurements yet.
+  requestAnimationFrame(scrollReciteToPointer);
+}
+
+// Brings the place being recited into view, and only when it has left it -
+// a scroll on every word is what made the page feel like it was chasing the
+// reciter. Shared by the first draw and by every result after it.
+function scrollReciteToPointer() {
+  const next = reciteSlotEls[recitePointer];
+  const body = document.getElementById("recite-body");
+  if (!next || !body) return;
+  const nb = next.getBoundingClientRect();
+  const bb = body.getBoundingClientRect();
+  if (!bb.height) return;
+  if (nb.bottom > bb.bottom - 40 || nb.top < bb.top + 40) {
+    body.scrollTop += (nb.top - bb.top) - bb.height * 0.4;
+  }
 }
 
 function paintReciteNow() {
@@ -7737,17 +7758,7 @@ function paintReciteNow() {
   for (let i = from; i <= to; i++) paintSlot(i);
   recitePainted = recitePointer;
 
-  const next = reciteSlotEls[recitePointer];
-  const body = document.getElementById("recite-body");
-  if (next && body) {
-    const nb = next.getBoundingClientRect();
-    const bb = body.getBoundingClientRect();
-    // Only when it has actually gone out of sight - a scroll on every word
-    // is what made the page feel like it was chasing the reciter.
-    if (nb.bottom > bb.bottom - 40 || nb.top < bb.top + 40) {
-      body.scrollTop += (nb.top - bb.top) - bb.height * 0.4;
-    }
-  }
+  scrollReciteToPointer();
   updateRecitePosition();
 }
 
