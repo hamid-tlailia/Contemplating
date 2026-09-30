@@ -18,7 +18,13 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="تدبر">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Tajawal:wght@400;500;700&family=Scheherazade+New:wght@400;700&family=Lateef:wght@400;700&family=Aref+Ruqaa:wght@400;700&family=Reem+Kufi:wght@400;700&display=swap" rel="stylesheet">
+<!-- The ayah fonts come from Google. The interface font, Tajawal, is served
+     from here (see the top of css/style.css): its metrics had to be corrected
+     to centre it, and that can only be said in our own @font-face. The two
+     subsets every screen draws with are fetched ahead of the stylesheet. -->
+<link rel="preload" href="fonts/tajawal-400-arabic.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/tajawal-700-arabic.woff2" as="font" type="font/woff2" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Scheherazade+New:wght@400;700&family=Lateef:wght@400;700&family=Aref+Ruqaa:wght@400;700&family=Reem+Kufi:wght@400;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/style.css">
 <script>
 // Which tab is open is decided HERE, before anything is painted. The app's

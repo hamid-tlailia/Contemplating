@@ -12,14 +12,15 @@
 //                                or two)
 //   Quran data  network-first  - text/meanings stay fresh online, and every
 //                                response seen once is readable offline
-//   fonts       cache-first    - immutable, versioned URLs
+//   fonts       cache-first    - immutable, versioned URLs; the interface
+//                                font is ours and precached with the shell
 //   audio       cache-first    - a given ayah's recitation never changes;
 //                                kept to a cap so it can't grow unbounded
 //
 // Anything an ayah's data was never fetched for can't be shown offline, so
 // the settings panel offers a prefetch for the surahs actually in use.
 
-const VERSION = "v8";
+const VERSION = "v9";
 const SHELL_CACHE = `tadabbur-shell-${VERSION}`;
 const DATA_CACHE = `tadabbur-data-${VERSION}`;
 const FONT_CACHE = `tadabbur-fonts-${VERSION}`;
@@ -35,6 +36,14 @@ const SHELL = [
   "manifest.json",
   "icons/icon-192.png",
   "icons/icon-512.png",
+  // The interface font is part of the shell now: without it the app opens
+  // offline in a fallback face, off-centre in every button.
+  "fonts/tajawal-400-arabic.woff2",
+  "fonts/tajawal-400-latin.woff2",
+  "fonts/tajawal-500-arabic.woff2",
+  "fonts/tajawal-500-latin.woff2",
+  "fonts/tajawal-700-arabic.woff2",
+  "fonts/tajawal-700-latin.woff2",
 ];
 
 const DATA_HOSTS = ["api.alquran.cloud", "api.quran.com"];
@@ -197,6 +206,13 @@ self.addEventListener("fetch", (event) => {
   // refresh "succeed" by handing back the very copy it means to replace, and
   // caching it would file the shell under a one-off URL.
   if (url.searchParams.has("shell-refresh")) return;
+
+  // Our own font files are as fixed as Google's: taken from the shell cache,
+  // where install put them, and only fetched if somehow missing.
+  if (url.origin === self.location.origin && url.pathname.includes("/fonts/")) {
+    event.respondWith(cacheFirst(event.request, SHELL_CACHE));
+    return;
+  }
 
   if (url.origin === self.location.origin) {
     event.respondWith(

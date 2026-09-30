@@ -1,3 +1,102 @@
+/* ---------- The UI font, and where it sits in its box ----------
+
+   Tajawal is served from here rather than from Google so that its vertical
+   metrics can be stated, because the ones it ships with put every line of the
+   interface off-centre. Measured in Chrome: it declares an ascent of 0.645em -
+   exactly the top of its digits - and a descent of 0.355em, reserved for the
+   tails of Arabic letters. A box centres the space between those two lines,
+   which is weighted towards the bottom, and so every glyph set in Tajawal rode
+   0.17em high in whatever held it: two pixels and more in a number badge, in
+   a pill button, in a tab.
+
+   The overrides keep the total as it was (ascent + descent = 1em, and the
+   0.2em line gap, so line-height: normal is still 1.2em) and move the split
+   down. Two things do change size, both for the better: a line that mixes
+   Tajawal with an emoji (⚡ ابدأ التحدي) was being stretched below the emoji by
+   Tajawal's deep descent, which made those buttons 3px taller than the plain
+   ones beside them - they are the same height as their neighbours now; and
+   whole-pixel rounding moves a few boxes by a pixel either way. On paper the digits are centred at
+   0.815/0.185; in practice Chrome rounds the ascent to a whole pixel, and at
+   the sizes this interface is set in (12.75px to 16px) that rounding is
+   nearly always downward - the glyphs still rode half a pixel to a pixel and a
+   half high. 0.86/0.14 was chosen by measuring the ink of the app's own
+   buttons and badges at the densities phones actually have: every one of them
+   lands within about half a pixel of centre at 2x, 2.625x, 2.75x and 3x -
+   which at those densities is a single physical pixel or less.
+
+   Arabic fits the new box better as well: its alef rises to about 0.76em,
+   which used to overflow the top of the old one.
+
+   Every button, badge, tab and field in the app is set in this font, so this
+   is the one place the centring is fixed; nothing downstream needs nudging.
+   SIL Open Font License 1.1 - see fonts/Tajawal-OFL.txt. */
+@font-face {
+  font-family: "Tajawal";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../fonts/tajawal-400-arabic.woff2") format("woff2");
+  ascent-override: 86%;
+  descent-override: 14%;
+  line-gap-override: 20%;
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0897-08E1, U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC, U+102E0-102FB, U+10E60-10E7E, U+10EC2-10EC4, U+10EFC-10EFF, U+1EE00-1EE03, U+1EE05-1EE1F, U+1EE21-1EE22, U+1EE24, U+1EE27, U+1EE29-1EE32, U+1EE34-1EE37, U+1EE39, U+1EE3B, U+1EE42, U+1EE47, U+1EE49, U+1EE4B, U+1EE4D-1EE4F, U+1EE51-1EE52, U+1EE54, U+1EE57, U+1EE59, U+1EE5B, U+1EE5D, U+1EE5F, U+1EE61-1EE62, U+1EE64, U+1EE67-1EE6A, U+1EE6C-1EE72, U+1EE74-1EE77, U+1EE79-1EE7C, U+1EE7E, U+1EE80-1EE89, U+1EE8B-1EE9B, U+1EEA1-1EEA3, U+1EEA5-1EEA9, U+1EEAB-1EEBB, U+1EEF0-1EEF1;
+}
+@font-face {
+  font-family: "Tajawal";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../fonts/tajawal-400-latin.woff2") format("woff2");
+  ascent-override: 86%;
+  descent-override: 14%;
+  line-gap-override: 20%;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Tajawal";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("../fonts/tajawal-500-arabic.woff2") format("woff2");
+  ascent-override: 86%;
+  descent-override: 14%;
+  line-gap-override: 20%;
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0897-08E1, U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC, U+102E0-102FB, U+10E60-10E7E, U+10EC2-10EC4, U+10EFC-10EFF, U+1EE00-1EE03, U+1EE05-1EE1F, U+1EE21-1EE22, U+1EE24, U+1EE27, U+1EE29-1EE32, U+1EE34-1EE37, U+1EE39, U+1EE3B, U+1EE42, U+1EE47, U+1EE49, U+1EE4B, U+1EE4D-1EE4F, U+1EE51-1EE52, U+1EE54, U+1EE57, U+1EE59, U+1EE5B, U+1EE5D, U+1EE5F, U+1EE61-1EE62, U+1EE64, U+1EE67-1EE6A, U+1EE6C-1EE72, U+1EE74-1EE77, U+1EE79-1EE7C, U+1EE7E, U+1EE80-1EE89, U+1EE8B-1EE9B, U+1EEA1-1EEA3, U+1EEA5-1EEA9, U+1EEAB-1EEBB, U+1EEF0-1EEF1;
+}
+@font-face {
+  font-family: "Tajawal";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("../fonts/tajawal-500-latin.woff2") format("woff2");
+  ascent-override: 86%;
+  descent-override: 14%;
+  line-gap-override: 20%;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Tajawal";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../fonts/tajawal-700-arabic.woff2") format("woff2");
+  ascent-override: 86%;
+  descent-override: 14%;
+  line-gap-override: 20%;
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0897-08E1, U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC, U+102E0-102FB, U+10E60-10E7E, U+10EC2-10EC4, U+10EFC-10EFF, U+1EE00-1EE03, U+1EE05-1EE1F, U+1EE21-1EE22, U+1EE24, U+1EE27, U+1EE29-1EE32, U+1EE34-1EE37, U+1EE39, U+1EE3B, U+1EE42, U+1EE47, U+1EE49, U+1EE4B, U+1EE4D-1EE4F, U+1EE51-1EE52, U+1EE54, U+1EE57, U+1EE59, U+1EE5B, U+1EE5D, U+1EE5F, U+1EE61-1EE62, U+1EE64, U+1EE67-1EE6A, U+1EE6C-1EE72, U+1EE74-1EE77, U+1EE79-1EE7C, U+1EE7E, U+1EE80-1EE89, U+1EE8B-1EE9B, U+1EEA1-1EEA3, U+1EEA5-1EEA9, U+1EEAB-1EEBB, U+1EEF0-1EEF1;
+}
+@font-face {
+  font-family: "Tajawal";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../fonts/tajawal-700-latin.woff2") format("woff2");
+  ascent-override: 86%;
+  descent-override: 14%;
+  line-gap-override: 20%;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 :root {
   --bg: #f7f5f0;
   --surface: #ffffff;
@@ -898,10 +997,7 @@ h1, h2 { font-family: 'Tajawal', sans-serif; margin: 0; }
   white-space: nowrap;
   vertical-align: -2px;
 }
-/* A couple of px down: digit glyphs sit slightly high within their own
-   line box compared to the icon's true visual center, so the two read as
-   misaligned even though both are flex-centered on the same row. */
-.header-points-badge #header-points-value { line-height: 1; position: relative; top: 2px; }
+.header-points-badge #header-points-value { line-height: 1; }
 
 /* Bottom app-style navigation on phones/tablets: easier to reach with a thumb,
    and it keeps the brand header from competing with four tab pills for width. */
@@ -947,6 +1043,13 @@ h1, h2 { font-family: 'Tajawal', sans-serif; margin: 0; }
     color: color-mix(in srgb, var(--muted) 70%, var(--text));
   }
   .tab-icon svg { width: 23px; height: 23px; }
+  /* Stacked under its icon, the label is not centred in a box of its own -
+     it is placed against the icon above it, and that spacing was drawn with
+     Tajawal's original metrics. Correcting them (top of this file) lowered
+     every glyph by 0.215em in its line, which here pulled the words away
+     from their icons. Put back exactly, and visually only - the bar keeps
+     its height. */
+  .tab-label { position: relative; top: -0.215em; }
 
   /* The open tab is marked by a pill behind its icon, not by painting the
      whole cell: a solid block a quarter of the screen wide is the loudest
@@ -1860,6 +1963,17 @@ main#app {
   flex: 1 1 0;
   min-width: 0;
 }
+/* A number in a field is one short thing in a box made for it: it goes in the
+   middle, not against the right-hand wall with the rest of the field empty
+   beside it. Text fields keep the direction of the language. */
+input[type=number] { text-align: center; -moz-appearance: textfield; appearance: textfield; }
+/* The up/down arrows. Where they are drawn they take a strip of the field -
+   and Chrome keeps that strip even where they are not, so a centred number
+   sat seven pixels to one side of the middle of its box. On a phone they are
+   never drawn at all; typing the number is how it is done everywhere. */
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
 .range-inputs input[type=number] {
   font-family: inherit;
   padding: 8px 10px;
@@ -2592,7 +2706,12 @@ main#app {
 
 .learn-controls { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin: 14px 0; }
 
-.icon-label { display: inline-flex; align-items: center; gap: 6px; }
+/* An icon and its words. An inline-flex box takes its baseline from its first
+   item, and here that is the icon - whose "baseline" is its bottom edge - so
+   the whole group was seated with the icon's foot on the line of text and
+   rode five or six pixels high in its button. The last item is the words;
+   their baseline is the one the line should use. */
+.icon-label { display: inline-flex; align-items: center; gap: 6px; baseline-source: last; }
 .icon-label svg { width: 16px; height: 16px; flex-shrink: 0; }
 
 /* One tray, three equal buttons. The play button used to be 54px against
@@ -3211,7 +3330,9 @@ main#app {
   text-align: start;
 }
 .recite-range input {
-  padding: 9px 10px;
+  /* Half a pixel more below than above: measured at 2x to 3x, a number at
+     this size sat that much low in the field (see the font note at the top). */
+  padding: 8.5px 10px 9.5px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface);
@@ -3317,9 +3438,6 @@ main#app {
   border-width: 1.6px;
   vertical-align: middle;
   margin-inline: 3px;
-  /* The digits sit slightly high in their own line box; this puts the
-     glyph, not the box, in the middle of the ring. */
-  padding-top: 1px;
 }
 
 .recite-actions { padding-top: 10px; }
@@ -3581,6 +3699,13 @@ main#app {
   padding: 0 0.32em;
   font-size: 0.5em;
   line-height: 1;
+  /* The number is set in the interface font wherever it appears, not in
+     whichever ayah font is chosen: each of those six has its own idea of
+     where its digits sit, and a ring that is centred in Amiri is a pixel off
+     in Lateef and three in Reem Kufi. In Tajawal - corrected at the top of
+     this file - the digits are in the middle of the ring in every one. */
+  font-family: "Tajawal", system-ui, sans-serif;
+  font-weight: 700;
   vertical-align: middle;
   border: 1.5px solid var(--accent);
   border-radius: 999px;
