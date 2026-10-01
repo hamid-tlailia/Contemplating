@@ -10481,17 +10481,16 @@ function setupFloatingSettingsButton() {
 // closes. Watched rather than toggled at each call site: overlays open and
 // close from a dozen places (buttons, routes, the back button, a failed
 // recitation), and one of them would always end up forgetting to say so.
-const SCROLL_LOCKING_OVERLAYS = [
-  "settings-overlay",
-  "info-modal-overlay",
-  "voice-modal-overlay",
-  "mushaf-reader-overlay",
-  "tasmee-overlay",
-  "seam-overlay",
-];
-
+//
+// Which layers count is read from the page, not kept in a list: every one of
+// them has an id ending "-overlay" (whether or not a restored route has
+// already opened it by the time this runs). The list here used to be
+// written out by hand, and the recite page - added later - was never put on
+// it: while it was open the tab behind it was free to scroll, and the
+// pull-down-to-reload below stayed armed, so dragging the page down to go
+// back up an ayah or two brought out the reload circle over the recitation.
 function setupModalScrollLock() {
-  const layers = SCROLL_LOCKING_OVERLAYS.map((id) => document.getElementById(id)).filter(Boolean);
+  const layers = [...document.querySelectorAll('[id$="-overlay"]')];
   const update = () => {
     const open = layers.some((el) => !el.classList.contains("modal-closed"));
     document.documentElement.classList.toggle("modal-open", open);
@@ -10802,8 +10801,18 @@ async function hardReload() {
   // Only from the very top, and never out of something that scrolls itself -
   // dragging down inside the ayah box or a combo list means to scroll it.
   const atTop = () => (window.scrollY || document.documentElement.scrollTop || 0) <= 0;
+  // Named ones (some scroll sideways, and are here for the tab swipe's sake),
+  // and then any box at all that scrolls up and down: a list kept by name is
+  // a list that misses the next scroller someone adds.
+  const scrollsItself = (target) => {
+    for (let n = target; n && n.nodeType === 1 && n !== document.body; n = n.parentElement) {
+      if (n.scrollHeight > n.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(n).overflowY)) return true;
+    }
+    return false;
+  };
   const inScroller = (target) =>
-    !!(target && target.closest && target.closest(".ayah-scroll, .combo-list, .mushaf-map-grid, .wird-week, .mode-switch, [data-no-swipe]"));
+    !!(target && target.closest && target.closest(".ayah-scroll, .combo-list, .mushaf-map-grid, .wird-week, .mode-switch, [data-no-swipe]"))
+    || scrollsItself(target);
 
   const reset = () => {
     startY = null; pulling = false; dist = 0;
