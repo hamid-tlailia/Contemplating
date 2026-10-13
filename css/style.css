@@ -4067,9 +4067,10 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin
   font-size: 0.95rem;
   line-height: 1;
 }
-/* The count and the coin on one baseline. The digits are a heavier, taller
-   face than the icon, so centring the boxes still left the number riding
-   above the coin. */
+/* The count and the coin, centred on each other. (The number used to be
+   pushed 3px down here to make up for the interface font riding high; with
+   the font's metrics corrected at the top of this file, that push put it
+   3px below the coin instead.) */
 .points-display-value {
   display: inline-flex;
   align-items: center;
@@ -4080,10 +4081,6 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin
   color: var(--primary);
   font-size: 1.1rem;
   line-height: 1;
-  position: relative;
-  /* The digits are a heavier, taller face than the coin beside them, so
-     centring the two boxes still leaves the number riding above it. */
-  top: 3px;
 }
 
 /* Shared by every cosmetic collectible grid (reciters, themes, fonts,
