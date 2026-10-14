@@ -7420,6 +7420,7 @@ function askToKeepRecitePlace() {
 function closeReciteSession() {
   stopReciteListening();
   document.getElementById("recite-overlay").classList.add("modal-closed");
+  clearTimeout(reciteTurnTimer);
   recitePlan = [];
   reciteFlat = [];
   recitePointer = 0;
@@ -7503,18 +7504,28 @@ function updateReciteCount() {
 
   // Where it was left off, offered rather than imposed.
   const resume = document.getElementById("recite-resume");
-  const place = reciteScope.kind === "surah" ? recitePlaceFor(reciteScope.surah) : null;
-  const inRange = place && items.some((i) => i.ayah === place);
+  const whole = reciteScope.kind === "all";
+  const place = whole ? (state.recitePlace || {}).all : recitePlaceFor(reciteScope.surah);
+  const at = place ? items.find((i) => (whole ? `${i.surah}:${i.ayah}` === place : i.ayah === place)) : null;
+  const inRange = !!at;
   resume.classList.toggle("hidden", !inRange);
   if (inRange) {
     resume.innerHTML = "";
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "btn recite-resume-btn";
-    btn.textContent = `تابِع من الآية ${place}`;
-    btn.addEventListener("click", () => startRecitePage({ fromAyah: place }));
+    const where = whole ? `${at.surahName || surahDisplayName(at.surah)} : ${at.ayah}` : `الآية ${at.ayah}`;
+    const page = recitePageOf(at.surah, at.ayah);
+    btn.textContent = `تابِع من ${where}${page ? ` (ص ${page})` : ""}`;
+    btn.addEventListener("click", () => startRecitePage(whole ? { fromKey: place } : { fromAyah: place }));
     resume.appendChild(btn);
   }
+}
+
+function recitePageOf(surah, ayah) {
+  const list = reciteSurahTextCache[surah] || surahAyahsCache[surah];
+  const found = list && list.find((x) => x.numberInSurah === ayah);
+  return found ? found.page || null : null;
 }
 
 // The ayah the reciting had got to when it was last saved for this surah.
@@ -7522,13 +7533,22 @@ function recitePlaceFor(surah) {
   return (state.recitePlace || {})[String(surah)] || null;
 }
 
-function saveRecitePlace() {
+// Kept per surah, and - for a page of everything memorized - once more for
+// that page as a whole, since it runs across surahs.
+function storeRecitePlace() {
   const cur = reciteFlat[recitePointer] || reciteFlat[reciteFlat.length - 1];
-  if (!cur) return;
+  if (!cur) return null;
   const a = recitePlan[cur.ai];
   state.recitePlace = state.recitePlace || {};
   state.recitePlace[String(a.surah)] = a.ayah;
+  if (reciteScope.kind === "all") state.recitePlace.all = a.key;
   saveState();
+  return a;
+}
+
+function saveRecitePlace() {
+  const a = storeRecitePlace();
+  if (!a) return;
   showToast(`💾 حُفظ موضعك: ${a.surahName} : ${a.ayah}`, "success",
     "تفتح السورة من هنا في المرّة القادمة.");
 }
@@ -7543,7 +7563,10 @@ function startRecitePage(opts) {
     surahName: i.surahName || `سورة ${i.surah}`,
     words: quranWords(i.text),
     notInPlan: !!i.notInPlan,
+    page: i.page || null,
+    juz: i.juz || null,
   }));
+  const pagesMissing = fillRecitePages();
   reciteFlat = [];
   reciteAyahStart = [];
   recitePlan.forEach((a, ai) => {
@@ -7562,8 +7585,9 @@ function startRecitePage(opts) {
   // Carrying on from a saved place puts the pointer there; everything before
   // it stands written, because it was recited - on an earlier evening.
   const fromAyah = opts && opts.fromAyah;
-  if (fromAyah) {
-    const at = recitePlan.findIndex((a) => a.ayah === fromAyah);
+  const fromKey = opts && opts.fromKey;
+  if (fromAyah || fromKey) {
+    const at = recitePlan.findIndex((a) => (fromKey ? a.key === fromKey : a.ayah === fromAyah));
     if (at > 0) recitePointer = reciteAyahStart[at];
   }
   reciteStartAyah = currentReciteAyahIndex();
@@ -7573,6 +7597,7 @@ function startRecitePage(opts) {
   document.getElementById("recite-body").classList.remove("hidden");
   document.getElementById("recite-actions").classList.remove("hidden");
   renderRecitePage();
+  if (pagesMissing) loadMissingRecitePages();
   setReciteStatus("اضغط الميكروفون واقرأ من حفظك.");
   updateReciteMic();
 }
@@ -7595,62 +7620,410 @@ function renderRecitePage() {
   page.innerHTML = "";
   reciteSlotEls = new Array(reciteFlat.length);
   recitePainted = -1;
+  reciteBadgeEls = [];
+  reciteSheets = [];
+  reciteSheetOfAyah = [];
+  reciteShownSheet = -1;
+  clearTimeout(reciteTurnTimer);
+  let sheet = null;
   let lastSurah = null;
   recitePlan.forEach((a, ai) => {
+    if (!sheet || (a.page || null) !== sheet.page) {
+      sheet = buildReciteSheet(a, ai);
+      page.appendChild(sheet.el);
+      reciteSheets.push(sheet);
+      lastSurah = null;
+    }
+    sheet.to = ai;
+    reciteSheetOfAyah[ai] = reciteSheets.length - 1;
     if (a.surah !== lastSurah) {
       const head = document.createElement("div");
       head.className = "recite-surah-head";
       head.textContent = a.surahName;
-      page.appendChild(head);
+      sheet.textEl.appendChild(head);
       lastSurah = a.surah;
     }
-    // display:contents - the wrapper groups the ayah for the code without
-    // taking a box of its own, so its words join the line that is running.
-    const run = document.createElement("span");
-    run.className = `recite-ayah${a.notInPlan ? " recite-outside" : ""}`;
-    run.dataset.ai = String(ai);
-    a.words.forEach((w, wi) => {
-      const slot = document.createElement("span");
-      slot.className = "recite-slot";
-      slot.dataset.ai = String(ai);
-      slot.dataset.wi = String(wi);
-      // The blank keeps the word's own width without showing it: the letters
-      // are there, invisible, and a rule is drawn under them.
-      slot.innerHTML = `<span class="recite-word">${w}</span>`;
-      const flatIdx = reciteIndexOfFlat(ai, wi);
-      reciteSlotEls[flatIdx] = slot;
-      // Behind the pointer, the engine is not the judge: a word it failed to
-      // hear can be put right by the one person who knows whether it was
-      // said - tapping takes the mark off, and tapping again puts it back.
-      //
-      // Ahead of it, the same tap uncovers. Forgetting where an ayah starts
-      // is the ordinary way a recitation stops, and the cure is one word, not
-      // the page: tapping the blank shows the word that belongs in it.
-      slot.addEventListener("click", () => {
-        if (flatIdx < recitePointer) {
-          if (reciteStumbles.has(flatIdx)) reciteStumbles.delete(flatIdx);
-          else reciteStumbles.add(flatIdx);
-          slot.dataset.state = "";
-          paintSlot(flatIdx);
-          return;
-        }
-        const refused = peekReciteWord(flatIdx);
-        if (refused) setReciteAlert(`peek-refused:${flatIdx}`, refused);
-        else clearReciteAlert();
-      });
-      run.appendChild(slot);
-      // A real space, not a margin: it is what the line breaks at and what
-      // justification stretches.
-      run.appendChild(document.createTextNode(" "));
-    });
-    const badge = document.createElement("span");
-    badge.className = "ayah-number-badge recite-badge";
-    badge.textContent = String(a.ayah);
-    run.appendChild(badge);
-    run.appendChild(document.createTextNode(" "));
-    page.appendChild(run);
+    sheet.textEl.appendChild(buildReciteAyahRun(a, ai));
   });
   paintReciteAll();
+}
+
+// One ayah of the page: its blanks, then its number.
+function buildReciteAyahRun(a, ai) {
+  // display:contents - the wrapper groups the ayah for the code without
+  // taking a box of its own, so its words join the line that is running.
+  const run = document.createElement("span");
+  run.className = `recite-ayah${a.notInPlan ? " recite-outside" : ""}`;
+  run.dataset.ai = String(ai);
+  a.words.forEach((w, wi) => {
+    const slot = document.createElement("span");
+    slot.className = "recite-slot";
+    slot.dataset.ai = String(ai);
+    slot.dataset.wi = String(wi);
+    // The blank keeps the word's own width without showing it: the letters
+    // are there, invisible, and a rule is drawn under them.
+    slot.innerHTML = `<span class="recite-word">${w}</span>`;
+    const flatIdx = reciteIndexOfFlat(ai, wi);
+    reciteSlotEls[flatIdx] = slot;
+    // Behind the pointer, the engine is not the judge: a word it failed to
+    // hear can be put right by the one person who knows whether it was
+    // said - tapping takes the mark off, and tapping again puts it back.
+    //
+    // Ahead of it, the same tap uncovers. Forgetting where an ayah starts
+    // is the ordinary way a recitation stops, and the cure is one word, not
+    // the page: tapping the blank shows the word that belongs in it.
+    slot.addEventListener("click", () => {
+      if (flatIdx < recitePointer) {
+        if (reciteStumbles.has(flatIdx)) reciteStumbles.delete(flatIdx);
+        else reciteStumbles.add(flatIdx);
+        slot.dataset.state = "";
+        paintSlot(flatIdx);
+        return;
+      }
+      const refused = peekReciteWord(flatIdx);
+      if (refused) setReciteAlert(`peek-refused:${flatIdx}`, refused);
+      else clearReciteAlert();
+    });
+    run.appendChild(slot);
+    // A real space, not a margin: it is what the line breaks at and what
+    // justification stretches.
+    run.appendChild(document.createTextNode(" "));
+  });
+  reciteBadgeEls[ai] = mushafAyahMark(a.ayah, "recite-badge");
+  run.appendChild(reciteBadgeEls[ai]);
+  run.appendChild(document.createTextNode(" "));
+  return run;
+}
+
+// ---------------------------------------------------------------------------
+// The page of the Mushaf.
+//
+// The recitation runs page by page, as it does from a Mushaf: one page on
+// the screen, its number at the foot and its surah and juz at the head, and
+// when the last word of it has been said the next page turns over. A whole
+// surah drawn as one long scroll was a page of nothing in particular - the
+// eye keeps WHERE on the page a word is, and that is lost when there is no
+// page.
+//
+// And where the line layout of that page can be had, each page is the page:
+// the same fifteen lines, the same words at the start and end of each one,
+// the surah's frame and the basmala on the lines they take. Quran.com
+// publishes, word by word, the line of the Madani Mushaf each word is on.
+// It is matched against the page's own words ayah by ayah, and if any ayah
+// does not have the same number of words in both the page is left as it
+// was, flowing - a page laid out wrongly would be worse than one that is
+// not laid out at all.
+// ---------------------------------------------------------------------------
+const MUSHAF_PAGE_API = "https://api.quran.com/api/v4/verses/by_page";
+const MUSHAF_LINES = 15;
+const BASMALA_TEXT = "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ";
+let reciteSheets = [];        // [{ page, from, to, el, textEl, lined }]
+let reciteSheetOfAyah = [];   // plan index -> sheet index
+let reciteBadgeEls = [];      // plan index -> its number on the page
+let reciteShownSheet = -1;
+let reciteTurnTimer = null;
+const mushafPageLinesCache = {};
+
+function arabicDigits(n) {
+  return String(n).replace(/\d/g, (d) => "٠١٢٣٤٥٦٧٨٩"[d]);
+}
+
+// The ayah's number in its rosette, as the Mushaf prints it: a ring drawn
+// rather than a glyph of whichever font is chosen, so it is the same ring in
+// all of them, with the number in Arabic-Indic digits in the middle.
+const MUSHAF_MARK_SVG = (() => {
+  const dots = Array.from({ length: 8 }, (_, i) => {
+    const t = (i * Math.PI) / 4;
+    return `<circle cx="${(20 + 16.3 * Math.sin(t)).toFixed(2)}" cy="${(20 - 16.3 * Math.cos(t)).toFixed(2)}" r="1.15"/>`;
+  }).join("");
+  return `<svg viewBox="0 0 40 40" aria-hidden="true" focusable="false"><circle cx="20" cy="20" r="18.6" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="20" cy="20" r="14" fill="none" stroke="currentColor" stroke-width="1"/><g fill="currentColor">${dots}</g></svg>`;
+})();
+
+function mushafAyahMark(ayah, extraClass) {
+  const mark = document.createElement("span");
+  const digits = String(ayah).length;
+  mark.className = `mushaf-ayah-mark${digits > 2 ? " mushaf-ayah-mark-3" : ""}${extraClass ? ` ${extraClass}` : ""}`;
+  mark.dataset.ayah = String(ayah);
+  mark.setAttribute("aria-label", `الآية ${ayah}`);
+  mark.innerHTML = `${MUSHAF_MARK_SVG}<span class="mushaf-ayah-num">${arabicDigits(ayah)}</span>`;
+  return mark;
+}
+
+function buildReciteSheet(a, ai) {
+  const el = document.createElement("section");
+  el.className = "recite-sheet";
+  const page = a.page || null;
+  if (page) el.dataset.page = String(page);
+  const head = document.createElement("div");
+  head.className = "recite-sheet-head";
+  const surah = document.createElement("span");
+  surah.textContent = a.surahName;
+  const juz = document.createElement("span");
+  juz.textContent = a.juz ? `الجزء ${arabicDigits(a.juz)}` : "";
+  head.append(surah, juz);
+  const textEl = document.createElement("div");
+  textEl.className = "recite-sheet-text";
+  const foot = document.createElement("div");
+  foot.className = "recite-sheet-foot";
+  const sheet = { page, from: ai, to: ai, el, textEl, lined: false, laying: false };
+  // Turning back to look at a page already recited - or on, to see how much
+  // of the next one there is. The page being recited comes back with the
+  // next word said.
+  const nav = (dir, label) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "recite-sheet-nav";
+    b.setAttribute("aria-label", label);
+    b.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${dir < 0 ? "M9 6l6 6-6 6" : "M15 6l-6 6 6 6"}" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    b.addEventListener("click", () => showReciteSheet(reciteSheets.indexOf(sheet) + dir));
+    return b;
+  };
+  const num = document.createElement("span");
+  num.className = "recite-sheet-num";
+  num.textContent = page ? arabicDigits(page) : "";
+  foot.append(nav(-1, "الصفحة السابقة"), num, nav(1, "الصفحة التالية"));
+  el.append(head, textEl, foot);
+  return sheet;
+}
+
+// Which page the place being recited is on.
+function reciteSheetOfPointer() {
+  const at = reciteFlat[recitePointer];
+  const ai = at ? at.ai : recitePlan.length - 1;
+  return reciteSheetOfAyah[ai] || 0;
+}
+
+function showReciteSheet(i) {
+  const sheet = reciteSheets[i];
+  if (!sheet) return;
+  clearTimeout(reciteTurnTimer);
+  if (i !== reciteShownSheet) {
+    reciteSheets.forEach((s, k) => s.el.classList.toggle("current", k === i));
+    reciteShownSheet = i;
+    const body = document.getElementById("recite-body");
+    if (body) body.scrollTop = 0;
+    reciteSheets.forEach((s, k) => {
+      const navs = s.el.querySelectorAll(".recite-sheet-nav");
+      if (navs[0]) navs[0].disabled = k === 0;
+      if (navs[1]) navs[1].disabled = k === reciteSheets.length - 1;
+    });
+  }
+  fitReciteSheet(sheet);
+  layOutReciteSheet(sheet);
+  // The next page is fetched while this one is being recited, so it turns
+  // over already laid out.
+  const next = reciteSheets[i + 1];
+  if (next && next.page) fetchMushafPageLines(next.page);
+}
+
+// When the pointer has gone on to the next page, the page turns - a moment
+// later, so the last word of the old one is seen written before it goes.
+function followReciteSheet(moved) {
+  const want = reciteSheetOfPointer();
+  if (want === reciteShownSheet) { clearTimeout(reciteTurnTimer); return; }
+  if (!moved) return;
+  clearTimeout(reciteTurnTimer);
+  reciteTurnTimer = setTimeout(() => {
+    if (!reciteSheets[want]) return;
+    showReciteSheet(want);
+    keepRecitePlaceQuietly();
+    requestAnimationFrame(scrollReciteToPointer);
+  }, 650);
+}
+
+function fetchMushafPageLines(page) {
+  if (!page) return Promise.resolve(null);
+  if (!mushafPageLinesCache[page]) {
+    mushafPageLinesCache[page] = fetchWithTimeout(`${MUSHAF_PAGE_API}/${page}?words=true&word_fields=text_uthmani,line_number&per_page=50`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => (json && Array.isArray(json.verses) && json.verses.length ? json.verses : null))
+      .catch(() => null)
+      .then((verses) => {
+        // A failure is not remembered: offline now is not offline later.
+        if (!verses) delete mushafPageLinesCache[page];
+        return verses;
+      });
+  }
+  return mushafPageLinesCache[page];
+}
+
+async function layOutReciteSheet(sheet) {
+  if (!sheet || sheet.lined || sheet.laying || !sheet.page) return;
+  sheet.laying = true;
+  const verses = await fetchMushafPageLines(sheet.page);
+  sheet.laying = false;
+  if (!verses || !reciteSheets.includes(sheet) || sheet.lined) return;
+  const rows = mushafRowsFor(sheet, verses);
+  if (!rows) return;
+  sheet.textEl.replaceChildren(...rows);
+  sheet.textEl.classList.add("recite-lined");
+  sheet.lined = true;
+  fitReciteSheet(sheet);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => fitReciteSheet(sheet));
+  if (reciteSheets[reciteShownSheet] === sheet) requestAnimationFrame(scrollReciteToPointer);
+}
+
+// The page's fifteen lines, built from the slots already on it - moved, not
+// remade, so everything they carry (their state, their taps) goes with them.
+// Null whenever the two texts do not agree on this page.
+function mushafRowsFor(sheet, verses) {
+  const planOf = new Map();
+  for (let ai = sheet.from; ai <= sheet.to; ai++) planOf.set(recitePlan[ai].key, ai);
+  const rows = new Map();
+  const row = (line, kind) => {
+    if (!(line >= 1 && line <= MUSHAF_LINES)) return null;
+    let r = rows.get(line);
+    if (!r) {
+      r = document.createElement("div");
+      r.className = `mushaf-line mushaf-line-${kind}`;
+      r.dataset.kind = kind;
+      rows.set(line, r);
+    }
+    return r.dataset.kind === kind ? r : null;
+  };
+  // Consecutive words of one ayah on one line share a wrapper, so whatever
+  // is styled per ayah (an ayah outside the plan) still is.
+  const segment = (line, kind, ai, outside) => {
+    const r = row(line, kind);
+    if (!r) return null;
+    const last = r.lastElementChild;
+    if (last && last.classList.contains("recite-ayah") && last.dataset.ai === String(ai)) return last;
+    const seg = document.createElement("span");
+    seg.className = `recite-ayah${outside ? " recite-outside" : ""}${ai == null ? " recite-filler" : ""}`;
+    if (ai != null) seg.dataset.ai = String(ai);
+    r.appendChild(seg);
+    return seg;
+  };
+  const filler = (text) => {
+    const span = document.createElement("span");
+    span.className = "recite-slot recite-filler-word";
+    span.innerHTML = `<span class="recite-word">${text}</span>`;
+    return span;
+  };
+  // Nothing already on the page is moved until the whole page is known to
+  // fit: a page abandoned halfway would have lost its words.
+  const moves = [];
+  let placed = 0;
+  for (const v of verses) {
+    const [surah, ayah] = String(v.verse_key || "").split(":").map(Number);
+    const words = (v.words || []).filter((w) => w.char_type_name === "word");
+    const end = (v.words || []).find((w) => w.char_type_name === "end");
+    if (!words.length || words.some((w) => !w.line_number)) return null;
+    const firstLine = words[0].line_number;
+    const ai = planOf.get(v.verse_key);
+    const a = ai == null ? null : recitePlan[ai];
+    const hasBasmala = ayah === 1 && surah !== 1 && surah !== 9;
+    if (ayah === 1) {
+      const frame = row(firstLine - (hasBasmala ? 2 : 1), "surah");
+      if (frame) {
+        const name = document.createElement("div");
+        name.className = "mushaf-surah-frame";
+        name.textContent = a ? a.surahName : surahDisplayName(surah);
+        frame.appendChild(name);
+      }
+    }
+    if (a) {
+      // The plan's first ayah carries the basmala as its first four words;
+      // the Mushaf gives it a line of its own above the surah.
+      const extra = a.words.length - words.length;
+      if (!(extra === 0 || (hasBasmala && extra === 4))) return null;
+      for (let wi = 0; wi < a.words.length; wi++) {
+        const slot = reciteSlotEls[reciteIndexOfFlat(ai, wi)];
+        const seg = wi < extra
+          ? segment(firstLine - 1, "basmala", ai, a.notInPlan)
+          : segment(words[wi - extra].line_number, "words", ai, a.notInPlan);
+        if (!slot || !seg) return null;
+        moves.push([seg, slot]);
+      }
+      const markSeg = segment(end ? end.line_number : words[words.length - 1].line_number, "words", ai, a.notInPlan);
+      if (!markSeg || !reciteBadgeEls[ai]) return null;
+      moves.push([markSeg, reciteBadgeEls[ai]]);
+      placed++;
+    } else {
+      // The rest of the page, around what is being recited: there, faint, so
+      // the page is the page - and not part of the recitation.
+      if (hasBasmala) {
+        const seg = segment(firstLine - 1, "basmala", null, false);
+        if (seg) BASMALA_TEXT.split(" ").forEach((w) => seg.appendChild(filler(w)));
+      }
+      for (const w of words) {
+        const seg = segment(w.line_number, "words", null, false);
+        if (!seg) return null;
+        seg.appendChild(filler(w.text_uthmani || w.text || ""));
+      }
+      const seg = segment(end ? end.line_number : words[words.length - 1].line_number, "words", null, false);
+      if (seg) seg.appendChild(mushafAyahMark(ayah));
+    }
+  }
+  if (placed !== sheet.to - sheet.from + 1) return null;
+  moves.forEach(([seg, node]) => seg.appendChild(node));
+  // The opening two pages are short and set in the middle; every other page
+  // has all fifteen lines, and an empty one keeps its place.
+  const used = [...rows.keys()];
+  const last = sheet.page <= 2 ? Math.max(...used) : MUSHAF_LINES;
+  const out = [];
+  for (let line = 1; line <= last; line++) {
+    const r = rows.get(line) || document.createElement("div");
+    if (!rows.has(line)) r.className = "mushaf-line mushaf-line-empty";
+    out.push(r);
+  }
+  return out;
+}
+
+// One size for the whole page, the largest at which its longest line fits
+// the screen - which is what makes the lines the Mushaf's lines, and not the
+// screen's. A line much shorter than the rest (the end of a surah, the
+// opening pages) is set in the middle instead of stretched across.
+function fitReciteSheet(sheet) {
+  if (!sheet || !sheet.lined || !sheet.el.classList.contains("current")) return;
+  const text = sheet.textEl;
+  const lines = [...text.querySelectorAll(".mushaf-line-words")];
+  if (!lines.length) return;
+  text.style.setProperty("--sheet-scale", "1");
+  const avail = lines[0].clientWidth;
+  text.classList.add("measuring");
+  const widths = lines.map((l) => l.getBoundingClientRect().width);
+  text.classList.remove("measuring");
+  const widest = Math.max(...widths);
+  if (!avail || !widest) return;
+  const scale = Math.min(1, (avail / widest) * 0.985);
+  text.style.setProperty("--sheet-scale", scale.toFixed(4));
+  // The opening two pages are set in the middle line by line, as printed.
+  const opening = sheet.page <= 2;
+  lines.forEach((l, k) => l.classList.toggle("mushaf-line-short", opening || widths[k] * scale < avail * 0.72));
+}
+
+window.addEventListener("resize", () => fitReciteSheet(reciteSheets[reciteShownSheet]));
+
+// Each page turned keeps the place, without being asked: closing the app in
+// the middle of a surah and opening it again carries on from the page it was
+// on. Only for a page that was actually recited onto.
+function keepRecitePlaceQuietly() {
+  if (reciteAyahsRead() < 1) return;
+  storeRecitePlace();
+}
+
+// Which page each ayah of the page is on, from the surah's text where it has
+// been fetched. Returns whether any are still unknown.
+function fillRecitePages() {
+  let missing = false;
+  recitePlan.forEach((a) => {
+    if (a.page) return;
+    const list = reciteSurahTextCache[a.surah] || surahAyahsCache[a.surah];
+    const found = list && (list[a.ayah - 1] && list[a.ayah - 1].numberInSurah === a.ayah
+      ? list[a.ayah - 1] : list.find((x) => x.numberInSurah === a.ayah));
+    if (found && found.page) { a.page = found.page; a.juz = found.juz || null; } else missing = true;
+  });
+  return missing;
+}
+
+async function loadMissingRecitePages() {
+  const plan = recitePlan;
+  const surahs = [...new Set(plan.filter((a) => !a.page).map((a) => a.surah))];
+  await Promise.all(surahs.map(loadReciteSurahText));
+  if (plan !== recitePlan) return;
+  fillRecitePages();
+  if (plan.some((a) => a.page)) renderRecitePage();
 }
 
 function updateRecitePosition() {
@@ -7732,6 +8105,7 @@ function paintReciteAll() {
   recitePaintQueued = false;
   for (let i = 0; i < reciteSlotEls.length; i++) paintSlot(i);
   recitePainted = recitePointer;
+  showReciteSheet(reciteSheetOfPointer());
   updateRecitePosition();
   // A page taken up again opens where it was left. «تابِع من الآية ٧٦» drew
   // the whole surah and then sat at its first line, with the place to carry
@@ -7748,6 +8122,10 @@ function scrollReciteToPointer() {
   const next = reciteSlotEls[recitePointer];
   const body = document.getElementById("recite-body");
   if (!next || !body) return;
+  // On a page that is not the one showing - the page has not turned yet, or
+  // the reciter has turned back to look - there is nothing to scroll to.
+  const sheet = reciteSheets[reciteShownSheet];
+  if (sheet && !sheet.el.contains(next)) return;
   const nb = next.getBoundingClientRect();
   const bb = body.getBoundingClientRect();
   if (!bb.height) return;
@@ -7763,8 +8141,10 @@ function paintReciteNow() {
   const from = Math.max(0, Math.min(recitePainted, recitePointer) - 1);
   const to = Math.min(reciteSlotEls.length - 1, Math.max(recitePainted, recitePointer));
   for (let i = from; i <= to; i++) paintSlot(i);
+  const moved = recitePainted !== recitePointer;
   recitePainted = recitePointer;
 
+  followReciteSheet(moved);
   scrollReciteToPointer();
   updateRecitePosition();
 }
