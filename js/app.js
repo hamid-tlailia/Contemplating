@@ -7724,13 +7724,15 @@ let reciteShownSheet = -1;
 let reciteTurnTimer = null;
 const mushafPageLinesCache = {};
 
-function arabicDigits(n) {
-  return String(n).replace(/\d/g, (d) => "٠١٢٣٤٥٦٧٨٩"[d]);
+// In whichever digits the settings ask for - ١٢٣ or 123 - like every other
+// number in the app.
+function shownNumber(n) {
+  return convertDigits(String(n), numeralsStyle());
 }
 
 // The ayah's number in its rosette, as the Mushaf prints it: a ring drawn
 // rather than a glyph of whichever font is chosen, so it is the same ring in
-// all of them, with the number in Arabic-Indic digits in the middle.
+// all of them, with the number in the middle.
 const MUSHAF_MARK_SVG = (() => {
   const dots = Array.from({ length: 8 }, (_, i) => {
     const t = (i * Math.PI) / 4;
@@ -7745,7 +7747,7 @@ function mushafAyahMark(ayah, extraClass) {
   mark.className = `mushaf-ayah-mark${digits > 2 ? " mushaf-ayah-mark-3" : ""}${extraClass ? ` ${extraClass}` : ""}`;
   mark.dataset.ayah = String(ayah);
   mark.setAttribute("aria-label", `الآية ${ayah}`);
-  mark.innerHTML = `${MUSHAF_MARK_SVG}<span class="mushaf-ayah-num">${arabicDigits(ayah)}</span>`;
+  mark.innerHTML = `${MUSHAF_MARK_SVG}<span class="mushaf-ayah-num">${shownNumber(ayah)}</span>`;
   return mark;
 }
 
@@ -7759,7 +7761,7 @@ function buildReciteSheet(a, ai) {
   const surah = document.createElement("span");
   surah.textContent = a.surahName;
   const juz = document.createElement("span");
-  juz.textContent = a.juz ? `الجزء ${arabicDigits(a.juz)}` : "";
+  juz.textContent = a.juz ? `الجزء ${shownNumber(a.juz)}` : "";
   head.append(surah, juz);
   const textEl = document.createElement("div");
   textEl.className = "recite-sheet-text";
@@ -7780,7 +7782,7 @@ function buildReciteSheet(a, ai) {
   };
   const num = document.createElement("span");
   num.className = "recite-sheet-num";
-  num.textContent = page ? arabicDigits(page) : "";
+  num.textContent = page ? shownNumber(page) : "";
   foot.append(nav(-1, "الصفحة السابقة"), num, nav(1, "الصفحة التالية"));
   el.append(head, textEl, foot);
   return sheet;
@@ -7972,7 +7974,9 @@ function mushafRowsFor(sheet, verses) {
 
 // One size for the whole page, the largest at which its longest line fits
 // the screen - which is what makes the lines the Mushaf's lines, and not the
-// screen's. A line much shorter than the rest (the end of a surah, the
+// screen's. Never larger than the ayah size chosen in the settings; on a
+// phone it is the width that decides, and the page is drawn edge to edge so
+// that it decides as little as possible. A line much shorter than the rest (the end of a surah, the
 // opening pages) is set in the middle instead of stretched across.
 function fitReciteSheet(sheet) {
   if (!sheet || !sheet.lined || !sheet.el.classList.contains("current")) return;

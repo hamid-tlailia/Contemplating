@@ -3344,7 +3344,7 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin
 #btn-recite-start { min-width: 160px; }
 
 /* The page itself: cream, ruled, and mostly empty until it is recited onto. */
-.recite-body { padding-inline: 14px; }
+.recite-body { padding-inline: 6px; }
 /* The pages, one showing at a time. Each is a page of the Mushaf: cream,
    framed, its surah and juz at the head and its number at the foot. */
 .recite-page { min-height: 60vh; }
@@ -3353,7 +3353,7 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin
   background: color-mix(in srgb, var(--accent) 5%, var(--surface));
   border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
   border-radius: 14px;
-  padding: 10px 12px 8px;
+  padding: 10px 6px 8px;
   box-shadow: inset 0 0 0 4px color-mix(in srgb, var(--accent) 6%, transparent);
 }
 .recite-sheet.current { display: block; animation: recite-sheet-in .28s ease; }
@@ -3366,7 +3366,7 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin
   font-size: 0.74rem;
   font-weight: 700;
   color: var(--accent);
-  padding: 0 4px 6px;
+  padding: 0 8px 6px;
   margin-bottom: 8px;
   border-bottom: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
 }
@@ -3414,7 +3414,7 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin
 /* And where it is: the page's own fifteen lines, each set edge to edge, at
    one size for the page - the size at which its longest line fits. */
 .recite-sheet-text.recite-lined {
-  --mushaf-font: calc(var(--ayah-font-size, 1.8rem) * 0.72 * var(--sheet-scale, 1));
+  --mushaf-font: calc(var(--ayah-font-size, 1.8rem) * var(--sheet-scale, 1));
   font-size: var(--mushaf-font);
   line-height: 1.5;
   text-align: initial;
@@ -3426,8 +3426,8 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin
   display: flex;
   align-items: center;
   justify-content: space-between;
-  column-gap: 0.22em;
-  min-height: 2.05em;
+  column-gap: 0.1em;
+  min-height: 1.9em;
   white-space: nowrap;
 }
 .mushaf-line-short, .mushaf-line-basmala { justify-content: center; }
