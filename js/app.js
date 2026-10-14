@@ -1430,6 +1430,13 @@ function arabicWordsMatch(a, b, { spokenElision = false } = {}) {
 function answerMatchesQuranWord(quranWord, answer, opts) {
   if (arabicWordsMatch(quranWord, answer, opts)) return true;
   if (!opts || !opts.spokenElision) return false;
+  // همزة الوصل is not pronounced when the word is joined to the one before -
+  // «عِيسَى ٱبْنَ مَرْيَمَ» is said «عيسى بنَ مريم», and the engine writes «بن».
+  // Heard, a word that opens with ٱ is also itself without that alef. Not the
+  // article (ٱل): without its alef it is «لـ», the preposition - another word.
+  const q = String(quranWord || "");
+  if (q[0] === "\u0671" && !/^\u0671[\u064B-\u065F\u0670]*\u0644/.test(q) &&
+      arabicWordsMatch(q.slice(1), answer, opts)) return true;
   if (!/\u064A\s*$/.test(answer || "") || !/\u0650[\u06D6-\u06ED]*$/.test(quranWord || "")) return false;
   return arabicWordsMatch(quranWord, answer.replace(/\u064A(?=\s*$)/, ""), opts);
 }
@@ -7790,11 +7797,72 @@ function paintReciteNow() {
 // after another from idx. This is what tells a repetition from a jump: the
 // same words in two places are told apart by how much of what follows agrees
 // with each of them.
+// The نون ساكنة at the end of a word is not always heard as a نون - the
+// letter that opens the next word decides, and a reciter who keeps the
+// rules of تجويد says what the rule says, which is what the engine writes:
+//
+//   إقلاب   before ب it turns into a ميم:  «مِّنۢ بَعْدِ» is «مِمْ بَعْد», written
+//           «مم بعد» or, run together, «ممبعد»
+//   إدغام   before ي و م ن ل ر it melts into that letter: «مَن يَقُولُ» is
+//           «مَيَّقُول», written «ميقول»; «مِن رَّبِّهِمْ» is «مربهم»
+//
+// Only a نون with no vowel of its own - a نون that carries one (مِنَ ٱلْ,
+// إِنَّ) is said as it is written. Listening only, and only where the next
+// word of the page really begins with that letter, so «مم» passes for مِنْ
+// before بَعْدِ and nowhere else.
+const NOON_SAKINA_END = /\u0646(?![\s\S]*[\u064B-\u0651])[\u0652\u06E2\u06ED\u06DF\u06D6-\u06DC]*$/;
+function heardAcrossWords(word, nextWord) {
+  const a = String(word || "").trim();
+  if (!NOON_SAKINA_END.test(a)) return null;
+  const opens = normalizeArabic(nextWord)[0];
+  const stem = a.replace(NOON_SAKINA_END, "");
+  if (opens === "\u0628") {
+    const alone = `${stem}\u0645`;
+    return { alone, joined: `${alone}${nextWord}` };
+  }
+  if ("\u064A\u0648\u0645\u0646\u0644\u0631".includes(opens || "-")) return { alone: null, joined: `${stem}${nextWord}` };
+  return null;
+}
+
+// One step of following the page: how many spoken tokens (used) cover how
+// many words of the page (span), starting from spoken token i and page word
+// k - or null. Every shape the engine gives a recited word comes through here,
+// so the search ahead, the length of a run and the recognition of a repeat
+// all agree on what counts as having said a word:
+//
+//   one token, one word         - the usual case
+//   one token, two words        - run together at an إدغام: «قُلُوبِهِم مَّرَضٌ»
+//                                 heard as one sound
+//   two tokens, one word        - torn in two: the vocative «يَٰٓأَيُّهَا» is
+//                                 written «يا أيها» by every engine, and a long
+//                                 مدّ splits a word at the stretch, «المشر كين»
+//   several tokens, one word    - a فاتحة spelled out letter by letter
+function reciteStep(words, i, k) {
+  const slot = reciteFlat[k];
+  const said = words[i];
+  if (!slot || !said) return null;
+  if (answerMatchesQuranWord(slot.w, said, HEARD)) return { used: 1, span: 1 };
+  const next = reciteFlat[k + 1];
+  const heard = next ? heardAcrossWords(slot.w, next.w) : null;
+  if (heard && heard.alone && answerMatchesQuranWord(heard.alone, said, HEARD)) return { used: 1, span: 1 };
+  if (next && [`${slot.w}${next.w}`, ...(heard ? [heard.joined] : [])]
+    .some((joined) => answerMatchesQuranWord(joined.replace(/\s+/g, ""), said, HEARD))) return { used: 1, span: 2 };
+  if (words[i + 1] && answerMatchesQuranWord(slot.w, said + words[i + 1], HEARD)) return { used: 2, span: 1 };
+  const spelled = spelledLettersMatch(words, i, slot.w);
+  if (spelled) return { used: spelled, span: 1 };
+  return null;
+}
+
+// How much of what was said, from token i, follows the page from word idx -
+// counted in spoken tokens, and only far enough to settle a comparison.
 function reciteRunLength(words, i, idx) {
-  let n = 0;
-  while (n < RECITE_RUN_CAP && i + n < words.length && reciteFlat[idx + n] &&
-         answerMatchesQuranWord(reciteFlat[idx + n].w, words[i + n], HEARD)) n++;
-  return n;
+  let si = i, k = idx;
+  while (si - i < RECITE_RUN_CAP && si < words.length) {
+    const step = reciteStep(words, si, k);
+    if (!step) break;
+    si += step.used; k += step.span;
+  }
+  return si - i;
 }
 
 // What was said a moment ago, said again.
@@ -7815,18 +7883,34 @@ function reciteRunLength(words, i, idx) {
 // an echo of the breath he is in.
 //
 // Returns how many spoken words the repeat covers, or 0.
+//
+// Returns { used, from }: how many spoken tokens the repeat covers, and the
+// page word it begins at - or null.
 function reciteEchoRun(st, words, i) {
-  const left = words.length - i;
   const floor = Math.max(0, st.pointer - RECITE_LOOKBEHIND);
   for (let idx = st.pointer - 1; idx >= floor; idx--) {
-    const need = st.pointer - idx;   // it has to run all the way to the pointer
-    if (need > left) break;          // and there is no longer enough of it left
-    let n = 0;
-    while (n < need && reciteFlat[idx + n] &&
-           answerMatchesQuranWord(reciteFlat[idx + n].w, words[i + n], HEARD)) n++;
-    if (n === need) return need;
+    // It has to run all the way to the pointer, and stop exactly there.
+    let si = i, k = idx;
+    while (k < st.pointer && si < words.length) {
+      const step = reciteStep(words, si, k);
+      if (!step) break;
+      si += step.used; k += step.span;
+    }
+    if (k === st.pointer) return { used: si - i, from: idx };
   }
-  return 0;
+  return null;
+}
+
+// A repeat taken as a repeat - and whatever it covers that had been marked as
+// passed over, it clears. The engine guesses as it goes, and a guess can leap:
+// mid-breath it offered «حنيفا قولوا», the page followed it into the next ayah
+// and marked «وَمَا كَانَ مِنَ ٱلْمُشْرِكِينَ» in red; a moment later it corrected
+// itself to the words that were really said. Those words arrive as a repeat
+// of ground already covered, and they are the proof that nothing was skipped.
+// A word truly left out never arrives at all, so it is never cleared.
+function takeReciteEcho(st, echo) {
+  for (let k = echo.from; k < st.pointer; k++) st.stumbles.delete(k);
+  return echo.used;
 }
 
 function placeRecitedWords(st, words, i) {
@@ -7836,18 +7920,9 @@ function placeRecitedWords(st, words, i) {
     const idx = st.pointer + ahead;
     const slot = reciteFlat[idx];
     if (!slot) break;
-    let span = 0;    // words of the page this takes
-    let used = 0;    // tokens of the speech it took
-    if (answerMatchesQuranWord(slot.w, said, HEARD)) { span = 1; used = 1; }
-    else {
-      const next = reciteFlat[idx + 1];
-      if (next && answerMatchesQuranWord(`${slot.w} ${next.w}`.replace(/\s+/g, ""), said, HEARD)) { span = 2; used = 1; }
-      else {
-        const spelled = spelledLettersMatch(words, i, slot.w);
-        if (spelled) { span = 1; used = spelled; }
-      }
-    }
-    if (!span) continue;
+    const step = reciteStep(words, i, idx);
+    if (!step) continue;
+    const { span, used } = step;
     // Found, but on the far side of an ayah that has not been begun. That is
     // not the engine dropping a word, it is the reciter somewhere else, and
     // the page holds where it is rather than writing off an ayah he has not
@@ -7864,14 +7939,15 @@ function placeRecitedWords(st, words, i) {
     // himself rather than leaping ahead, and nothing should be marked.
     if (ahead > 0) {
       const echo = reciteEchoRun(st, words, i);
-      if (echo && echo >= reciteRunLength(words, i, idx)) return echo;
+      if (echo && echo.used >= reciteRunLength(words, i, idx)) return takeReciteEcho(st, echo);
     }
     advanceRecitePointer(st, idx, span);
     return used;
   }
   // Nothing ahead. A repeat of what is behind is swallowed whole rather than
   // dropped a word at a time.
-  return reciteEchoRun(st, words, i);
+  const echo = reciteEchoRun(st, words, i);
+  return echo ? takeReciteEcho(st, echo) : 0;
 }
 
 // An ayah is left behind only when something of it was said. Nothing of it
