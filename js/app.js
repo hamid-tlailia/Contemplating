@@ -7616,7 +7616,10 @@ function startRecitePage(opts) {
 let reciteAyahStart = [];
 function reciteIndexOfFlat(ai, wi) { return reciteAyahStart[ai] + wi; }
 
-function renderRecitePage() {
+// keepAyah: the page holding this ayah is the one left showing, instead of
+// the page being recited - redrawing the page at another size must not take
+// away the page the reciter had turned to.
+function renderRecitePage(keepAyah) {
   const page = document.getElementById("recite-page");
   page.innerHTML = "";
   applyReciteSize();
@@ -7646,11 +7649,13 @@ function renderRecitePage() {
       head.className = "recite-surah-head";
       head.textContent = a.surahName;
       sheet.textEl.appendChild(head);
-      lastSurah = a.surah;
     }
+    lastSurah = a.surah;
     sheet.textEl.appendChild(buildReciteAyahRun(a, ai));
   });
   paintReciteAll();
+  const keep = keepAyah == null ? -1 : reciteSheetOfAyah[keepAyah];
+  if (keep != null && keep >= 0 && keep !== reciteShownSheet) showReciteSheet(keep);
 }
 
 // One ayah of the page: its blanks, then its number.
@@ -7788,7 +7793,8 @@ function setReciteSize(level) {
   if (next === reciteSizeLevel()) return;
   state.reciteSize = next;
   saveState();
-  renderRecitePage();
+  const shown = reciteSheets[reciteShownSheet];
+  renderRecitePage(shown ? shown.from : null);
   if (next === 0) showToast("سطور المصحف كما هي", "", "بأكبر خطٍّ يسع السطر على شاشتك.");
 }
 
