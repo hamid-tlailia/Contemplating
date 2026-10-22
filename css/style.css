@@ -3361,6 +3361,7 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin
 @media (prefers-reduced-motion: reduce) { .recite-sheet.current { animation: none; } }
 .recite-sheet-head {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
   font-size: 0.74rem;
@@ -3370,6 +3371,24 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin
   margin-bottom: 8px;
   border-bottom: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
 }
+.recite-sheet-head > span:first-child { flex: 1; text-align: start; }
+.recite-sheet-head > span:last-child { flex: 1; text-align: end; }
+.recite-size { display: inline-flex; gap: 8px; flex: none; }
+.recite-size-btn {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+}
+.recite-size-btn svg { width: 15px; height: 15px; }
+.recite-size-btn:disabled { opacity: .3; cursor: default; }
 .recite-sheet-foot {
   display: flex;
   align-items: center;
@@ -3408,9 +3427,12 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin
   padding: 4px 2px;
   text-align: justify;
   text-align-last: center;
-  line-height: 2.7;
+  font-size: calc(var(--ayah-font-size, 1.8rem) * var(--recite-flow-scale, 0.72));
+  line-height: 1.95;
   word-spacing: 2px;
 }
+.recite-sheet-text:not(.recite-lined) .recite-slot,
+.recite-sheet-text:not(.recite-lined) .mushaf-ayah-mark { font-size: 1em; }
 /* And where it is: the page's own fifteen lines, each set edge to edge, at
    one size for the page - the size at which its longest line fits. */
 .recite-sheet-text.recite-lined {
@@ -3479,18 +3501,23 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin
   color: var(--text);
 }
 .mushaf-ayah-mark-3 .mushaf-ayah-num { font-size: 0.42em; letter-spacing: -0.02em; top: -0.09em; }
+/* The surah's frame, as in the Mushaf - the same frame as on its lines. */
 .recite-surah-head {
   text-align: center;
+  font-family: "Tajawal", system-ui, sans-serif;
   font-weight: 700;
   color: var(--primary);
   font-size: 0.95rem;
-  margin: 14px 0 10px;
-  padding-bottom: 8px;
-  border-bottom: 1px dashed color-mix(in srgb, var(--accent) 35%, transparent);
+  margin: 14px 0 6px;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--surface) 70%, transparent),
+              inset 0 0 0 4px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 .recite-surah-head:first-child { margin-top: 0; }
 /* The heading is the one block on the page; everything else is the flow. */
-.recite-surah-head { line-height: 1.6; text-align-last: center; }
+.recite-surah-head { line-height: 2; text-align-last: center; }
 .recite-ayah { display: contents; }
 .recite-slot {
   position: relative;

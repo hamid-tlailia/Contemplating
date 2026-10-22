@@ -7581,6 +7581,7 @@ function startRecitePage(opts) {
   reciteFinalSegments = [];
   reciteFinalWords = [];
   reciteFinalDone = 0;
+  reciteCarry = [];
 
   // Carrying on from a saved place puts the pointer there; everything before
   // it stands written, because it was recited - on an earlier evening.
@@ -7618,6 +7619,7 @@ function reciteIndexOfFlat(ai, wi) { return reciteAyahStart[ai] + wi; }
 function renderRecitePage() {
   const page = document.getElementById("recite-page");
   page.innerHTML = "";
+  applyReciteSize();
   reciteSlotEls = new Array(reciteFlat.length);
   recitePainted = -1;
   reciteBadgeEls = [];
@@ -7636,7 +7638,10 @@ function renderRecitePage() {
     }
     sheet.to = ai;
     reciteSheetOfAyah[ai] = reciteSheets.length - 1;
-    if (a.surah !== lastSurah) {
+    // The frame is where a surah begins, as in the Mushaf - or where another
+    // surah follows on the same page. A page that opens in the middle of one
+    // already has its name at the head of the page.
+    if (a.surah !== lastSurah && (a.ayah === 1 || sheet.from !== ai)) {
       const head = document.createElement("div");
       head.className = "recite-surah-head";
       head.textContent = a.surahName;
@@ -7751,6 +7756,55 @@ function mushafAyahMark(ayah, extraClass) {
   return mark;
 }
 
+// How large the page is drawn. The Mushaf's own fifteen lines can only be
+// as large as the longest of them fits the width of a phone - on most phones
+// a size that is hard to read, and the one thing a page for reciting from
+// memory must not be. So there is a choice, on the page itself: the lines of
+// the Mushaf at the size they fit, or the same page - one page at a time,
+// its frame, its numbers - running on at a size that is read without effort.
+// Kept between visits.
+const RECITE_SIZES = [null, 1, 1.15, 1.3, 1.5, 1.75];   // null: the Mushaf's lines
+const RECITE_SIZE_DEFAULT = 2;
+
+function reciteSizeLevel() {
+  const v = state.reciteSize;
+  return Number.isInteger(v) && v >= 0 && v < RECITE_SIZES.length ? v : RECITE_SIZE_DEFAULT;
+}
+
+function applyReciteSize() {
+  const page = document.getElementById("recite-page");
+  if (!page) return;
+  const f = RECITE_SIZES[reciteSizeLevel()];
+  page.style.setProperty("--recite-flow-scale", String(f || 0.72));
+}
+
+function setReciteSize(level) {
+  const next = clampNum(level, 0, RECITE_SIZES.length - 1);
+  if (next === reciteSizeLevel()) return;
+  state.reciteSize = next;
+  saveState();
+  renderRecitePage();
+  if (next === 0) showToast("سطور المصحف كما هي", "", "بأكبر خطٍّ يسع السطر على شاشتك.");
+}
+
+function buildReciteSizeControl() {
+  const box = document.createElement("span");
+  box.className = "recite-size";
+  const level = reciteSizeLevel();
+  const btn = (delta, label, path) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "recite-size-btn";
+    b.setAttribute("aria-label", label);
+    b.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${path}" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>`;
+    b.disabled = level + delta < 0 || level + delta >= RECITE_SIZES.length;
+    b.addEventListener("click", () => setReciteSize(reciteSizeLevel() + delta));
+    return b;
+  };
+  box.append(btn(-1, "تصغير الخط", "M6 12h12"), btn(1, "تكبير الخط", "M6 12h12M12 6v12"));
+  return box;
+}
+
 function buildReciteSheet(a, ai) {
   const el = document.createElement("section");
   el.className = "recite-sheet";
@@ -7762,7 +7816,7 @@ function buildReciteSheet(a, ai) {
   surah.textContent = a.surahName;
   const juz = document.createElement("span");
   juz.textContent = a.juz ? `الجزء ${shownNumber(a.juz)}` : "";
-  head.append(surah, juz);
+  head.append(surah, buildReciteSizeControl(), juz);
   const textEl = document.createElement("div");
   textEl.className = "recite-sheet-text";
   const foot = document.createElement("div");
@@ -7851,6 +7905,7 @@ function fetchMushafPageLines(page) {
 
 async function layOutReciteSheet(sheet) {
   if (!sheet || sheet.lined || sheet.laying || !sheet.page) return;
+  if (RECITE_SIZES[reciteSizeLevel()]) return;
   sheet.laying = true;
   const verses = await fetchMushafPageLines(sheet.page);
   sheet.laying = false;
@@ -8316,6 +8371,11 @@ function placeRecitedWords(st, words, i) {
       if (st.blockedAt == null) st.blockedAt = idx;
       continue;
     }
+    if (ahead > 0 && !reciteJumpConfirmed(words, i, idx, ahead, used)) {
+      // Nothing after it to confirm it with - yet.
+      if (i + used >= words.length && st.deferredAt == null) st.deferredAt = i;
+      continue;
+    }
     st.placed = (st.placed || 0) + 1;
     // Found ahead of the pointer - which means the words in between would be
     // written off as skipped. Before doing that, look behind: if as much of
@@ -8325,13 +8385,38 @@ function placeRecitedWords(st, words, i) {
       const echo = reciteEchoRun(st, words, i);
       if (echo && echo.used >= reciteRunLength(words, i, idx)) return takeReciteEcho(st, echo);
     }
-    advanceRecitePointer(st, idx, span);
+    advanceRecitePointer(st, idx, span, words, i);
     return used;
   }
   // Nothing ahead. A repeat of what is behind is swallowed whole rather than
   // dropped a word at a time.
   const echo = reciteEchoRun(st, words, i);
   return echo ? takeReciteEcho(st, echo) : 0;
+}
+
+// A word found further on is a jump, and every word stepped over on the way
+// is marked as not said. One word is not enough to make that call: the
+// engine mishears a word as «من» or «على» or «الله», and there is one of
+// those a few words ahead of almost any place on a page - a single such
+// mishearing marked words the reciter had not reached, and the next one did
+// it again from there, until the page had run off far ahead of him.
+//
+// So a jump is taken only when what was said goes on to agree with the page
+// from there: the word after it is the next word heard. One case alone is
+// let through - a single word dropped by the engine, found one place on, when
+// that word is long enough and uncommon enough not to be found by accident.
+// When the next word has not been heard yet, the jump waits for it; the
+// engine sends the breath again with it, and it is taken then.
+const RECITE_COMMON_WORDS = new Set([
+  "الله", "الذين", "الناس", "ربك", "ربكم", "ربهم", "عليهم", "عليكم", "عليه",
+  "الارض", "السماوات", "السماء", "كانوا", "قالوا", "يعلمون", "تعملون", "هذا", "ذلك",
+  "الذي", "التي", "اولئك", "يايها", "ايها", "انهم", "انما", "الكتاب", "المؤمنين",
+].map(normalizeArabic));
+
+function reciteJumpConfirmed(words, i, idx, ahead, used) {
+  const word = normalizeArabic(reciteFlat[idx].w);
+  if (ahead === 1 && word.length >= 5 && !RECITE_COMMON_WORDS.has(word)) return true;
+  return reciteRunLength(words, i, idx) > used;
 }
 
 // An ayah is left behind only when something of it was said. Nothing of it
@@ -8346,8 +8431,24 @@ function reciteCrossingBlocked(st, idx) {
 }
 
 // Everything stepped over on the way was not said - that is the stumble.
-function advanceRecitePointer(st, idx, span) {
+//
+// Except what was heard just before the jump and could not be placed then:
+// the words left waiting for a confirmation that never came on their own
+// («الحمد رب» with «لله» dropped, «رب» alone proving nothing). Now that the
+// jump past them is confirmed, those that fall in the gap, in order, were
+// said - only the rest of the gap is marked.
+function advanceRecitePointer(st, idx, span, words, i) {
+  const heard = new Set();
+  if (words && st.unplacedFrom != null) {
+    let k = st.pointer;
+    for (let t = Math.max(st.unplacedFrom, i - 2); t < i; t++) {
+      for (let kk = k; kk < idx; kk++) {
+        if (answerMatchesQuranWord(reciteFlat[kk].w, words[t], HEARD)) { heard.add(kk); k = kk + 1; break; }
+      }
+    }
+  }
   for (let k = st.pointer; k < idx; k++) {
+    if (heard.has(k)) continue;
     st.stumbles.add(k);
     if (st.skippedFrom == null) st.skippedFrom = k;
     st.skipped = (st.skipped || 0) + 1;
@@ -8365,11 +8466,15 @@ function advanceRecitePointer(st, idx, span) {
 function placeReciteRun(st, words) {
   let stray = 0;
   let strayFrom = 0;
+  let placedTo = 0;
+  st.deferredAt = null;
   for (let i = 0; i < words.length; ) {
+    st.unplacedFrom = placedTo;
     const used = placeRecitedWords(st, words, i);
     if (used) {
       stray = 0;
       i += used;
+      placedTo = i;
     } else {
       if (!stray) strayFrom = i;
       stray++;
@@ -8381,6 +8486,8 @@ function placeReciteRun(st, words) {
       i += 1;
     }
   }
+  // A jump waiting on the word after it, at the very end of what was heard.
+  st.tail = st.deferredAt != null && st.deferredAt >= placedTo ? words.slice(st.deferredAt) : [];
   return st;
 }
 
@@ -8406,11 +8513,18 @@ function cleanReciteWords(text) {
 // re-cleaned on every result. This is what stops a long recitation from
 // paying for its own length: the regexes no longer run over the whole of it
 // several times a second.
+// A finished segment that ended on a jump still waiting to be confirmed
+// passes that word on to what comes next: the engine ends a segment wherever
+// the reciter breathed, and the word that confirms it is the first of the
+// next breath.
+let reciteCarry = [];
+
 function foldFinishedReciteSegments(st) {
   for (let i = reciteFinalDone; i < reciteFinalSegments.length; i++) {
     const seg = reciteFinalSegments[i];
     if (!seg) continue;
     const add = cleanReciteWords(seg);
+    const carried = reciteCarry.length;
     // A مدّ split can fall across the boundary between two segments, where
     // neither of them can see it alone.
     const last = reciteFinalWords[reciteFinalWords.length - 1];
@@ -8419,7 +8533,8 @@ function foldFinishedReciteSegments(st) {
       if (joined.length === 1) { reciteFinalWords[reciteFinalWords.length - 1] = joined[0]; add.shift(); }
     }
     if (add.length) {
-      placeReciteRun(st, add);
+      placeReciteRun(st, carried ? [...reciteCarry, ...add] : add);
+      reciteCarry = st.tail.length <= 2 ? st.tail : [];
       for (const w of add) reciteFinalWords.push(w);
     }
   }
@@ -8447,7 +8562,8 @@ function feedReciteSession(interimText) {
     strayRun: 0, strayAt: -1, strayWords: null,
   };
   foldFinishedReciteSegments(st);
-  placeReciteRun(st, cleanReciteWords(interimText));
+  const interim = cleanReciteWords(interimText);
+  placeReciteRun(st, reciteCarry.length && interim.length ? [...reciteCarry, ...interim] : interim);
   recitePointer = st.pointer;
   judgeRecitation(st);
   paintRecitePage();
@@ -8574,18 +8690,49 @@ function updateReciteMic(mode) {
 }
 
 function startReciteListening() {
+  reciteListening = true;
+  setReciteStatus("جارٍ فتح الميكروفون…");
+  openReciteRecognition();
+  clearInterval(reciteWatchdog);
+  reciteWatchdog = setInterval(checkReciteRecognition, 1000);
+}
+
+// The recognizer stopped hearing in the middle of a page, now and then, and
+// stayed stopped with the button still lit. Its restart after every pause
+// went through the voice window's helper, which retries a failed start()
+// only while THAT window is recording - so on this page, the one time
+// Android had not let go of the microphone yet when the pause ended, start()
+// threw and nothing ever tried again. The page restarts its own recognizer
+// now: a few tries a moment apart, then a new recognizer altogether. And a
+// watchdog covers the cases with no error to catch - an engine that went
+// quiet without ending, a start() that was accepted and never opened the
+// microphone: the light amber for too long, or nothing at all from the
+// engine for too long, and the recognizer is replaced.
+let reciteWatchdog = null;
+let reciteLastEventAt = 0;
+const RECITE_WAKE_TIMEOUT = 6000;
+const RECITE_SILENT_TIMEOUT = 15000;
+
+function openReciteRecognition() {
+  dropReciteRecognition();
   const recognition = createVoiceRecognitionInstance();
   reciteRecognition = recognition;
-  reciteListening = true;
   reciteWaking = true;
+  reciteLastEventAt = Date.now();
+  // A new recognizer numbers its results from nothing. What the old one
+  // heard is placed already; only the pointer carries over.
   reciteFinalSegments = [];
   reciteFinalWords = [];
   reciteFinalDone = 0;
   reciteSeenWords = [];
   updateReciteMic();
-  setReciteStatus("جارٍ فتح الميكروفون…");
+  const mine = (fn) => (e) => {
+    if (reciteRecognition !== recognition) return;
+    reciteLastEventAt = Date.now();
+    fn(e);
+  };
 
-  recognition.onresult = (e) => {
+  recognition.onresult = mine((e) => {
     let interim = "";
     for (let i = 0; i < e.results.length; i++) {
       const result = e.results[i];
@@ -8600,56 +8747,85 @@ function startReciteListening() {
     // ever moves forward, so a repeat finds nothing ahead of it to match and
     // is simply ignored. This is the other half of the lag.
     feedReciteSession(interim);
-  };
-  recognition.onaudiostart = () => {
+  });
+  recognition.onaudiostart = mine(() => {
     reciteWaking = false;
     updateReciteMic();
     setReciteStatus("أخضر — يستمع الآن. اقرأ على مهلك.");
     playListeningCue();
-  };
-  recognition.onaudioend = () => {
+  });
+  recognition.onaudioend = mine(() => {
     if (!reciteListening) return;
     reciteWaking = true;
     updateReciteMic();
     setReciteStatus("توقّف… انتظر الضوء الأخضر.");
-  };
-  recognition.onerror = (e) => {
+  });
+  recognition.onerror = mine((e) => {
     if (e.error === "aborted") return;
     if (VOICE_FATAL_ERRORS.has(e.error)) {
       reciteListening = false;
       reciteWaking = false;
+      dropReciteRecognition();
       updateReciteMic();
       setReciteStatus(`تعذّر الاستماع (${e.error}).`);
     }
-  };
-  // A pause ends the session; the page keeps its place and listening resumes
-  // on the same instance, so stopping to breathe is not stopping.
-  recognition.onend = () => {
+  });
+  // A pause ends the session; the page keeps its place and listening resumes,
+  // so stopping to breathe is not stopping.
+  recognition.onend = mine(() => {
     if (!reciteListening) return;
-    // The session that just ended is placed and done with. Nothing of it is
-    // carried forward - the pointer holds the place, which is the only part
-    // of it that mattered.
     reciteFinalSegments = [];
     reciteFinalWords = [];
     reciteFinalDone = 0;
     reciteSeenWords = [];
     reciteWaking = true;
     updateReciteMic();
-    attemptRecognitionStart(recognition);
-  };
-  attemptRecognitionStart(recognition);
+    startReciteRecognition(recognition, 0);
+  });
+  startReciteRecognition(recognition, 0);
+}
+
+function startReciteRecognition(recognition, attempt) {
+  if (!reciteListening || reciteRecognition !== recognition) return;
+  try {
+    recognition.start();
+    reciteLastEventAt = Date.now();
+  } catch (e) {
+    if (attempt < 3) setTimeout(() => startReciteRecognition(recognition, attempt + 1), 250 * (attempt + 1));
+    else openReciteRecognition();
+  }
+}
+
+function checkReciteRecognition() {
+  if (!reciteListening) {
+    clearInterval(reciteWatchdog);
+    reciteWatchdog = null;
+    return;
+  }
+  // In the background the browser takes the microphone away by design; the
+  // check resumes when the page is back.
+  if (document.hidden) { reciteLastEventAt = Date.now(); return; }
+  const quiet = Date.now() - reciteLastEventAt;
+  if ((reciteWaking && quiet > RECITE_WAKE_TIMEOUT) || quiet > RECITE_SILENT_TIMEOUT) openReciteRecognition();
+}
+
+// Lets go of the recognizer without letting it call back into the page.
+function dropReciteRecognition() {
+  const recognition = reciteRecognition;
+  reciteRecognition = null;
+  if (!recognition) return;
+  recognition.onresult = recognition.onaudiostart = recognition.onaudioend = null;
+  recognition.onerror = recognition.onend = null;
+  try { recognition.abort(); } catch (e) { /* already stopped */ }
 }
 
 function stopReciteListening() {
   reciteListening = false;
   reciteWaking = false;
-  const recognition = reciteRecognition;
-  reciteRecognition = null;
+  clearInterval(reciteWatchdog);
+  reciteWatchdog = null;
+  dropReciteRecognition();
   updateReciteMic();
-  if (recognition) {
-    recognition.onend = null;
-    try { recognition.abort(); } catch (e) { /* already stopped */ }
-  }
 }
 
 // What the page produced: not a mark, a list of places to go back to.
