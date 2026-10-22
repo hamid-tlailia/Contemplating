@@ -3427,8 +3427,10 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin
   padding: 4px 2px;
   text-align: justify;
   text-align-last: center;
-  font-size: calc(var(--ayah-font-size, 1.8rem) * var(--recite-flow-scale, 0.72));
-  line-height: 1.95;
+  /* The wird reader's text (.mushaf-reader-body .mushaf-text): same face,
+     same size, same spacing. */
+  font-size: var(--recite-flow-size, 1.7rem);
+  line-height: 2.1;
   word-spacing: 2px;
 }
 .recite-sheet-text:not(.recite-lined) .recite-slot,

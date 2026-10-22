@@ -7763,7 +7763,11 @@ function mushafAyahMark(ayah, extraClass) {
 // the Mushaf at the size they fit, or the same page - one page at a time,
 // its frame, its numbers - running on at a size that is read without effort.
 // Kept between visits.
-const RECITE_SIZES = [null, 1, 1.15, 1.3, 1.5, 1.75];   // null: the Mushaf's lines
+//
+// The size it starts at is the wird reader's: the same text, read the same
+// day in the same app, should not change size between one screen and the
+// next. The steps either side of it are for the eyes that want otherwise.
+const RECITE_SIZES = [null, "1.45rem", "1.7rem", "1.95rem", "2.25rem", "2.6rem"];   // null: the Mushaf's lines
 const RECITE_SIZE_DEFAULT = 2;
 
 function reciteSizeLevel() {
@@ -7775,7 +7779,8 @@ function applyReciteSize() {
   const page = document.getElementById("recite-page");
   if (!page) return;
   const f = RECITE_SIZES[reciteSizeLevel()];
-  page.style.setProperty("--recite-flow-scale", String(f || 0.72));
+  if (f) page.style.setProperty("--recite-flow-size", f);
+  else page.style.removeProperty("--recite-flow-size");
 }
 
 function setReciteSize(level) {
